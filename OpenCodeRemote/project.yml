@@ -73,6 +73,10 @@ targets:
     dependencies:
       - package: OpenCodeKit
         product: OpenCodeTransport
+      - package: OpenCodeKit
+        product: OpenCodeDomain
+      - package: OpenCodeKit
+        product: OpenCodeStorage
   OpenCodeRemoteTests:
     type: bundle.unit-test
     platform: iOS
