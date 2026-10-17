@@ -24,13 +24,24 @@ targets:
     platform: iOS
     sources:
       - path: OpenCodeRemote
+        excludes:
+          - Info.plist
+    # A real Info.plist (not generated) so the nested ATS dictionary can be
+    # expressed. NSAllowsLocalNetworking permits plain HTTP to loopback/LAN
+    # hosts only, so the reference mock (127.0.0.1) is reachable in
+    # development; production hosts use HTTPS under the documented trust
+    # policy (docs/implementation-defaults.md).
+    info:
+      path: OpenCodeRemote/Info.plist
+      properties:
+        CFBundleDisplayName: OpenCode Client
+        NSCameraUsageDescription: Scan the pairing QR code printed by opencode pair on your host.
+        UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: uk.co.laingcorp.opencode-client.OpenCodeRemote
-        GENERATE_INFOPLIST_FILE: "YES"
-        INFOPLIST_KEY_CFBundleDisplayName: OpenCode Client
-        INFOPLIST_KEY_NSCameraUsageDescription: Scan the pairing QR code printed by opencode pair on your host.
-        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
     dependencies:
       - target: LocalPushProvider
         embed: true
@@ -74,6 +85,10 @@ targets:
       - target: OpenCodeRemote
       - package: OpenCodeKit
         product: OpenCodeDomain
+      - package: OpenCodeKit
+        product: OpenCodeStorage
+      - package: OpenCodeKit
+        product: OpenCodeTransport
   OpenCodeRemoteUITests:
     type: bundle.ui-testing
     platform: iOS

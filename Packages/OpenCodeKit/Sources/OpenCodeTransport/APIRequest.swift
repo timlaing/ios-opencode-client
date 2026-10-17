@@ -36,6 +36,11 @@ public struct APIRequest: Sendable, Equatable {
     public var body: Data?
     public var contentType: String?
     public var credential: BasicCredential?
+    /// When true, no `Authorization` header is attached even if the transport
+    /// holds a default credential. Pairing redemption uses this: the code is
+    /// the credential, and stored secrets must never ride along to a
+    /// destination (docs/implementation-defaults.md trust rules).
+    public var omitsCredential: Bool
 
     public init(
         operationID: String,
@@ -44,7 +49,8 @@ public struct APIRequest: Sendable, Equatable {
         query: [QueryPair] = [],
         body: Data? = nil,
         contentType: String? = nil,
-        credential: BasicCredential? = nil
+        credential: BasicCredential? = nil,
+        omitsCredential: Bool = false
     ) {
         self.operationID = operationID
         self.method = method
@@ -53,6 +59,7 @@ public struct APIRequest: Sendable, Equatable {
         self.body = body
         self.contentType = contentType
         self.credential = credential
+        self.omitsCredential = omitsCredential
     }
 
     public static func jsonBody<T: Encodable>(

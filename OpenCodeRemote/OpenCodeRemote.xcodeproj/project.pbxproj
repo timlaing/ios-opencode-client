@@ -10,6 +10,8 @@
 		1C13A2BE6B90AD490C673C40 /* LocalPushProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 538A41BA72886565DE0033A5 /* LocalPushProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		29060FFAA490BF52E5CBF94F /* OpenCodePushProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609C80F1D24DEA11508634E4 /* OpenCodePushProvider.swift */; };
 		29C14B0551E936B987D1EFC2 /* OpenCodeRemoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */; };
+		2CC62EE5E90DDE822EB9B6FD /* HostLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557CD3B06333747A5958EEEA /* HostLibraryTests.swift */; };
+		323C25D93319E5FAE736AA03 /* OpenCodeStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 3CE58B3F620052B4312CB22F /* OpenCodeStorage */; };
 		3D278520E2E9573DDFF88C19 /* OpenCodeStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 437A60895CC53C06DCB5DDAC /* OpenCodeStorage */; };
 		46C696508541FF6C05EC1694 /* ConnectHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06EB5D222785B49795B89A59 /* ConnectHostView.swift */; };
 		4A673D0FF54E2757EB3ABD73 /* OpenCodeDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 5DB991BC744E6FA7F40F1E3E /* OpenCodeDomain */; };
@@ -18,10 +20,13 @@
 		8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */; };
 		95A10F74E73445C83D72738D /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86AB16C65ED59D9FC9A77E57 /* WelcomeView.swift */; };
 		95F8BCCCA82D4D19AA466FB9 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = EB4EF03F4434199B28DE0C87 /* OpenCodeTransport */; };
+		A73F651900612517D6F962C0 /* HostLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45806627CE3F3195AAF1D97E /* HostLibrary.swift */; };
 		B3ACFE2C0E337D4266F15364 /* OpenCodeDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 6292B27C77667C828F3C55D4 /* OpenCodeDomain */; };
+		C0446E935A84906A96791008 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = B1F01BC8C1267C2E2E8D477F /* OpenCodeTransport */; };
 		D6451336ED5676931929D181 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4B6A1B236A48CD201C014739 /* Assets.xcassets */; };
 		E095AF51CB275E0E401CB7A9 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 072A738B11C02C6921C41986 /* OpenCodeTransport */; };
 		FAFCA844E6C424603A12F3C6 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CCFF7F3899E21E1A364102 /* QRScannerView.swift */; };
+		FDFC4FEEEF10D1649CAB244D /* KeychainCredentialStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CCAF8F588A0B928A8D5102 /* KeychainCredentialStoreTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,14 +70,17 @@
 /* Begin PBXFileReference section */
 		06EB5D222785B49795B89A59 /* ConnectHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectHostView.swift; sourceTree = "<group>"; };
 		41CCFF7F3899E21E1A364102 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
+		45806627CE3F3195AAF1D97E /* HostLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostLibrary.swift; sourceTree = "<group>"; };
 		479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeRemoteTests.swift; sourceTree = "<group>"; };
 		4A49CB4AA53119E4DF16888F /* OpenCodeRemoteUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenCodeRemoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B6A1B236A48CD201C014739 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		538A41BA72886565DE0033A5 /* LocalPushProvider.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LocalPushProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		557CD3B06333747A5958EEEA /* HostLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostLibraryTests.swift; sourceTree = "<group>"; };
 		609C80F1D24DEA11508634E4 /* OpenCodePushProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodePushProvider.swift; sourceTree = "<group>"; };
 		6885A35810D9F55D83E34804 /* OpenCodeRemoteUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeRemoteUITests.swift; sourceTree = "<group>"; };
 		7F554B44B72453E1ACCBA4D5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		86AB16C65ED59D9FC9A77E57 /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
+		A3CCAF8F588A0B928A8D5102 /* KeychainCredentialStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainCredentialStoreTests.swift; sourceTree = "<group>"; };
 		A92B0FB57EE5AD2C28D2B3F2 /* OpenCodeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = OpenCodeKit; path = ../Packages/OpenCodeKit; sourceTree = SOURCE_ROOT; };
 		BA2341BA67C8B3947C411B46 /* OpenCodeRemoteTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenCodeRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C2F471708ABD498D52D76954 /* OpenCodeRemote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenCodeRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -95,6 +103,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				B3ACFE2C0E337D4266F15364 /* OpenCodeDomain in Frameworks */,
+				323C25D93319E5FAE736AA03 /* OpenCodeStorage in Frameworks */,
+				C0446E935A84906A96791008 /* OpenCodeTransport in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -120,6 +130,8 @@
 		1F8EC8AA0989E0C3F8485157 /* OpenCodeRemoteTests */ = {
 			isa = PBXGroup;
 			children = (
+				557CD3B06333747A5958EEEA /* HostLibraryTests.swift */,
+				A3CCAF8F588A0B928A8D5102 /* KeychainCredentialStoreTests.swift */,
 				479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */,
 			);
 			path = OpenCodeRemoteTests;
@@ -131,6 +143,7 @@
 				4B6A1B236A48CD201C014739 /* Assets.xcassets */,
 				06EB5D222785B49795B89A59 /* ConnectHostView.swift */,
 				7F554B44B72453E1ACCBA4D5 /* ContentView.swift */,
+				45806627CE3F3195AAF1D97E /* HostLibrary.swift */,
 				FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */,
 				41CCFF7F3899E21E1A364102 /* QRScannerView.swift */,
 				86AB16C65ED59D9FC9A77E57 /* WelcomeView.swift */,
@@ -232,6 +245,8 @@
 			name = OpenCodeRemoteTests;
 			packageProductDependencies = (
 				6292B27C77667C828F3C55D4 /* OpenCodeDomain */,
+				3CE58B3F620052B4312CB22F /* OpenCodeStorage */,
+				B1F01BC8C1267C2E2E8D477F /* OpenCodeTransport */,
 			);
 			productName = OpenCodeRemoteTests;
 			productReference = BA2341BA67C8B3947C411B46 /* OpenCodeRemoteTests.xctest */;
@@ -340,6 +355,7 @@
 			files = (
 				46C696508541FF6C05EC1694 /* ConnectHostView.swift in Sources */,
 				5CC7CD5B80C758016BD07AD8 /* ContentView.swift in Sources */,
+				A73F651900612517D6F962C0 /* HostLibrary.swift in Sources */,
 				8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */,
 				FAFCA844E6C424603A12F3C6 /* QRScannerView.swift in Sources */,
 				95A10F74E73445C83D72738D /* WelcomeView.swift in Sources */,
@@ -358,6 +374,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2CC62EE5E90DDE822EB9B6FD /* HostLibraryTests.swift in Sources */,
+				FDFC4FEEEF10D1649CAB244D /* KeychainCredentialStoreTests.swift in Sources */,
 				29C14B0551E936B987D1EFC2 /* OpenCodeRemoteTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -388,10 +406,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "OpenCode Client";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code printed by opencode pair on your host.";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_FILE = OpenCodeRemote/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -458,10 +473,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "OpenCode Client";
-				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code printed by opencode pair on your host.";
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_FILE = OpenCodeRemote/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -714,6 +726,10 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = OpenCodeTransport;
 		};
+		3CE58B3F620052B4312CB22F /* OpenCodeStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenCodeStorage;
+		};
 		437A60895CC53C06DCB5DDAC /* OpenCodeStorage */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = OpenCodeStorage;
@@ -725,6 +741,10 @@
 		6292B27C77667C828F3C55D4 /* OpenCodeDomain */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = OpenCodeDomain;
+		};
+		B1F01BC8C1267C2E2E8D477F /* OpenCodeTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenCodeTransport;
 		};
 		EB4EF03F4434199B28DE0C87 /* OpenCodeTransport */ = {
 			isa = XCSwiftPackageProductDependency;

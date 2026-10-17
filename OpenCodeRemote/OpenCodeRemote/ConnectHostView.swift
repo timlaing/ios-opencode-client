@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import OpenCodeDomain
 import OpenCodeTransport
 
 /// S03 — Connect Host (docs/navigation-screens.md).
@@ -7,19 +8,20 @@ import OpenCodeTransport
 /// The existing OpenCode pairing process is the default path: scan the QR code
 /// printed by `opencode pair` (or paste its link), review the parsed
 /// destination(s), and confirm. Manual host/user/password entry is the
-/// fallback. Redemption, the health check, and saving the host ship with the
-/// pairing transport in a follow-up slice, so Connect stays disabled rather
-/// than pretending to pair — and reviewing a code never spends it.
+/// fallback. Connect redeems the code (or proves the password) with a health
+/// check against the reviewed destination, then saves the host and its
+/// credential; reviewing a code never spends it.
 struct ConnectHostView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
+    @Environment(HostLibrary.self) private var library
 
-    // Manual fallback (password form): address, username, password, name.
-    @State private var host = ""
-    @State private var port = ""
+    // Manual fallback (password form): server URL, username, password, name.
+    @State private var serverURL = ""
     @State private var username = BasicCredential.fixedUsername
     @State private var password = ""
     @State private var displayName = ""
+    @FocusState private var manualURLFocused: Bool
 
     // Default path: scan the QR code or paste the printed link, then review.
     @State private var pairingLink = ""
@@ -27,6 +29,17 @@ struct ConnectHostView: View {
     @State private var scannerMessage: String?
     @State private var review: Review?
     @State private var parseError: String?
+
+    // Pairing progress and failure variants (idle → working → saved).
+    @State private var phase: Phase = .idle
+    @State private var connectionFailure: String?
+
+    private let pairing = HostPairingService()
+
+    private enum Phase {
+        case idle
+        case working
+    }
 
     private struct Review: Identifiable {
         let id = UUID()
@@ -65,6 +78,7 @@ struct ConnectHostView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .disabled(phase == .working)
                 }
             }
             .fullScreenCover(isPresented: $showScanner, onDismiss: { scannerMessage = nil }) {
@@ -81,6 +95,7 @@ struct ConnectHostView: View {
                 .font(.headline)
             Button {
                 parseError = nil
+                connectionFailure = nil
                 showScanner = true
             } label: {
                 Label("Scan QR Code", systemImage: "qrcode.viewfinder")
@@ -152,6 +167,7 @@ struct ConnectHostView: View {
     private func startReview(of input: String) throws {
         let parsed = try PairingParser.parse(input)
         review = Review(payload: parsed, selectedDestination: parsed.destinations[0])
+        connectionFailure = nil
     }
 
     // MARK: - Pasted pairing link
@@ -186,10 +202,15 @@ struct ConnectHostView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Or enter host details")
                 .font(.headline)
-            HStack(alignment: .top, spacing: 12) {
-                labeledField("Host or IP", text: $host, placeholder: "opencode.example.com")
-                labeledField("Port", text: $port, placeholder: "Port", width: 92)
-            }
+            labeledField(
+                "Server URL",
+                text: $serverURL,
+                placeholder: "https://opencode.example.com:4096",
+                keyboardType: .URL,
+                submitLabel: .done,
+                focus: $manualURLFocused,
+                onSubmit: { manualURLFocused = false }
+            )
             labeledField("Username", text: $username, placeholder: "Usually \"opencode\"")
             labeledSecureField("Password", text: $password, placeholder: "Host password or token")
             labeledField(
@@ -197,9 +218,19 @@ struct ConnectHostView: View {
                 text: $displayName,
                 placeholder: "e.g. Home server"
             )
-            Button("Connect") {}
-                .buttonStyle(.borderedProminent)
-                .disabled(true)
+            Button {
+                Task { await connectManually() }
+            } label: {
+                if phase == .working {
+                    ProgressView()
+                } else {
+                    Text("Connect")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity)
+            .disabled(phase == .working || serverURL.trimmed.isEmpty || password.isEmpty)
+            failureLabel
         }
     }
 
@@ -226,7 +257,7 @@ struct ConnectHostView: View {
                     }
                     .buttonStyle(.bordered)
                 }
-                Text("The code lists several addresses for the same host. The reviewed address is used when redemption ships.")
+                Text("The code lists several addresses for the same host. Connect uses the reviewed address.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             } else {
@@ -235,21 +266,85 @@ struct ConnectHostView: View {
                     .textSelection(.enabled)
             }
             labeledField("Display name (optional)", text: $displayName, placeholder: "e.g. Home server")
-            Button("Connect") {}
-                .buttonStyle(.borderedProminent)
-                .disabled(true)
+            Button {
+                Task { await redeemAndConnect(review) }
+            } label: {
+                if phase == .working {
+                    ProgressView()
+                } else {
+                    Text("Connect")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity)
+            .disabled(phase == .working)
+            failureLabel
             Button("Scan a Different Code") {
                 self.review = nil
+                connectionFailure = nil
                 if QRScannerView.isSupported { showScanner = true }
             }
             .buttonStyle(.bordered)
+            .disabled(phase == .working)
+        }
+    }
+
+    // MARK: - Pairing actions
+
+    /// Redeem flow: the single-use code exchanges for a token, the token is
+    /// proven with a health check, then host + credential are saved.
+    private func redeemAndConnect(_ review: Review) async {
+        phase = .working
+        connectionFailure = nil
+        defer { phase = .idle }
+        do {
+            let paired = try await pairing.pair(
+                code: review.payload.code,
+                at: review.selectedDestination,
+                displayName: displayName
+            )
+            try library.add(paired)
+            dismiss()
+        } catch {
+            connectionFailure = message(for: error)
+        }
+    }
+
+    /// Manual fallback: the supplied password is proven by the health check
+    /// itself, then host + credential are saved.
+    private func connectManually() async {
+        phase = .working
+        connectionFailure = nil
+        defer { phase = .idle }
+        do {
+            let address = try PairingParser.manualAddress(serverURL)
+            let paired = try await pairing.verifyPassword(
+                at: address,
+                username: username,
+                password: password,
+                displayName: displayName
+            )
+            try library.add(paired)
+            dismiss()
+        } catch {
+            connectionFailure = message(for: error)
         }
     }
 
     // MARK: - Shared pieces
 
+    private var failureLabel: some View {
+        Group {
+            if let connectionFailure {
+                Text(connectionFailure)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+
     private var transportNote: some View {
-        Text("Redeeming a code, the health check, and saving the host ship with the pairing transport in a follow-up build slice. Reviewing a code never spends it, and nothing is sent from this screen.")
+        Text("Pairing codes are single-use and expire about five minutes after opencode pair prints them. The credential is stored in this device's Keychain only; reviewing a code never spends it.")
             .font(.footnote)
             .foregroundStyle(.secondary)
     }
@@ -258,17 +353,31 @@ struct ConnectHostView: View {
         _ label: String,
         text: Binding<String>,
         placeholder: String,
-        width: CGFloat? = nil
+        width: CGFloat? = nil,
+        keyboardType: UIKeyboardType = .default,
+        submitLabel: SubmitLabel = .return,
+        focus: FocusState<Bool>.Binding? = nil,
+        onSubmit: (() -> Void)? = nil
     ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.caption)
                 .foregroundStyle(.secondary)
-            TextField(placeholder, text: text, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-                .frame(width: width)
+            Group {
+                let field = TextField(placeholder, text: text, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                if let focus {
+                    field.focused(focus)
+                } else {
+                    field
+                }
+            }
+            .keyboardType(keyboardType)
+            .submitLabel(submitLabel)
+            .onSubmit { onSubmit?() }
+            .frame(width: width)
         }
     }
 
@@ -284,9 +393,27 @@ struct ConnectHostView: View {
         }
     }
 
-    /// Turns a pairing-parse failure into the S03 error variant copy
-    /// (docs/navigation-screens.md): invalid/legacy link with next steps.
+    /// Turns a parse or pairing failure into the S03 error variant copy
+    /// (docs/navigation-screens.md): invalid link with next steps, expired or
+    /// spent code, unreachable address, rejected credential.
     private func message(for error: Error) -> String {
+        if let failure = error as? HostPairingService.Failure {
+            switch failure {
+            case .expiredCode:
+                return "That pairing code has expired or was already used. Generate a new one with opencode pair."
+            case .unreachable:
+                return "The host couldn't be reached at that address. Check the address, port, and that the server is running."
+            case .rejectedCredential:
+                return "The host rejected the credential. Check the password and try again."
+            case .unsupportedUsername:
+                return "OpenCode hosts use the username \"opencode\" — change it back and retry."
+            case .invalidResponse:
+                return "That address responded, but not as an OpenCode server. Check the address and port."
+            }
+        }
+        if error is HostLibrary.LibraryError {
+            return "This device's storage is unavailable, so the host can't be saved. Free up space and try again."
+        }
         switch error as? PairingParseError {
         case .legacyLink:
             return "That's an old-style pairing link. Generate a new one with opencode pair."
@@ -296,6 +423,8 @@ struct ConnectHostView: View {
             return "That address carries embedded credentials. Generate a fresh pairing link instead."
         case .invalidCode:
             return "That doesn't contain a valid pairing code."
+        case .invalidAddress:
+            return "Enter a valid server URL — for example https://opencode.example.com:4096 (or just the host, which defaults to https)."
         case .emptyInput:
             return "Paste the pairing link printed by opencode pair."
         default:
@@ -304,6 +433,13 @@ struct ConnectHostView: View {
     }
 }
 
+private extension String {
+    var trimmed: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 #Preview {
     ConnectHostView()
+        .environment(HostLibrary())
 }

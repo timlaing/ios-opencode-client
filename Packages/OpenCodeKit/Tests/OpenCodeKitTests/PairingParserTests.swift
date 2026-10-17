@@ -166,4 +166,23 @@ final class PairingParserTests: XCTestCase {
         let url = try PairingParser.manualAddress(host: "https://gateway.example/opencode", port: "")
         XCTAssertEqual(url.absoluteString, "https://gateway.example/opencode")
     }
+
+    // MARK: - Single-field manual form
+
+    func testManualAddressSingleFieldDefaultsToHTTPSGivenHostWithPort() throws {
+        XCTAssertEqual(try PairingParser.manualAddress("192.168.1.20:8443").absoluteString, "https://192.168.1.20:8443")
+    }
+
+    func testManualAddressSingleFieldKeepsExplicitScheme() throws {
+        XCTAssertEqual(try PairingParser.manualAddress("http://localhost:4097").absoluteString, "http://localhost:4097")
+    }
+
+    func testManualAddressSingleFieldAppliesSameRejections() {
+        XCTAssertThrowsError(try PairingParser.manualAddress("nas")) { error in
+            XCTAssertEqual(error as? PairingParseError, .invalidAddress)
+        }
+        XCTAssertThrowsError(try PairingParser.manualAddress("https://user:pass@host.example")) { error in
+            XCTAssertEqual(error as? PairingParseError, .credentialBearingAddress)
+        }
+    }
 }

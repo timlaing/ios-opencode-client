@@ -70,6 +70,13 @@ public enum PairingParser {
         return try parsePairingLink(trimmed)
     }
 
+    /// Single-field form of the manual rules: scheme, host, and optional port
+    /// all come from one URL string (e.g. `https://host:4096`, `host:4096`,
+    /// or a bare hostname).
+    public static func manualAddress(_ raw: String) throws -> URL {
+        try manualAddress(host: raw, port: "")
+    }
+
     /// Builds a bare host address for the password-fallback form (S03): the
     /// scheme defaults to https, an explicit `http://` prefix is honored for
     /// plain-HTTP hosts, and an explicit port is validated. Applies the pinned
@@ -186,6 +193,58 @@ public enum PairingParser {
             throw PairingParseError.credentialBearingAddress
         }
         return url
+    }
+}
+
+// MARK: - W01 requests and responses
+
+/// `server.connect` result: the session token, used as the Basic password
+/// (docs/api-contract.md). Browsers receive a cookie and a redirect instead;
+/// the native client accepts JSON to receive the token.
+public struct PairingSession: Decodable, Equatable, Sendable {
+    public var token: String
+
+    public init(token: String) {
+        self.token = token
+    }
+}
+
+/// `server.info` — identifies the host build for S02 display. Unknown fields
+/// are tolerated so baseline-plus servers decode.
+public struct ServerInfo: Decodable, Equatable, Sendable {
+    public var version: String
+    public var urls: [String]?
+
+    public init(version: String, urls: [String]? = nil) {
+        self.version = version
+        self.urls = urls
+    }
+}
+
+/// W01 request builders (docs/api-route-catalog.md).
+public enum W01Requests {
+    /// Redeem a pairing code via `GET /auth/connect/<code>`. No credential is
+    /// attached and the transport's default credential is suppressed: the
+    /// single-use code is the credential, and redemption must never carry
+    /// stored host credentials to a destination.
+    public static func redeem(code: String) -> APIRequest {
+        APIRequest(
+            operationID: "server.connect",
+            method: .get,
+            path: "/auth/connect/" + code,
+            omitsCredential: true
+        )
+    }
+
+    /// `server.info` health check with a pairing token or host password as
+    /// the Basic secret.
+    public static func health(secret: String) -> APIRequest {
+        APIRequest(
+            operationID: "server.info",
+            method: .get,
+            path: "/api/info",
+            credential: BasicCredential(secret: secret)
+        )
     }
 }
 
