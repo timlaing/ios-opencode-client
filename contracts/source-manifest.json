@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/anomalyco/opencode",
+  "version": "2.0.25",
+  "commit": "b44eea9e204024db2b480a136ece29d790d5f593",
+  "sourcePath": "packages/protocol/openapi.json",
+  "sourceUrl": "https://github.com/anomalyco/opencode/blob/b44eea9e204024db2b480a136ece29d790d5f593/packages/protocol/openapi.json",
+  "sha256": "17951689576c124f66a8b0270d759429f46d2235293b1ec228e889994ac56e5b",
+  "bytes": 550766,
+  "operationCount": 141,
+  "schemaCount": 256,
+  "mockModeledOperations": 61,
+  "upstreamLicense": "MIT; see UPSTREAM-LICENSE",
+  "evidence": "Pinned source/OpenAPI; mock tests are not live-server tests"
+}

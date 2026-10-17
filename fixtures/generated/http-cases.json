@@ -1,0 +1,118 @@
+[
+  {
+    "operationId": "project.list",
+    "method": "GET",
+    "path": "/api/project",
+    "expectedStatus": 200,
+    "expected": [
+      {
+        "id": "project_harbour",
+        "canonical": "/srv/demo/harbour",
+        "name": "Harbour Demo",
+        "time": {
+          "created": 1792195200000,
+          "updated": 1792195200000,
+          "active": 1792195200000
+        },
+        "sandboxes": []
+      },
+      {
+        "id": "project_orbit",
+        "canonical": "/srv/demo/orbit",
+        "name": "Orbit Demo",
+        "time": {
+          "created": 1792195200000,
+          "updated": 1792195200000,
+          "active": 1792195200000
+        },
+        "sandboxes": []
+      }
+    ]
+  },
+  {
+    "operationId": "session.get",
+    "method": "GET",
+    "path": "/api/session/ses_demo_001",
+    "expectedStatus": 200,
+    "expected": {
+      "data": {
+        "id": "ses_demo_001",
+        "projectID": "project_harbour",
+        "title": "Review Markdown and changes",
+        "agent": "build",
+        "model": {
+          "id": "demo-code",
+          "providerID": "synthetic"
+        },
+        "cost": 0.0125,
+        "tokens": {
+          "input": 1200,
+          "output": 350,
+          "reasoning": 100,
+          "cache": {
+            "read": 200,
+            "write": 0
+          }
+        },
+        "time": {
+          "created": 1792195200000,
+          "updated": 1792195200000
+        },
+        "location": {
+          "directory": "/srv/demo/harbour"
+        }
+      }
+    }
+  },
+  {
+    "operationId": "session.prompt",
+    "method": "POST",
+    "path": "/api/session/ses_demo_007/prompt",
+    "body": {
+      "id": "msg_example_queued",
+      "text": "Review **the synthetic project**",
+      "delivery": "queue",
+      "resume": false
+    },
+    "expectedStatus": 200
+  },
+  {
+    "operationId": "session.permission.reply",
+    "method": "POST",
+    "path": "/api/session/ses_demo_002/permission/per_demo/reply",
+    "body": {
+      "decision": "once"
+    },
+    "expectedStatus": 204
+  },
+  {
+    "operationId": "session.form.reply",
+    "method": "POST",
+    "path": "/api/session/ses_demo_003/form/frm_demo/reply",
+    "body": {
+      "answer": {
+        "environment": "production",
+        "confirm": true,
+        "checks": [
+          "unit"
+        ]
+      }
+    },
+    "expectedStatus": 204
+  },
+  {
+    "operationId": "experimental.mcp.disconnect",
+    "method": "POST",
+    "path": "/api/experimental/mcp/demo-docs/disconnect",
+    "expectedStatus": 204
+  },
+  {
+    "operationId": "session.update",
+    "method": "PATCH",
+    "path": "/api/session/ses_demo_001",
+    "body": {
+      "title": "Renamed synthetic session"
+    },
+    "expectedStatus": 204
+  }
+]

@@ -1,0 +1,28 @@
+{
+  "baseline": "2.0.25",
+  "commit": "b44eea9e204024db2b480a136ece29d790d5f593",
+  "workflows": [
+    {"id":"W01","name":"Connect and pair host","screens":["S02","S03"],"stage":"initial","operations":["server.info","server.pair","server.connect"]},
+    {"id":"W02","name":"Projects and folder navigation","screens":["S04","S05","S06"],"stage":"initial","operations":["project.list","project.update","location.get","fs.list","fs.find","experimental.fs.write"]},
+    {"id":"W03","name":"Create/resume/manage sessions","screens":["S07","S08"],"stage":"initial","operations":["session.list","session.create","session.get","session.update","session.remove","session.view","session.active"]},
+    {"id":"W04","name":"Read conversation and context","screens":["S08","S14"],"stage":"initial","operations":["session.message.list","session.message.get","session.context"]},
+    {"id":"W05","name":"Prompt and connected-session inbox","screens":["S08","S09"],"stage":"initial","operations":["session.prompt","session.inbox.list","session.inbox.cancel","session.inbox.update","session.interrupt"]},
+    {"id":"W06","name":"Model and agent selection","screens":["S10"],"stage":"initial","operations":["model.list","model.default","agent.list","agent.get","session.switchModel","session.switchAgent"]},
+    {"id":"W07","name":"Skills and commands","screens":["S08","S10"],"stage":"initial","operations":["skill.list","command.list","session.command","experimental.session.skill"]},
+    {"id":"W08","name":"Attachment preparation and staging","screens":["S09"],"stage":"initial","operations":["server.info","experimental.fs.write","session.prompt"]},
+    {"id":"W09","name":"Approvals","screens":["S11"],"stage":"initial","operations":["permission.request.list","session.permission.list","session.permission.get","session.permission.reply"]},
+    {"id":"W10","name":"Structured questions/forms","screens":["S12"],"stage":"initial","operations":["form.list","session.form.list","session.form.get","session.form.reply","session.form.cancel"]},
+    {"id":"W11","name":"File viewer","screens":["S13"],"stage":"initial","operations":["fs.list","fs.find","fs.read"]},
+    {"id":"W12","name":"Changes and branch identity","screens":["S15"],"stage":"initial","operations":["session.diff","vcs.get","vcs.status","vcs.base","vcs.diff"]},
+    {"id":"W13","name":"Usage and compaction","screens":["S14"],"stage":"initial","operations":["session.get","session.message.list","model.list","session.compact","session.inbox.list"]},
+    {"id":"W14","name":"Plugins and effective configuration","screens":["S16"],"stage":"initial","operations":["plugin.list","config.get","fs.read","experimental.fs.write","location.reload"]},
+    {"id":"W15","name":"MCP runtime controls","screens":["S16"],"stage":"initial","operations":["mcp.list","experimental.mcp.connect","experimental.mcp.disconnect","config.get"]},
+    {"id":"W16","name":"Live stream and initial local notifications","screens":["S08","S17"],"stage":"initial","operations":["event.subscribe","session.active","session.list","session.inbox.list","session.permission.list","session.form.list","session.message.list"]},
+    {"id":"W17","name":"Settings, drafts, privacy, sync, local following","screens":["S01","S18","S19","S20"],"stage":"initial-local","operations":[]},
+    {"id":"W18","name":"Fork/export/import/revert","screens":[],"stage":"later","operations":["session.fork","experimental.session.export","experimental.session.import","session.revert.stage","session.revert.clear","session.revert.commit"]},
+    {"id":"W19","name":"Provider/MCP authentication and management","screens":[],"stage":"later","operations":["provider.list","provider.get","integration.list","integration.get","integration.connect.key","integration.oauth.connect","integration.oauth.status","integration.oauth.cancel","integration.oauth.complete","integration.command.connect","integration.command.status","integration.command.cancel","experimental.mcp.add","experimental.mcp.remove","mcp.resource.catalog","credential.list","credential.create","credential.update","credential.remove","credential.activate"]},
+    {"id":"W20","name":"Advanced Git/workspaces/terminal","screens":[],"stage":"later","operations":["worktree.list","worktree.create","worktree.remove","worktree.refresh","vcs.init","vcs.branch.list","pty.list","pty.create","pty.get","pty.update","pty.remove","pty.connect.token","pty.connect"]}
+  ],
+  "localOnly": ["pin/unpin session","follow/unfollow session","hide on this device","draft persistence/expiry","appearance","iCloud settings","notification preferences","app lock"],
+  "unsupportedInBaseline": ["server-side session archive/restore mutation","structured agent todos"]
+}
