@@ -48,8 +48,14 @@ struct NewProjectView: View {
             ? String(parentDirectory.dropLast())
             : parentDirectory
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return root.hasSuffix("/") ? root : root + "/" }
+        if trimmed.isEmpty { return root }
         return root == "/" ? "/" + trimmed : root + "/" + trimmed
+    }
+
+    /// Config preview path without ever emitting a double slash
+    /// (`/srv/demo/opencode.jsonc`, `/opencode.jsonc` at the root).
+    private var configPath: String {
+        targetPath == "/" ? "/opencode.jsonc" : targetPath + "/opencode.jsonc"
     }
 
     private var canCreate: Bool {
@@ -89,7 +95,7 @@ struct NewProjectView: View {
                             .multilineTextAlignment(.trailing)
                     }
                     LabeledContent("Config") {
-                        Text(targetPath + "/opencode.jsonc")
+                        Text(configPath)
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.trailing)

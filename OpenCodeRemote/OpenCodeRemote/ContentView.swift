@@ -293,7 +293,7 @@ private struct ProjectsTab: View {
         List {
             if !visibleErrors.isEmpty {
                 Section("Host Status") {
-                    ForEach(visibleErrors, id: \.name) { error in
+                    ForEach(visibleErrors, id: \.id) { error in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(error.name)
                                 .font(.caption.weight(.medium))
@@ -341,12 +341,13 @@ private struct ProjectsTab: View {
 
     /// Host load failures relevant to the current filter (missing
     /// credential, unreachable host) — never rendered as "no projects".
-    private var visibleErrors: [(name: String, message: String)] {
+    /// Identified by host ID: display names are not unique.
+    private var visibleErrors: [(id: HostID, name: String, message: String)] {
         library.entries
             .filter { hostFilter == nil || $0.id == hostFilter }
             .compactMap { entry in
                 guard let message = projects.errorsByHost[entry.id] else { return nil }
-                return (entry.host.displayName, message)
+                return (entry.id, entry.host.displayName, message)
             }
     }
 

@@ -130,7 +130,10 @@ struct FolderBrowserView: View {
                 Button {
                     Task { await goUp() }
                 } label: {
-                    Label("Back to \(lastPathSegment(parentOf(navigation.current)))", systemImage: "arrow.up")
+                    // Label the ACTUAL target (previous stack level), which
+                    // can differ from the path parent after a search-result
+                    // jump into a deep directory.
+                    Label("Back to \(backTargetName)", systemImage: "arrow.up")
                 }
             }
             if let searchResults {
@@ -242,9 +245,11 @@ struct FolderBrowserView: View {
 
     // MARK: - Presentation helpers
 
-    private func parentOf(_ relative: String) -> String {
-        guard let cut = relative.lastIndex(of: "/") else { return "" }
-        return String(relative[..<cut])
+    /// Name of the level `goUp()` returns to: the previous stack level, or
+    /// the location root when the stack top is the root level.
+    private var backTargetName: String {
+        let previous = navigation.stack.last ?? ""
+        return previous.isEmpty ? lastPathSegment(startDirectory) : lastPathSegment(previous)
     }
 
     private func lastPathSegment(_ path: String) -> String {
