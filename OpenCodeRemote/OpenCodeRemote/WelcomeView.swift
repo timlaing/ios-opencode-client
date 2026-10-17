@@ -3,15 +3,15 @@ import SwiftUI
 /// S01 — Welcome and guided setup (docs/navigation-screens.md).
 /// Shown in the Projects tab while no host is configured.
 struct WelcomeView: View {
+    @Environment(\.colorScheme) private var colorScheme
     var onConnectHost: () -> Void
 
     var body: some View {
         VStack(spacing: 20) {
             Spacer(minLength: 0)
-            Image("HostConnection")
-                .resizable()
-                .scaledToFit()
+            connectionArtwork
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .accessibilityHidden(true)
             VStack(spacing: 8) {
                 Text("Connect Your Own OpenCode Host")
                     .font(.title2.bold())
@@ -35,6 +35,19 @@ struct WelcomeView: View {
         }
         .padding(24)
         .navigationTitle("OpenCode Client")
+    }
+
+    private var connectionArtwork: some View {
+        let image = Image("HostConnection")
+            .resizable()
+            .scaledToFit()
+        return Group {
+            if colorScheme == .dark {
+                image.colorInvert()
+            } else {
+                image
+            }
+        }
     }
 }
 
