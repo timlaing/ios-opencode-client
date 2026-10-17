@@ -61,34 +61,34 @@ Internal destinations are typed values carrying local `hostUUID`, optional proje
 
 Screen IDs are stable test identifiers, not on-screen labels. Workflow IDs refer to the [API contract](api-contract.md) and [scope manifest](../contracts/mobile-scope.json).
 
-| ID | Screen and presentation | Required content/actions | Workflows |
-| --- | --- | --- | --- |
-| S01 | Welcome and guided setup; native page sequence | Explain own host/VPN, Add Host, demo mode, optional app lock/iCloud; ask alert categories/content and activity start preference; local Wi-Fi setup/status | W01, W16, W17 |
-| S02 | Hosts; Settings list and reusable host-picker sheet | Name, reviewed address, connection/version/auth state; select, add, edit/re-pair, diagnostics, remove host; per-host local notification settings | W01, W17 |
-| S03 | Connect Host; sheet/page | Pairing-link field, Scan QR, optional display name, existing password fallback, reviewed target, Connect/Cancel, health checks | W01 |
-| S04 | Projects root/sidebar content | Host picker, pinned/recent projects, searchable names/paths, canonical directory, Open Folder, New Project; project context menu and New Session | W02, W03 |
-| S05 | Folder browser; sheet with breadcrumb/back | Remote directories, parent navigation, type-safe selection, filename search, readable permission/network errors, Choose Folder/New Folder | W02 |
-| S06 | New Project confirmation; sheet | Existing parent, validated folder name, resolved target/config path, optional display name, create/open-existing/conflict handling | W02, W03 |
-| S07 | Sessions root/project list | Search title, host/project filters, running/needs-attention/unread markers, pinned/recent groups, New Session, rename/pin/follow/hide/delete actions | W03 |
-| S08 | Conversation; primary detail | Header, transcript, thinking/tool/retry states, pending interaction dock, inbox, attachment chips, Markdown composer/preview, model/agent, Send/Queue/Stop | W03–W10, W13, W16 |
-| S09 | Attachment tray and preview; native pickers/sheets | Files/Photos/Camera, file size/type, original/balanced photo copy, location option, progress/cancel/retry/remove, missing/unsupported indicators | W08 |
-| S10 | Model/agent/skills/commands picker; sheet | Search, configured model variants/context/input capability, agent description, available commands/skills, selected and unavailable states | W06, W07 |
-| S11 | Permission detail; dock + native sheet | Requested action/resources, tool/source context, exact allow scope, Allow Once/Always if applicable/Reject, optional message | W09 |
-| S12 | Question/form; dock + native sheet/page | Full title/description, typed fields/options/custom choices, validation/visibility rules, external browser links, submit/cancel, settled state | W10 |
-| S13 | Files inspector and file preview | Tree/breadcrumb, filename search, source/Markdown/image/PDF viewer, text search, line navigation, copy/share, Attach to Draft | W11, W08 |
-| S14 | Usage/context inspector | Last-reported context, model limit/unknown, token categories, cumulative estimated cost, compaction state and Compact action | W13 |
-| S15 | Changes inspector and diff detail | Session-turn/workspace scope, selected range/base, changed file totals, unified/side-by-side diff, context expansion/search/change navigation/copy | W12 |
-| S16 | Integrations inspector | Plugin/MCP segmented list, scope/source/effective status, plugin toggle plan/readback, runtime MCP Connect/Disconnect, error/auth-required detail | W14, W15 |
-| S17 | Notifications and Live Activities | Category/privacy choices, per-host eligible Wi-Fi setup, following scope, permission/extension health, activity-start preference/freshness, device test guidance | W16, W17 |
-| S18 | Settings root | Hosts, appearance, privacy/app lock, storage/drafts, attachments/network, iCloud, notifications/activities, diagnostics/support, licences/source/demo | W17 |
-| S19 | Privacy/storage/sync subpages | Actual local sizes, Clear Cache, draft expiry default/choices, backup explanation, app lock grace, iCloud status/opt-out/cloud-clear, Clear Local Data | W17 |
-| S20 | Diagnostics/support and licences | Redacted local logs/report preview/share/clear, host readiness checks, app/server versions, GitHub support/private security route, MPL/source/dependency notices | W17 |
+| ID  | Screen and presentation                             | Required content/actions                                                                                                                                         | Workflows         |
+| --- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| S01 | Welcome and guided setup; native page sequence      | Explain own host/VPN, Add Host, demo mode, optional app lock/iCloud; ask alert categories/content and activity start preference; local Wi-Fi setup/status        | W01, W16, W17     |
+| S02 | Hosts; Settings list and reusable host-picker sheet | Name, reviewed address, connection/version/auth state; select, add, edit/re-pair, diagnostics, remove host; per-host local notification settings                 | W01, W17          |
+| S03 | Connect Host; sheet/page                            | Scan QR (primary), pairing-link field, optional display name, host/port/username/password fallback, reviewed target(s), Connect/Cancel, health checks            | W01               |
+| S04 | Projects root/sidebar content                       | Host picker, pinned/recent projects, searchable names/paths, canonical directory, Open Folder, New Project; project context menu and New Session                 | W02, W03          |
+| S05 | Folder browser; sheet with breadcrumb/back          | Remote directories, parent navigation, type-safe selection, filename search, readable permission/network errors, Choose Folder/New Folder                        | W02               |
+| S06 | New Project confirmation; sheet                     | Existing parent, validated folder name, resolved target/config path, optional display name, create/open-existing/conflict handling                               | W02, W03          |
+| S07 | Sessions root/project list                          | Search title, host/project filters, running/needs-attention/unread markers, pinned/recent groups, New Session, rename/pin/follow/hide/delete actions             | W03               |
+| S08 | Conversation; primary detail                        | Header, transcript, thinking/tool/retry states, pending interaction dock, inbox, attachment chips, Markdown composer/preview, model/agent, Send/Queue/Stop       | W03–W10, W13, W16 |
+| S09 | Attachment tray and preview; native pickers/sheets  | Files/Photos/Camera, file size/type, original/balanced photo copy, location option, progress/cancel/retry/remove, missing/unsupported indicators                 | W08               |
+| S10 | Model/agent/skills/commands picker; sheet           | Search, configured model variants/context/input capability, agent description, available commands/skills, selected and unavailable states                        | W06, W07          |
+| S11 | Permission detail; dock + native sheet              | Requested action/resources, tool/source context, exact allow scope, Allow Once/Always if applicable/Reject, optional message                                     | W09               |
+| S12 | Question/form; dock + native sheet/page             | Full title/description, typed fields/options/custom choices, validation/visibility rules, external browser links, submit/cancel, settled state                   | W10               |
+| S13 | Files inspector and file preview                    | Tree/breadcrumb, filename search, source/Markdown/image/PDF viewer, text search, line navigation, copy/share, Attach to Draft                                    | W11, W08          |
+| S14 | Usage/context inspector                             | Last-reported context, model limit/unknown, token categories, cumulative estimated cost, compaction state and Compact action                                     | W13               |
+| S15 | Changes inspector and diff detail                   | Session-turn/workspace scope, selected range/base, changed file totals, unified/side-by-side diff, context expansion/search/change navigation/copy               | W12               |
+| S16 | Integrations inspector                              | Plugin/MCP segmented list, scope/source/effective status, plugin toggle plan/readback, runtime MCP Connect/Disconnect, error/auth-required detail                | W14, W15          |
+| S17 | Notifications and Live Activities                   | Category/privacy choices, per-host eligible Wi-Fi setup, following scope, permission/extension health, activity-start preference/freshness, device test guidance | W16, W17          |
+| S18 | Settings root                                       | Hosts, appearance, privacy/app lock, storage/drafts, attachments/network, iCloud, notifications/activities, diagnostics/support, licences/source/demo            | W17               |
+| S19 | Privacy/storage/sync subpages                       | Actual local sizes, Clear Cache, draft expiry default/choices, backup explanation, app lock grace, iCloud status/opt-out/cloud-clear, Clear Local Data           | W17               |
+| S20 | Diagnostics/support and licences                    | Redacted local logs/report preview/share/clear, host readiness checks, app/server versions, GitHub support/private security route, MPL/source/dependency notices | W17               |
 
 ## S01–S03: Setup, pairing, and recovery
 
 Setup is useful with a missing/offline host: show instructions and allow editing/retrying, rather than stranding users at a spinner. The existing OpenCode pairing process is the default method; the app does not create its own host accounts. Provide copyable `opencode pair` instructions and the existing VPN-reachable URL option. QR scanning accepts only the existing payload; stop the camera after a valid scan, show reviewed destination(s), and redeem on user confirmation. Do not spend a code while generating a passive input preview.
 
-Password fallback has address, optional display name, password and Connect. Do not autofill a credential into a changed origin without revalidation. Pairing states: idle → parsing/review → redeeming → health check → saved. Error variants are invalid/legacy link, expired/spent code, unreachable address, TLS trust failure, rejected credential, and unsupported server capability/version. After successful redemption followed by failed health, retry with the retained token. Removing a host is a separate confirmed flow describing local draft/credential effects and server-revocation limits.
+Password fallback has host/port, a username prefilled with the fixed `opencode` value, optional display name, password and Connect. Do not autofill a credential into a changed origin without revalidation. Pairing states: idle → parsing/review → redeeming → health check → saved. Error variants are invalid/legacy link, expired/spent code, unreachable address, TLS trust failure, rejected credential, and unsupported server capability/version. After successful redemption followed by failed health, retry with the retained token. Removing a host is a separate confirmed flow describing local draft/credential effects and server-revocation limits.
 
 Demo mode points at the mock transport/fixtures, visually labelled Demo, with no production credential or provider access. Production setup does not allow arbitrary HTTP/TLS bypass; mock HTTP is a development-only transport profile.
 
@@ -179,22 +179,22 @@ Diagnostics shows only redacted local information by default. Export opens a pre
 
 ## Cross-screen state matrix
 
-| State | Required presentation | Permitted actions |
-| --- | --- | --- |
-| First load | Native skeleton/progress with host identity; no invented data | Navigate/cancel read where possible |
-| Empty | Specific explanation: no host/project/session/files/changes | Relevant create/open/filter-reset action |
-| Cached + refreshing | Content plus Updating/last-updated indicator | Read/copy; writes only after host/session is verified |
-| Offline | Cached content with Offline/stale badge | Read/copy/edit local draft; reconnect; no queued auto-send |
-| Authentication expired | Re-pair Required, affected host shown | Pair/password sheet; preserve drafts and destination |
-| TLS failure | Trust/setup guidance and exact host | Edit address/retry after trusted setup; no trust-all override |
-| Permission denied | Explain camera/photos/iOS notification or server access separately | Relevant system settings or alternate picker/setup |
-| Unsupported capability | Explain baseline/version/feature limitation | Continue supported workflows; no success simulation |
-| Pending mutation | Action-level progress, stable draft/IDs | Cancel only if supported; no repeated submission |
-| Uncertain result | Checking Result with what is being checked | Reconcile; explicit recovery if still ambiguous |
-| Conflict/already settled | Current authoritative result and retained local input | Reload/reapply where valid; return to conversation |
-| Large content | Size plus progressive rendering/loading | Load More, search loaded scope, copy/save with accurate completeness |
-| Recoverable read error | Inline error, retained content if present | Retry Read and diagnostics |
-| Removed destination | Explain missing host/project/session | Return to list; recover retained local draft text |
+| State                    | Required presentation                                              | Permitted actions                                                    |
+| ------------------------ | ------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| First load               | Native skeleton/progress with host identity; no invented data      | Navigate/cancel read where possible                                  |
+| Empty                    | Specific explanation: no host/project/session/files/changes        | Relevant create/open/filter-reset action                             |
+| Cached + refreshing      | Content plus Updating/last-updated indicator                       | Read/copy; writes only after host/session is verified                |
+| Offline                  | Cached content with Offline/stale badge                            | Read/copy/edit local draft; reconnect; no queued auto-send           |
+| Authentication expired   | Re-pair Required, affected host shown                              | Pair/password sheet; preserve drafts and destination                 |
+| TLS failure              | Trust/setup guidance and exact host                                | Edit address/retry after trusted setup; no trust-all override        |
+| Permission denied        | Explain camera/photos/iOS notification or server access separately | Relevant system settings or alternate picker/setup                   |
+| Unsupported capability   | Explain baseline/version/feature limitation                        | Continue supported workflows; no success simulation                  |
+| Pending mutation         | Action-level progress, stable draft/IDs                            | Cancel only if supported; no repeated submission                     |
+| Uncertain result         | Checking Result with what is being checked                         | Reconcile; explicit recovery if still ambiguous                      |
+| Conflict/already settled | Current authoritative result and retained local input              | Reload/reapply where valid; return to conversation                   |
+| Large content            | Size plus progressive rendering/loading                            | Load More, search loaded scope, copy/save with accurate completeness |
+| Recoverable read error   | Inline error, retained content if present                          | Retry Read and diagnostics                                           |
+| Removed destination      | Explain missing host/project/session                               | Return to list; recover retained local draft text                    |
 
 ## UI test and restoration contract
 

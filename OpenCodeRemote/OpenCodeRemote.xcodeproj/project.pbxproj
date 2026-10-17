@@ -21,6 +21,7 @@
 		B3ACFE2C0E337D4266F15364 /* OpenCodeDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 6292B27C77667C828F3C55D4 /* OpenCodeDomain */; };
 		D6451336ED5676931929D181 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4B6A1B236A48CD201C014739 /* Assets.xcassets */; };
 		E095AF51CB275E0E401CB7A9 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 072A738B11C02C6921C41986 /* OpenCodeTransport */; };
+		FAFCA844E6C424603A12F3C6 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CCFF7F3899E21E1A364102 /* QRScannerView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,6 +64,7 @@
 
 /* Begin PBXFileReference section */
 		06EB5D222785B49795B89A59 /* ConnectHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectHostView.swift; sourceTree = "<group>"; };
+		41CCFF7F3899E21E1A364102 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeRemoteTests.swift; sourceTree = "<group>"; };
 		4A49CB4AA53119E4DF16888F /* OpenCodeRemoteUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenCodeRemoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		4B6A1B236A48CD201C014739 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -130,6 +132,7 @@
 				06EB5D222785B49795B89A59 /* ConnectHostView.swift */,
 				7F554B44B72453E1ACCBA4D5 /* ContentView.swift */,
 				FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */,
+				41CCFF7F3899E21E1A364102 /* QRScannerView.swift */,
 				86AB16C65ED59D9FC9A77E57 /* WelcomeView.swift */,
 			);
 			path = OpenCodeRemote;
@@ -338,6 +341,7 @@
 				46C696508541FF6C05EC1694 /* ConnectHostView.swift in Sources */,
 				5CC7CD5B80C758016BD07AD8 /* ContentView.swift in Sources */,
 				8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */,
+				FAFCA844E6C424603A12F3C6 /* QRScannerView.swift in Sources */,
 				95A10F74E73445C83D72738D /* WelcomeView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -386,6 +390,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "OpenCode Client";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code printed by opencode pair on your host.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -455,6 +460,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "OpenCode Client";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Scan the pairing QR code printed by opencode pair on your host.";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

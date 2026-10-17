@@ -29,6 +29,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: uk.co.laingcorp.opencode-client.OpenCodeRemote
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_CFBundleDisplayName: OpenCode Client
+        INFOPLIST_KEY_NSCameraUsageDescription: Scan the pairing QR code printed by opencode pair on your host.
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
     dependencies:
       - target: LocalPushProvider
