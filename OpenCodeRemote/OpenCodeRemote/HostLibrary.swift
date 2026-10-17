@@ -102,6 +102,14 @@ final class HostLibrary {
         reload()
     }
 
+    /// The stored Basic credential for a host, or nil when this device no
+    /// longer holds one (re-pair required). The secret never leaves the
+    /// caller; it is never stored on entries or logged.
+    func credential(for id: HostID) -> BasicCredential? {
+        let secret = (try? credentials.secret(for: id.rawValue)) ?? nil
+        return secret.map(BasicCredential.init(secret:))
+    }
+
     /// Probes every host with its stored credential and records the result.
     /// Entries are re-located by ID after every await: a concurrent
     /// add/remove reloads the array mid-refresh, so holding an index across

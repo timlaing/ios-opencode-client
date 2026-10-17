@@ -1,5 +1,6 @@
 import SwiftUI
 import OpenCodeDomain
+import OpenCodeTransport
 
 /// Root navigation shell: Servers, Projects, Sessions, Settings
 /// (docs/navigation-screens.md).
@@ -159,16 +160,238 @@ private struct HostRow: View {
     }
 }
 
+/// S04 Projects tab (docs/navigation-screens.md): host-scoped project
+/// inventory with search, recents, and entry points into S05 Folder
+/// browser and S06 New Project. Rows always show name, path and host so a
+/// friendly name is never ambiguous.
 private struct ProjectsTab: View {
+    @Environment(HostLibrary.self) private var library
+    @State private var projects = ProjectsLibrary()
+    @State private var hostFilter: HostID?
+    @State private var searchText = ""
+    @State private var browsing: BrowseTarget?
+    @State private var newProjectTarget: NewProjectTarget?
+
+    private struct BrowseTarget: Identifiable {
+        let id = UUID()
+        let host: OpenCodeDomain.Host
+        let credential: BasicCredential?
+        let startDirectory: String
+    }
+
+    private struct ProjectRow: Identifiable {
+        let host: OpenCodeDomain.Host
+        let project: Project
+        var id: String { host.id.rawValue + "|" + project.id }
+    }
+
+    private var rows: [ProjectRow] {
+        projects.rows(entries: library.entries, hostFilter: hostFilter, search: searchText)
+            .map { ProjectRow(host: $0.host, project: $0.project) }
+    }
+
     var body: some View {
         NavigationStack {
-            ContentUnavailableView(
-                "No Projects",
-                systemImage: "folder",
-                description: Text("Projects from your connected servers appear here.")
-            )
+            Group {
+                if library.entries.isEmpty {
+                    ContentUnavailableView(
+                        "No Hosts Paired",
+                        systemImage: "server.rack",
+                        description: Text("Pair a host on the Servers tab to see its projects.")
+                    )
+                } else {
+                    projectList
+                }
+            }
             .navigationTitle("Projects")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button {
+                            if let entry = library.entries.first(where: { hostFilter == nil || $0.id == hostFilter }) ?? library.entries.first {
+                                newProjectTarget = NewProjectTarget(
+                                    host: entry.host,
+                                    credential: library.credential(for: entry.id),
+                                    parent: "/"
+                                )
+                            }
+                        } label: {
+                            Label("New Project…", systemImage: "folder.badge.plus")
+                        }
+                        Button {
+                            if let entry = library.entries.first(where: { hostFilter == nil || $0.id == hostFilter }) ?? library.entries.first {
+                                browsing = BrowseTarget(
+                                    host: entry.host,
+                                    credential: library.credential(for: entry.id),
+                                    startDirectory: "/"
+                                )
+                            }
+                        } label: {
+                            Label("Open Unlisted Folder…", systemImage: "folder")
+                        }
+                    } label: {
+                        Label("Add", systemImage: "plus")
+                    }
+                }
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        Button {
+                            hostFilter = nil
+                        } label: {
+                            Label("All Hosts", systemImage: networkImage(selected: hostFilter == nil))
+                        }
+                        ForEach(library.entries) { entry in
+                            Button {
+                                hostFilter = entry.id
+                            } label: {
+                                Label(entry.host.displayName, systemImage: networkImage(selected: hostFilter == entry.id))
+                            }
+                        }
+                    } label: {
+                        Label("Host", systemImage: "network")
+                    }
+                    .accessibilityIdentifier("S04.hostPicker")
+                }
+            }
         }
+        .searchable(text: $searchText, prompt: "Search projects")
+        .task {
+            projects.attach(hosts: library)
+            await projects.load(library.entries)
+        }
+        .refreshable {
+            await projects.load(library.entries)
+        }
+        .sheet(item: $browsing) { target in
+            FolderBrowserView(
+                host: target.host,
+                credential: target.credential,
+                startDirectory: target.startDirectory
+            ) { resolved in
+                projects.noteRecent(host: target.host, location: resolved)
+            }
+            .environment(library)
+        }
+        .sheet(item: $newProjectTarget) { target in
+            NewProjectView(
+                host: target.host,
+                credential: target.credential,
+                parentDirectory: target.parent
+            ) { resolved in
+                projects.noteRecent(host: target.host, location: resolved)
+                Task { await projects.load(library.entries) }
+            }
+            .environment(library)
+        }
+    }
+
+    private func networkImage(selected: Bool) -> String {
+        selected ? "checkmark.circle.fill" : "circle"
+    }
+
+    private var projectList: some View {
+        List {
+            if !projects.recentLocations.isEmpty, searchText.isEmpty {
+                Section("Recent Folders") {
+                    ForEach(Array(projects.recentLocations.enumerated()), id: \.offset) { _, item in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.location.project.canonical)
+                                .font(.body.monospaced())
+                                .lineLimit(1)
+                            Text(item.host.displayName)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            if rows.isEmpty {
+                Section {
+                    ContentUnavailableView(
+                        searchText.isEmpty ? "No Projects" : "No Matches",
+                        systemImage: "folder",
+                        description: Text(
+                            searchText.isEmpty
+                                ? "This host has no projects yet. Use Open Unlisted Folder or New Project."
+                                : "No project name or path matches “\(searchText)”."
+                        )
+                    )
+                }
+            } else {
+                Section("Projects") {
+                    ForEach(rows) { row in
+                        rowView(row)
+                            .accessibilityIdentifier("S04.project.row")
+                    }
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color("AppBackgroundColor"))
+    }
+
+    @ViewBuilder
+    private func rowView(_ row: ProjectRow) -> some View {
+        Button {
+            browsing = BrowseTarget(
+                host: row.host,
+                credential: library.credential(for: row.host.id),
+                startDirectory: row.project.canonical
+            )
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.project.name ?? lastPathSegment(row.project.canonical))
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text(row.project.canonical)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(row.host.displayName)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .contextMenu {
+            Button {
+                browsing = BrowseTarget(
+                    host: row.host,
+                    credential: library.credential(for: row.host.id),
+                    startDirectory: row.project.canonical
+                )
+            } label: {
+                Label("Open Folder", systemImage: "folder")
+            }
+            Button {
+                newProjectTarget = NewProjectTarget(
+                    host: row.host,
+                    credential: library.credential(for: row.host.id),
+                    parent: row.project.canonical
+                )
+            } label: {
+                Label("New Project Here…", systemImage: "folder.badge.plus")
+            }
+        }
+    }
+
+    private func lastPathSegment(_ path: String) -> String {
+        path.split(separator: "/").last.map(String.init) ?? path
+    }
+}
+
+/// Identity for the S06 New Project sheet: the host it targets plus the
+/// absolute existing parent directory.
+private struct NewProjectTarget: Identifiable {
+    let id: String
+    let host: OpenCodeDomain.Host
+    let credential: BasicCredential?
+    let parent: String
+
+    init(host: OpenCodeDomain.Host, credential: BasicCredential?, parent: String) {
+        id = host.id.rawValue + "|" + parent
+        self.host = host
+        self.credential = credential
+        self.parent = parent
     }
 }
 

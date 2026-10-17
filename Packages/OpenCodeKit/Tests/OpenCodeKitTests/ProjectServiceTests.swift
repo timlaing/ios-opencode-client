@@ -1,0 +1,136 @@
+import XCTest
+@testable import OpenCodeDomain
+@testable import OpenCodeTransport
+
+/// W02 service tests against a canned transport: native response shapes
+/// (bare arrays, direct objects, location-wrapped lists), the New Project
+/// write-then-resolve sequence, and client-side folder-name validation
+/// (docs/api-contract.md W02, docs/navigation-screens.md S04–S06).
+final class ProjectServiceTests: XCTestCase {
+    private final class Recorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var recorded: [APIRequest] = []
+        func record(_ request: APIRequest) { lock.lock(); recorded.append(request); lock.unlock() }
+        var requests: [APIRequest] { lock.lock(); defer { lock.unlock() }; return recorded }
+    }
+
+    private struct FakeTransport: OpenCodeTransport {
+        let recorder: Recorder
+        var responses: [String: Result<APIResponse, TransportError>] = [:]
+
+        func perform(_ request: APIRequest) async throws -> APIResponse {
+            recorder.record(request)
+            guard let result = responses[request.operationID] else {
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+            switch result {
+            case .success(let response): return response
+            case .failure(let error): throw error
+            }
+        }
+
+        func events() -> AsyncThrowingStream<OpenCodeEvent, Error> {
+            AsyncThrowingStream { $0.finish() }
+        }
+    }
+
+    private let host = URL(string: "http://localhost:4097")!
+    private let credential = BasicCredential(secret: "token")
+
+    private func service(_ responses: [String: Result<APIResponse, TransportError>], recorder: Recorder = Recorder()) -> ProjectService {
+        let transport = FakeTransport(recorder: recorder, responses: responses)
+        return ProjectService(makeTransport: { _ in transport })
+    }
+
+    private func json(_ body: String, status: Int = 200) -> APIResponse {
+        APIResponse(statusCode: status, payload: .json(Data(body.utf8)))
+    }
+
+    // MARK: - Inventory and resolution
+
+    func testProjectsDecodesBareArrayResponse() async throws {
+        let body = #"[{"id":"project_harbour","canonical":"/srv/demo/harbour","name":"Harbour Demo","time":{"created":1,"updated":2,"active":3}},{"id":"project_orbit","canonical":"/srv/demo/orbit","name":"Orbit Demo"}]"#
+        let projects = try await service([
+            "project.list": .success(json(body)),
+        ]).projects(at: host, credential: credential)
+
+        XCTAssertEqual(projects.map(\.id), ["project_harbour", "project_orbit"])
+        XCTAssertEqual(projects.first?.name, "Harbour Demo")
+        XCTAssertEqual(projects.first?.time?.updated, 2)
+        XCTAssertNil(projects.last?.vcs, "absent optional metadata stays absent")
+    }
+
+    func testResolveLocationDecodesProjectIdentity() async throws {
+        let body = #"{"directory":"/srv/demo/harbour","project":{"id":"project_harbour","directory":"/srv/demo/harbour","canonical":"/srv/demo/harbour"}}"#
+        let resolved = try await service([
+            "location.get": .success(json(body)),
+        ]).resolveLocation(at: host, credential: credential, directory: "/srv/demo/harbour")
+
+        XCTAssertEqual(resolved.directory, "/srv/demo/harbour")
+        XCTAssertEqual(resolved.project.id, "project_harbour")
+    }
+
+    func testListDirectoryReturnsRelativeEntries() async throws {
+        let recorder = Recorder()
+        let body = #"{"location":{"directory":"/srv/demo/harbour"},"data":[{"path":"src","type":"directory"},{"path":"README.md","type":"file"}]}"#
+        let entries = try await service([
+            "fs.list": .success(json(body)),
+        ], recorder: recorder).listDirectory(at: host, credential: credential, directory: "/srv/demo/harbour", path: ".")
+
+        XCTAssertEqual(entries, [
+            FileSystemEntry(path: "src", type: .directory),
+            FileSystemEntry(path: "README.md", type: .file),
+        ])
+        XCTAssertEqual(recorder.requests.first?.operationID, "fs.list")
+    }
+
+    func testFindPassesThroughEntries() async throws {
+        let body = #"{"location":{"directory":"/srv/demo"},"data":[{"path":"main.py","type":"file"}]}"#
+        let entries = try await service([
+            "fs.find": .success(json(body)),
+        ]).find(at: host, credential: credential, directory: "/srv/demo", query: "main", type: .file)
+        XCTAssertEqual(entries, [FileSystemEntry(path: "main.py", type: .file)])
+    }
+
+    // MARK: - New Project (write then re-resolve)
+
+    func testCreateProjectWritesConfigThenResolvesNewDirectory() async throws {
+        let recorder = Recorder()
+        let writeBody = #"{"location":{"directory":"/srv/demo"},"data":{"path":"/srv/demo/Telescope/opencode.jsonc"}}"#
+        let resolveBody = #"{"directory":"/srv/demo/Telescope","project":{"id":"project_telescope","directory":"/srv/demo/Telescope","canonical":"/srv/demo/Telescope"}}"#
+        let resolved = try await service([
+            "experimental.fs.write": .success(json(writeBody)),
+            "location.get": .success(json(resolveBody)),
+        ], recorder: recorder).createProject(at: host, credential: credential, parentDirectory: "/srv/demo", name: "  Telescope  ")
+
+        XCTAssertEqual(resolved.project.id, "project_telescope")
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["experimental.fs.write", "location.get"],
+                       "config first, then the server-verified re-resolve")
+
+        let write = recorder.requests[0]
+        XCTAssertEqual(write.body, Data("{}".utf8), "an empty valid JSONC object")
+        XCTAssertTrue(write.query.contains(QueryPair(key: "path", value: "/srv/demo/Telescope/opencode.jsonc")))
+        XCTAssertEqual(recorder.requests[1].query.first,
+                       QueryPair(key: "location[directory]", value: "/srv/demo/Telescope"),
+                       "re-resolve uses the target directory")
+    }
+
+    func testCreateProjectRejectsInvalidNamesBeforeAnyRequest() async throws {
+        let recorder = Recorder()
+        let service = service([:], recorder: recorder)
+        for invalid in ["", "   ", ".", "..", "a/b", "a\\b", "na\u{0007}me"] {
+            do {
+                _ = try await service.createProject(at: host, credential: credential, parentDirectory: "/srv/demo", name: invalid)
+                XCTFail("expected rejection for \(invalid)")
+            } catch let error as FolderName.ValidationError {
+                XCTAssertNotNil(error)
+            }
+        }
+        XCTAssertTrue(recorder.requests.isEmpty, "invalid names never reach the host")
+    }
+
+    func testFolderNameAcceptsOrdinaryUnicode() throws {
+        XCTAssertEqual(try FolderName.validate("  Café ünïcode  "), "Café ünïcode")
+        XCTAssertEqual(try FolderName.validate("プロジェクト"), "プロジェクト")
+    }
+}
