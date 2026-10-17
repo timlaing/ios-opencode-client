@@ -46,7 +46,9 @@ public struct URLSessionTransport: OpenCodeTransport {
         for (key, value) in http.allHeaderFields {
             if let key = key as? String, let value = value as? String { headers[key] = value }
         }
-        let contentType = headers["Content-Type"] ?? ""
+        // Case-insensitive lookup: HTTP/2 and proxies vary the header's
+        // spelling, and a missed Content-Type would misclassify JSON as bytes.
+        let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""
         let payload: APIResponse.Payload
         if data.isEmpty {
             payload = .empty
@@ -86,7 +88,10 @@ public struct URLSessionTransport: OpenCodeTransport {
                     for try await byte in bytes {
                         try Task.checkCancellation()
                         buffer.append(byte)
-                        guard buffer.count >= 2048 else { continue }
+                        // Decode at each line boundary so complete frames are
+                        // delivered promptly even on a quiet stream, instead
+                        // of waiting for a byte threshold to fill.
+                        guard byte == UInt8(ascii: "\n") else { continue }
                         for message in decoder.decode(buffer) {
                             deliver(message, to: continuation)
                         }

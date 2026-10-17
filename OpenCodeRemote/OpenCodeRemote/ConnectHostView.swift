@@ -29,6 +29,10 @@ struct ConnectHostView: View {
     @State private var scannerMessage: String?
     @State private var review: Review?
     @State private var parseError: String?
+    /// Token retained after the code is redeemed: a failed health check
+    /// retries against the same host without re-spending the single-use code
+    /// (docs/navigation-screens.md). Never displayed or logged.
+    @State private var redeemedToken: String?
 
     // Pairing progress and failure variants (idle → working → saved).
     @State private var phase: Phase = .idle
@@ -167,6 +171,7 @@ struct ConnectHostView: View {
     private func startReview(of input: String) throws {
         let parsed = try PairingParser.parse(input)
         review = Review(payload: parsed, selectedDestination: parsed.destinations[0])
+        redeemedToken = nil
         connectionFailure = nil
     }
 
@@ -244,6 +249,9 @@ struct ConnectHostView: View {
                 ForEach(review.payload.destinations, id: \.self) { destination in
                     Button {
                         self.review?.selectedDestination = destination
+                        // The retained token was redeemed against this host;
+                        // re-prove it against the newly reviewed address.
+                        redeemedToken = nil
                     } label: {
                         HStack {
                             Text(destination.absoluteString)
@@ -281,6 +289,7 @@ struct ConnectHostView: View {
             failureLabel
             Button("Scan a Different Code") {
                 self.review = nil
+                redeemedToken = nil
                 connectionFailure = nil
                 if QRScannerView.isSupported { showScanner = true }
             }
@@ -291,15 +300,24 @@ struct ConnectHostView: View {
 
     // MARK: - Pairing actions
 
-    /// Redeem flow: the single-use code exchanges for a token, the token is
-    /// proven with a health check, then host + credential are saved.
+    /// Redeem flow: the single-use code exchanges for a token (spent exactly
+    /// once — a retained token from a previous attempt is reused), the token
+    /// is proven with a health check, then host + credential are saved.
     private func redeemAndConnect(_ review: Review) async {
         phase = .working
         connectionFailure = nil
         defer { phase = .idle }
         do {
-            let paired = try await pairing.pair(
-                code: review.payload.code,
+            let secret: String
+            if let redeemedToken {
+                secret = redeemedToken
+            } else {
+                let token = try await pairing.redeem(code: review.payload.code, at: review.selectedDestination)
+                redeemedToken = token
+                secret = token
+            }
+            let paired = try await pairing.completePairing(
+                secret: secret,
                 at: review.selectedDestination,
                 displayName: displayName
             )

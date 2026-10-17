@@ -73,7 +73,13 @@ final class HostLibrary {
     /// waiting for the next refresh cycle.
     func add(_ paired: PairedHost) throws {
         guard let hostStore else { throw LibraryError.storageUnavailable }
-        try credentials.save(secret: paired.secret, for: paired.host.id.rawValue)
+        do {
+            try credentials.save(secret: paired.secret, for: paired.host.id.rawValue)
+        } catch {
+            // Surface every storage failure (Keychain included) as the same
+            // user-facing LibraryError, never as a raw StoreError.
+            throw LibraryError.storageUnavailable
+        }
         do {
             try hostStore.upsert(paired.host)
         } catch {
@@ -97,12 +103,19 @@ final class HostLibrary {
     }
 
     /// Probes every host with its stored credential and records the result.
+    /// Entries are re-located by ID after every await: a concurrent
+    /// add/remove reloads the array mid-refresh, so holding an index across
+    /// an await would write to the wrong row or trap out of bounds.
     func refreshStates() async {
         for index in entries.indices {
             entries[index].connection = .checking
         }
-        for index in entries.indices {
-            entries[index].connection = await state(of: entries[index].host)
+        let hosts = entries.map(\.host)
+        for host in hosts {
+            let result = await state(of: host)
+            if let index = entries.firstIndex(where: { $0.id == host.id }) {
+                entries[index].connection = result
+            }
         }
     }
 

@@ -3,7 +3,9 @@ import XCTest
 @testable import OpenCodeTransport
 
 /// W01 flow tests against a canned transport: redemption, health check, and
-/// the documented failure variants (docs/navigation-screens.md).
+/// the documented failure variants (docs/navigation-screens.md). Redemption
+/// and completion are separate so a health failure can be retried with the
+/// retained token instead of re-spending the single-use code.
 final class HostPairingServiceTests: XCTestCase {
     private final class Recorder: @unchecked Sendable {
         private let lock = NSLock()
@@ -45,32 +47,20 @@ final class HostPairingServiceTests: XCTestCase {
         APIResponse(statusCode: status, payload: .json(Data(body.utf8)))
     }
 
-    func testPairRedeemsThenHealthChecksAndReturnsCredential() async throws {
+    // MARK: - Redeem
+
+    func testRedeemReturnsTokenAndSendsNoAuthorization() async throws {
         let recorder = Recorder()
-        let paired = try await service(
+        let token = try await service(
             recorder: recorder,
             redeem: .success(json(#"{"token":"session-token"}"#)),
-            health: .success(json(#"{"version":"2.0.25","urls":[]}"#))
-        ).pair(code: "abc123", at: destination, displayName: "")
+            health: .success(json(#"{"version":"2.0.25"}"#))
+        ).redeem(code: "abc123", at: destination)
 
-        XCTAssertEqual(paired.secret, "session-token")
-        XCTAssertEqual(paired.host.address, destination)
-        XCTAssertEqual(paired.host.lastVersion, "2.0.25")
-        XCTAssertEqual(paired.host.displayName, "192.168.1.20", "Empty display name defaults to the host")
-
-        XCTAssertEqual(recorder.requests.map(\.operationID), ["server.connect", "server.info"])
+        XCTAssertEqual(token, "session-token")
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["server.connect"])
         XCTAssertEqual(recorder.requests.first?.path, "/auth/connect/abc123")
         XCTAssertNil(recorder.requests.first?.credential, "Redemption carries no stored credential")
-        XCTAssertEqual(recorder.requests.last?.credential?.secret, "session-token")
-    }
-
-    func testPairHonorsDisplayName() async throws {
-        let paired = try await service(
-            recorder: Recorder(),
-            redeem: .success(json(#"{"token":"t"}"#)),
-            health: .success(json(#"{"version":"1.0.0"}"#))
-        ).pair(code: "c", at: destination, displayName: "  Home server  ")
-        XCTAssertEqual(paired.host.displayName, "Home server")
     }
 
     func testRedeemUnauthorizedIsExpiredCode() async {
@@ -79,7 +69,7 @@ final class HostPairingServiceTests: XCTestCase {
                 recorder: Recorder(),
                 redeem: .failure(.http(status: 401, envelope: nil)),
                 health: .success(json(#"{"version":"1"}"#))
-            ).pair(code: "spent", at: destination, displayName: "")
+            ).redeem(code: "spent", at: destination)
             XCTFail("Expected failure")
         } catch {
             XCTAssertEqual(error as? HostPairingService.Failure, .expiredCode)
@@ -92,38 +82,81 @@ final class HostPairingServiceTests: XCTestCase {
                 recorder: Recorder(),
                 redeem: .failure(.connectionFailed("offline")),
                 health: .success(json(#"{"version":"1"}"#))
-            ).pair(code: "c", at: destination, displayName: "")
+            ).redeem(code: "c", at: destination)
             XCTFail("Expected failure")
         } catch {
             XCTAssertEqual(error as? HostPairingService.Failure, .unreachable)
         }
     }
 
-    func testHealthUnauthorizedIsRejectedCredential() async {
+    func testRedeemMalformedSuccessPayloadIsInvalidResponse() async {
+        do {
+            _ = try await service(
+                recorder: Recorder(),
+                redeem: .success(json(#"{"not":"a token"}"#)),
+                health: .success(json(#"{"version":"1"}"#))
+            ).redeem(code: "c", at: destination)
+            XCTFail("Expected failure")
+        } catch {
+            XCTAssertEqual(error as? HostPairingService.Failure, .invalidResponse)
+        }
+    }
+
+    // MARK: - Complete pairing (health check)
+
+    func testCompletePairingProvesTokenAndBuildsHost() async throws {
+        let recorder = Recorder()
+        let paired = try await service(
+            recorder: recorder,
+            redeem: .success(json(#"{"token":"t"}"#)),
+            health: .success(json(#"{"version":"2.0.25","urls":[]}"#))
+        ).completePairing(secret: "session-token", at: destination, displayName: "")
+
+        XCTAssertEqual(paired.secret, "session-token")
+        XCTAssertEqual(paired.host.address, destination)
+        XCTAssertEqual(paired.host.lastVersion, "2.0.25")
+        XCTAssertEqual(paired.host.displayName, "192.168.1.20", "Empty display name defaults to the host")
+
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["server.info"])
+        XCTAssertEqual(recorder.requests.first?.credential?.secret, "session-token")
+    }
+
+    func testCompletePairingHonorsDisplayName() async throws {
+        let paired = try await service(
+            recorder: Recorder(),
+            redeem: .success(json(#"{"token":"t"}"#)),
+            health: .success(json(#"{"version":"1.0.0"}"#))
+        ).completePairing(secret: "t", at: destination, displayName: "  Home server  ")
+        XCTAssertEqual(paired.host.displayName, "Home server")
+    }
+
+    func testCompletePairingUnauthorizedIsRejectedCredential() async {
         do {
             _ = try await service(
                 recorder: Recorder(),
                 redeem: .success(json(#"{"token":"t"}"#)),
                 health: .failure(.http(status: 401, envelope: nil))
-            ).pair(code: "c", at: destination, displayName: "")
+            ).completePairing(secret: "t", at: destination, displayName: "")
             XCTFail("Expected failure")
         } catch {
             XCTAssertEqual(error as? HostPairingService.Failure, .rejectedCredential)
         }
     }
 
-    func testMalformedSuccessPayloadIsInvalidResponse() async {
+    func testCompletePairingUnreachableIsUnreachable() async {
         do {
             _ = try await service(
                 recorder: Recorder(),
-                redeem: .success(json(#"{"not":"a token"}"#)),
-                health: .success(json(#"{"version":"1"}"#))
-            ).pair(code: "c", at: destination, displayName: "")
+                redeem: .success(json(#"{"token":"t"}"#)),
+                health: .failure(.connectionFailed("offline"))
+            ).completePairing(secret: "t", at: destination, displayName: "")
             XCTFail("Expected failure")
         } catch {
-            XCTAssertEqual(error as? HostPairingService.Failure, .invalidResponse)
+            XCTAssertEqual(error as? HostPairingService.Failure, .unreachable)
         }
     }
+
+    // MARK: - Manual password fallback
 
     func testVerifyPasswordRejectsNonContractUsernameBeforeAnyRequest() async {
         let recorder = Recorder()

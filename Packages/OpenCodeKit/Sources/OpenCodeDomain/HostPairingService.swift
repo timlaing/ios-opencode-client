@@ -14,13 +14,14 @@ public struct PairedHost: Sendable, Equatable {
 }
 
 /// W01 pairing flow against a reviewed destination (docs/api-contract.md):
-/// redeem the single-use code, run the health check with the returned token,
-/// and hand back the host plus credential to persist.
+/// redeem the single-use code, prove the token with a health check, and hand
+/// back the host plus credential to persist.
 ///
-/// The code is spent only by an explicit redeem call — reviewing or parsing
-/// never contacts the host — and a health failure after redemption keeps the
-/// redeemed token for retry rather than re-spending the code
-/// (docs/navigation-screens.md pairing states).
+/// Redemption and health are split because the code is spent by the redeem
+/// call alone — reviewing or parsing never contacts the host, and a health
+/// failure afterwards must be retried with the *retained token*, never by
+/// redeeming the code again (docs/navigation-screens.md pairing states).
+/// Tokens must never be logged, displayed, or attached to diagnostics.
 public struct HostPairingService: Sendable {
     /// Transport factory keyed by destination; injectable for tests.
     public var makeTransport: @Sendable (URL) -> any OpenCodeTransport
@@ -46,14 +47,16 @@ public struct HostPairingService: Sendable {
         case invalidResponse
     }
 
-    /// Redeem flow for scanned or pasted pairing links.
-    public func pair(code: String, at destination: URL, displayName: String) async throws -> PairedHost {
+    /// Redeem a pairing code for its session token — this SPENDS the
+    /// single-use code. Callers must retain the returned token and retry
+    /// `completePairing` after a health failure rather than redeeming again.
+    public func redeem(code: String, at destination: URL) async throws -> String {
         let transport = makeTransport(destination)
-        let session: PairingSession
         do {
-            session = try await transport
+            return try await transport
                 .perform(W01Requests.redeem(code: code))
                 .decodedJSON(PairingSession.self)
+                .token
         } catch let error as TransportError {
             switch error {
             case .http(let status, _) where status == 401 || status == 403:
@@ -64,14 +67,23 @@ public struct HostPairingService: Sendable {
                 throw Failure.unreachable
             }
         }
-        let info = try await health(transport: transport, secret: session.token)
+    }
+
+    /// Health-prove a pairing token (or a password from the manual fallback)
+    /// and build the host to persist. Never re-spends a code.
+    public func completePairing(
+        secret: String,
+        at destination: URL,
+        displayName: String
+    ) async throws -> PairedHost {
+        let info = try await health(transport: makeTransport(destination), secret: secret)
         return PairedHost(
             host: Host(
                 displayName: Self.defaultDisplayName(for: destination, given: displayName),
                 address: destination,
                 lastVersion: info.version
             ),
-            secret: session.token
+            secret: secret
         )
     }
 
@@ -84,15 +96,7 @@ public struct HostPairingService: Sendable {
         displayName: String
     ) async throws -> PairedHost {
         guard username == BasicCredential.fixedUsername else { throw Failure.unsupportedUsername }
-        let info = try await health(transport: makeTransport(address), secret: password)
-        return PairedHost(
-            host: Host(
-                displayName: Self.defaultDisplayName(for: address, given: displayName),
-                address: address,
-                lastVersion: info.version
-            ),
-            secret: password
-        )
+        return try await completePairing(secret: password, at: address, displayName: displayName)
     }
 
     /// Health check for a stored credential (S02 state refresh).
