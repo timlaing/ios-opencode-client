@@ -34,7 +34,7 @@ struct WelcomeView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(24)
-        .navigationTitle("OpenCode Remote")
+        .navigationTitle("OpenCode Client")
     }
 }
 
