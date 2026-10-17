@@ -2,7 +2,7 @@
 
 ## What this repo is
 
-An implementation **package** (docs + contracts + fixtures + Python reference mock) for a native iOS/iPadOS OpenCode client. **No Swift app code exists yet.** Do not describe mock behavior or generated fixtures as verified against a real OpenCode host or device — see `docs/verification.md` for what is actually proven.
+An implementation **package** (docs + contracts + fixtures + Python reference mock) for a native iOS/iPadOS OpenCode client, plus the iOS app scaffold (`OpenCodeRemote/`, `Packages/`). Do not describe mock behavior or generated fixtures as verified against a real OpenCode host or device — see `docs/verification.md` for what is actually proven.
 
 Baseline is pinned: OpenCode **v2.0.25**, commit `b44eea9e204024db2b480a136ece29d790d5f593`. The snapshot `contracts/opencode-v2.0.25.openapi.json` is authoritative; its SHA-256 and byte size (550766) are asserted in tests. Updating the baseline means replacing the snapshot, updating `contracts/mobile-scope.json`, and regenerating everything — do not do this casually.
 
@@ -18,6 +18,19 @@ python3 -m mock.server --port 4097    # reference mock on loopback
 Single test: `python3 -m unittest tests.test_mock.ContractTests.test_modeled_routes_exist` (classes: `ContractTests`, `HTTPTests`).
 
 Python 3.11+ **standard library only** — no dependencies, no lockfile, no venv needed. Keep it that way; the dependency-free contract guard in `mock/contract.py` is deliberate.
+
+## iOS commands (run from workspace root)
+
+```sh
+cd OpenCodeRemote && xcodegen generate    # regenerate OpenCodeRemote.xcodeproj from project.yml
+swift test --package-path Packages/OpenCodeKit   # package tests (SSE/encoding/storage; macOS host)
+```
+
+- `OpenCodeRemote/project.yml` is the **source of truth** for the Xcode project (app + LocalPushProvider extension + test targets). Never hand-edit `project.pbxproj`; edit the YAML and regenerate. The MCP Xcode tools build/test/run the generated project.
+- `Packages/OpenCodeKit` is a local Swift package with products `OpenCodeTransport`, `OpenCodeDomain`, `OpenCodeStorage` (GRDB). GRDB is pinned exact in `Package.swift`; commit `Package.resolved`.
+- The package's test target (`OpenCodeKitTests`) is not in the Xcode scheme — run it with `swift test`. App/UI tests run via the `OpenCodeRemote` scheme.
+- `LocalPushProvider` is built **without the `app-push-provider` entitlement** (pending Apple approval per `docs/design-review.md`). Re-add entitlements files + `CODE_SIGN_ENTITLEMENTS` in `project.yml` only after approval; do not treat the extension as activatable on device until then.
+- Bundle IDs: app `uk.co.laingcorp.opencode-client.OpenCodeRemote`, extension `…OpenCodeRemote.LocalPushProvider`. Team `4C8FWEBR8F`.
 
 ## Generated files are committed — never hand-edit
 

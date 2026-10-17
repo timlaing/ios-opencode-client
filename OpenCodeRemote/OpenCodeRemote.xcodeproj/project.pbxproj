@@ -3,344 +3,486 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 110;
+	objectVersion = 77;
 	objects = {
 
 /* Begin PBXBuildFile section */
-		EB2AEE1B3083907700B6979D /* LocalPushProvider.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = EB2AEE143083907700B6979D /* LocalPushProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		1C13A2BE6B90AD490C673C40 /* LocalPushProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 538A41BA72886565DE0033A5 /* LocalPushProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		29060FFAA490BF52E5CBF94F /* OpenCodePushProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609C80F1D24DEA11508634E4 /* OpenCodePushProvider.swift */; };
+		29C14B0551E936B987D1EFC2 /* OpenCodeRemoteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */; };
+		3D278520E2E9573DDFF88C19 /* OpenCodeStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 437A60895CC53C06DCB5DDAC /* OpenCodeStorage */; };
+		4A673D0FF54E2757EB3ABD73 /* OpenCodeDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 5DB991BC744E6FA7F40F1E3E /* OpenCodeDomain */; };
+		5CC7CD5B80C758016BD07AD8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F554B44B72453E1ACCBA4D5 /* ContentView.swift */; };
+		60F482270C83E3E5C10A8ACA /* OpenCodeRemoteUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6885A35810D9F55D83E34804 /* OpenCodeRemoteUITests.swift */; };
+		8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */; };
+		95F8BCCCA82D4D19AA466FB9 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = EB4EF03F4434199B28DE0C87 /* OpenCodeTransport */; };
+		B3ACFE2C0E337D4266F15364 /* OpenCodeDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 6292B27C77667C828F3C55D4 /* OpenCodeDomain */; };
+		D6451336ED5676931929D181 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4B6A1B236A48CD201C014739 /* Assets.xcassets */; };
+		E095AF51CB275E0E401CB7A9 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 072A738B11C02C6921C41986 /* OpenCodeTransport */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		EB2AEDF630838FAD00B6979D /* PBXContainerItemProxy */ = {
+		0008FCF63646A7ADA0B69037 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = EB2AEDE030838FAC00B6979D /* Project object */;
+			containerPortal = 38B197ECAC0D3113FB8A18BD /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = EB2AEDE730838FAC00B6979D;
+			remoteGlobalIDString = CFA7FD0106CC1A1AD8A8CD87;
 			remoteInfo = OpenCodeRemote;
 		};
-		EB2AEE0030838FAD00B6979D /* PBXContainerItemProxy */ = {
+		732828392DF9AB3E569C2DF2 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = EB2AEDE030838FAC00B6979D /* Project object */;
+			containerPortal = 38B197ECAC0D3113FB8A18BD /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = EB2AEDE730838FAC00B6979D;
+			remoteGlobalIDString = CFA7FD0106CC1A1AD8A8CD87;
 			remoteInfo = OpenCodeRemote;
 		};
-		EB2AEE193083907700B6979D /* PBXContainerItemProxy */ = {
+		BDA1A86FAD3870F413A15F81 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = EB2AEDE030838FAC00B6979D /* Project object */;
+			containerPortal = 38B197ECAC0D3113FB8A18BD /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = EB2AEE133083907700B6979D;
+			remoteGlobalIDString = 36C83A1B3A3A0F2EE34240CF;
 			remoteInfo = LocalPushProvider;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		EB2AEE203083907700B6979D /* Embed ExtensionKit Extensions */ = {
+		81DBB17DD342F0389B38EC80 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
-			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
-			dstSubfolder = Product;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
 			files = (
-				EB2AEE1B3083907700B6979D /* LocalPushProvider.appex in Embed ExtensionKit Extensions */,
+				1C13A2BE6B90AD490C673C40 /* LocalPushProvider.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed ExtensionKit Extensions";
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		EB2AEDE830838FAC00B6979D /* OpenCodeRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenCodeRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		EB2AEDF530838FAD00B6979D /* OpenCodeRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenCodeRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		EB2AEDFF30838FAD00B6979D /* OpenCodeRemoteUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenCodeRemoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		EB2AEE143083907700B6979D /* LocalPushProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = LocalPushProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeRemoteTests.swift; sourceTree = "<group>"; };
+		4A49CB4AA53119E4DF16888F /* OpenCodeRemoteUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenCodeRemoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B6A1B236A48CD201C014739 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		538A41BA72886565DE0033A5 /* LocalPushProvider.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LocalPushProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		609C80F1D24DEA11508634E4 /* OpenCodePushProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodePushProvider.swift; sourceTree = "<group>"; };
+		6885A35810D9F55D83E34804 /* OpenCodeRemoteUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeRemoteUITests.swift; sourceTree = "<group>"; };
+		7F554B44B72453E1ACCBA4D5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A92B0FB57EE5AD2C28D2B3F2 /* OpenCodeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = OpenCodeKit; path = ../Packages/OpenCodeKit; sourceTree = SOURCE_ROOT; };
+		BA2341BA67C8B3947C411B46 /* OpenCodeRemoteTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenCodeRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C2F471708ABD498D52D76954 /* OpenCodeRemote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenCodeRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeRemoteApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		EB2AEE1C3083907700B6979D /* Exceptions for "LocalPushProvider" folder in "LocalPushProvider" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = EB2AEE133083907700B6979D /* LocalPushProvider */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
-/* Begin PBXFileSystemSynchronizedRootGroup section */
-		EB2AEDEA30838FAC00B6979D /* OpenCodeRemote */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = OpenCodeRemote;
-			sourceTree = "<group>";
-		};
-		EB2AEDF830838FAD00B6979D /* OpenCodeRemoteTests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = OpenCodeRemoteTests;
-			sourceTree = "<group>";
-		};
-		EB2AEE0230838FAD00B6979D /* OpenCodeRemoteUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = OpenCodeRemoteUITests;
-			sourceTree = "<group>";
-		};
-		EB2AEE153083907700B6979D /* LocalPushProvider */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				EB2AEE1C3083907700B6979D /* Exceptions for "LocalPushProvider" folder in "LocalPushProvider" target */,
-			);
-			path = LocalPushProvider;
-			sourceTree = "<group>";
-		};
-/* End PBXFileSystemSynchronizedRootGroup section */
-
 /* Begin PBXFrameworksBuildPhase section */
-		EB2AEDE530838FAC00B6979D /* Frameworks */ = {
+		58EF7211137D78799968065D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				4A673D0FF54E2757EB3ABD73 /* OpenCodeDomain in Frameworks */,
+				3D278520E2E9573DDFF88C19 /* OpenCodeStorage in Frameworks */,
+				E095AF51CB275E0E401CB7A9 /* OpenCodeTransport in Frameworks */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EB2AEDF230838FAD00B6979D /* Frameworks */ = {
+		60A162C47275820400E32B2B /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				B3ACFE2C0E337D4266F15364 /* OpenCodeDomain in Frameworks */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EB2AEDFC30838FAD00B6979D /* Frameworks */ = {
+		65B05F6FEC760C5A970BC568 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				95F8BCCCA82D4D19AA466FB9 /* OpenCodeTransport in Frameworks */,
 			);
-		};
-		EB2AEE113083907700B6979D /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			files = (
-			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		EB2AEDDF30838FAC00B6979D = {
+		09097CDAE9B07C0CA79292B9 /* LocalPushProvider */ = {
 			isa = PBXGroup;
 			children = (
-				EB2AEDEA30838FAC00B6979D /* OpenCodeRemote */,
-				EB2AEDF830838FAD00B6979D /* OpenCodeRemoteTests */,
-				EB2AEE0230838FAD00B6979D /* OpenCodeRemoteUITests */,
-				EB2AEE153083907700B6979D /* LocalPushProvider */,
-				EB2AEDE930838FAC00B6979D /* Products */,
+				609C80F1D24DEA11508634E4 /* OpenCodePushProvider.swift */,
+			);
+			path = LocalPushProvider;
+			sourceTree = "<group>";
+		};
+		1F8EC8AA0989E0C3F8485157 /* OpenCodeRemoteTests */ = {
+			isa = PBXGroup;
+			children = (
+				479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */,
+			);
+			path = OpenCodeRemoteTests;
+			sourceTree = "<group>";
+		};
+		3656669BD06FA17DF5123587 /* OpenCodeRemote */ = {
+			isa = PBXGroup;
+			children = (
+				4B6A1B236A48CD201C014739 /* Assets.xcassets */,
+				7F554B44B72453E1ACCBA4D5 /* ContentView.swift */,
+				FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */,
+			);
+			path = OpenCodeRemote;
+			sourceTree = "<group>";
+		};
+		3B7C8F982EB0B0AE1EDD4F01 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				538A41BA72886565DE0033A5 /* LocalPushProvider.appex */,
+				C2F471708ABD498D52D76954 /* OpenCodeRemote.app */,
+				BA2341BA67C8B3947C411B46 /* OpenCodeRemoteTests.xctest */,
+				4A49CB4AA53119E4DF16888F /* OpenCodeRemoteUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		506CA6066CE5698E963BE94D /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				A92B0FB57EE5AD2C28D2B3F2 /* OpenCodeKit */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		72086E4195E42E91C8C60C07 = {
+			isa = PBXGroup;
+			children = (
+				09097CDAE9B07C0CA79292B9 /* LocalPushProvider */,
+				3656669BD06FA17DF5123587 /* OpenCodeRemote */,
+				1F8EC8AA0989E0C3F8485157 /* OpenCodeRemoteTests */,
+				7BC79A43B0500D7A480387F2 /* OpenCodeRemoteUITests */,
+				506CA6066CE5698E963BE94D /* Packages */,
+				3B7C8F982EB0B0AE1EDD4F01 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		EB2AEDE930838FAC00B6979D /* Products */ = {
+		7BC79A43B0500D7A480387F2 /* OpenCodeRemoteUITests */ = {
 			isa = PBXGroup;
 			children = (
-				EB2AEDE830838FAC00B6979D /* OpenCodeRemote.app */,
-				EB2AEDF530838FAD00B6979D /* OpenCodeRemoteTests.xctest */,
-				EB2AEDFF30838FAD00B6979D /* OpenCodeRemoteUITests.xctest */,
-				EB2AEE143083907700B6979D /* LocalPushProvider.appex */,
+				6885A35810D9F55D83E34804 /* OpenCodeRemoteUITests.swift */,
 			);
-			name = Products;
+			path = OpenCodeRemoteUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		EB2AEDE730838FAC00B6979D /* OpenCodeRemote */ = {
+		36C83A1B3A3A0F2EE34240CF /* LocalPushProvider */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = EB2AEE0730838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemote" */;
+			buildConfigurationList = EF6DFC7D9346F203B0FD3551 /* Build configuration list for PBXNativeTarget "LocalPushProvider" */;
 			buildPhases = (
-				EB2AEDE430838FAC00B6979D /* Sources */,
-				EB2AEDE530838FAC00B6979D /* Frameworks */,
-				EB2AEDE630838FAC00B6979D /* Resources */,
-				EB2AEE203083907700B6979D /* Embed ExtensionKit Extensions */,
+				552807DA9FDA3E911FC3FD6E /* Sources */,
+				65B05F6FEC760C5A970BC568 /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				EB2AEE1A3083907700B6979D /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				EB2AEDEA30838FAC00B6979D /* OpenCodeRemote */,
-			);
-			name = OpenCodeRemote;
-			productName = OpenCodeRemote;
-			productReference = EB2AEDE830838FAC00B6979D /* OpenCodeRemote.app */;
-			productType = "com.apple.product-type.application";
-		};
-		EB2AEDF430838FAD00B6979D /* OpenCodeRemoteTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = EB2AEE0A30838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemoteTests" */;
-			buildPhases = (
-				EB2AEDF130838FAD00B6979D /* Sources */,
-				EB2AEDF230838FAD00B6979D /* Frameworks */,
-				EB2AEDF330838FAD00B6979D /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				EB2AEDF730838FAD00B6979D /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				EB2AEDF830838FAD00B6979D /* OpenCodeRemoteTests */,
-			);
-			name = OpenCodeRemoteTests;
-			productName = OpenCodeRemoteTests;
-			productReference = EB2AEDF530838FAD00B6979D /* OpenCodeRemoteTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
-		EB2AEDFE30838FAD00B6979D /* OpenCodeRemoteUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = EB2AEE0D30838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemoteUITests" */;
-			buildPhases = (
-				EB2AEDFB30838FAD00B6979D /* Sources */,
-				EB2AEDFC30838FAD00B6979D /* Frameworks */,
-				EB2AEDFD30838FAD00B6979D /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				EB2AEE0130838FAD00B6979D /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				EB2AEE0230838FAD00B6979D /* OpenCodeRemoteUITests */,
-			);
-			name = OpenCodeRemoteUITests;
-			productName = OpenCodeRemoteUITests;
-			productReference = EB2AEDFF30838FAD00B6979D /* OpenCodeRemoteUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
-		EB2AEE133083907700B6979D /* LocalPushProvider */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = EB2AEE1D3083907700B6979D /* Build configuration list for PBXNativeTarget "LocalPushProvider" */;
-			buildPhases = (
-				EB2AEE103083907700B6979D /* Sources */,
-				EB2AEE113083907700B6979D /* Frameworks */,
-				EB2AEE123083907700B6979D /* Resources */,
-			);
-			buildRules = (
-			);
-			fileSystemSynchronizedGroups = (
-				EB2AEE153083907700B6979D /* LocalPushProvider */,
 			);
 			name = LocalPushProvider;
+			packageProductDependencies = (
+				EB4EF03F4434199B28DE0C87 /* OpenCodeTransport */,
+			);
 			productName = LocalPushProvider;
-			productReference = EB2AEE143083907700B6979D /* LocalPushProvider.appex */;
-			productType = "com.apple.product-type.extensionkit-extension";
+			productReference = 538A41BA72886565DE0033A5 /* LocalPushProvider.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		97E5AAF6D17E8412B321D091 /* OpenCodeRemoteUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2B6200DC97B68B8B8D445BB0 /* Build configuration list for PBXNativeTarget "OpenCodeRemoteUITests" */;
+			buildPhases = (
+				CFA8B1BD04946F6E89AE95EA /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AF7963DDE68A7DE17FE0CD2A /* PBXTargetDependency */,
+			);
+			name = OpenCodeRemoteUITests;
+			packageProductDependencies = (
+			);
+			productName = OpenCodeRemoteUITests;
+			productReference = 4A49CB4AA53119E4DF16888F /* OpenCodeRemoteUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		C4DB739B41B197C69DDAF9F3 /* OpenCodeRemoteTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BFDD231E20864FCBD3C7996E /* Build configuration list for PBXNativeTarget "OpenCodeRemoteTests" */;
+			buildPhases = (
+				DA0033A137A49D147013602A /* Sources */,
+				60A162C47275820400E32B2B /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				84E341515F4FF52FF92DBFC0 /* PBXTargetDependency */,
+			);
+			name = OpenCodeRemoteTests;
+			packageProductDependencies = (
+				6292B27C77667C828F3C55D4 /* OpenCodeDomain */,
+			);
+			productName = OpenCodeRemoteTests;
+			productReference = BA2341BA67C8B3947C411B46 /* OpenCodeRemoteTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		CFA7FD0106CC1A1AD8A8CD87 /* OpenCodeRemote */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B5398B6712B1DA1C836B924F /* Build configuration list for PBXNativeTarget "OpenCodeRemote" */;
+			buildPhases = (
+				634207BAE8F16F0A7A2493E9 /* Sources */,
+				EDDD3920843524927922A6B1 /* Resources */,
+				58EF7211137D78799968065D /* Frameworks */,
+				81DBB17DD342F0389B38EC80 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EE1C460E4344BB7D9BF692D3 /* PBXTargetDependency */,
+			);
+			name = OpenCodeRemote;
+			packageProductDependencies = (
+				5DB991BC744E6FA7F40F1E3E /* OpenCodeDomain */,
+				437A60895CC53C06DCB5DDAC /* OpenCodeStorage */,
+				072A738B11C02C6921C41986 /* OpenCodeTransport */,
+			);
+			productName = OpenCodeRemote;
+			productReference = C2F471708ABD498D52D76954 /* OpenCodeRemote.app */;
+			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		EB2AEDE030838FAC00B6979D /* Project object */ = {
+		38B197ECAC0D3113FB8A18BD /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2710;
-				LastUpgradeCheck = 2710;
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
 				TargetAttributes = {
-					EB2AEDE730838FAC00B6979D = {
-						CreatedOnToolsVersion = 27.1;
+					36C83A1B3A3A0F2EE34240CF = {
+						DevelopmentTeam = 4C8FWEBR8F;
+						ProvisioningStyle = Automatic;
 					};
-					EB2AEDF430838FAD00B6979D = {
-						CreatedOnToolsVersion = 27.1;
-						TestTargetID = EB2AEDE730838FAC00B6979D;
+					97E5AAF6D17E8412B321D091 = {
+						DevelopmentTeam = 4C8FWEBR8F;
+						ProvisioningStyle = Automatic;
+						TestTargetID = CFA7FD0106CC1A1AD8A8CD87;
 					};
-					EB2AEDFE30838FAD00B6979D = {
-						CreatedOnToolsVersion = 27.1;
-						TestTargetID = EB2AEDE730838FAC00B6979D;
+					C4DB739B41B197C69DDAF9F3 = {
+						DevelopmentTeam = 4C8FWEBR8F;
+						ProvisioningStyle = Automatic;
 					};
-					EB2AEE133083907700B6979D = {
-						CreatedOnToolsVersion = 27.1;
+					CFA7FD0106CC1A1AD8A8CD87 = {
+						DevelopmentTeam = 4C8FWEBR8F;
+						ProvisioningStyle = Automatic;
 					};
 				};
 			};
-			buildConfigurationList = EB2AEDE330838FAC00B6979D /* Build configuration list for PBXProject "OpenCodeRemote" */;
+			buildConfigurationList = 2934CC9A81984313C2CF5AEA /* Build configuration list for PBXProject "OpenCodeRemote" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
-				en,
 				Base,
+				en,
 			);
-			mainGroup = EB2AEDDF30838FAC00B6979D;
+			mainGroup = 72086E4195E42E91C8C60C07;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8B172E0FD006B223EA10CE9D /* XCLocalSwiftPackageReference "../Packages/OpenCodeKit" */,
+			);
 			preferredProjectObjectVersion = 77;
-			productRefGroup = EB2AEDE930838FAC00B6979D /* Products */;
+			productRefGroup = 3B7C8F982EB0B0AE1EDD4F01 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				EB2AEDE730838FAC00B6979D /* OpenCodeRemote */,
-				EB2AEDF430838FAD00B6979D /* OpenCodeRemoteTests */,
-				EB2AEDFE30838FAD00B6979D /* OpenCodeRemoteUITests */,
-				EB2AEE133083907700B6979D /* LocalPushProvider */,
+				CFA7FD0106CC1A1AD8A8CD87 /* OpenCodeRemote */,
+				36C83A1B3A3A0F2EE34240CF /* LocalPushProvider */,
+				C4DB739B41B197C69DDAF9F3 /* OpenCodeRemoteTests */,
+				97E5AAF6D17E8412B321D091 /* OpenCodeRemoteUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		EB2AEDE630838FAC00B6979D /* Resources */ = {
+		EDDD3920843524927922A6B1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				D6451336ED5676931929D181 /* Assets.xcassets in Resources */,
 			);
-		};
-		EB2AEDF330838FAD00B6979D /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			files = (
-			);
-		};
-		EB2AEDFD30838FAD00B6979D /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			files = (
-			);
-		};
-		EB2AEE123083907700B6979D /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			files = (
-			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		EB2AEDE430838FAC00B6979D /* Sources */ = {
+		552807DA9FDA3E911FC3FD6E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				29060FFAA490BF52E5CBF94F /* OpenCodePushProvider.swift in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EB2AEDF130838FAD00B6979D /* Sources */ = {
+		634207BAE8F16F0A7A2493E9 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				5CC7CD5B80C758016BD07AD8 /* ContentView.swift in Sources */,
+				8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EB2AEDFB30838FAD00B6979D /* Sources */ = {
+		CFA8B1BD04946F6E89AE95EA /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				60F482270C83E3E5C10A8ACA /* OpenCodeRemoteUITests.swift in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
-		EB2AEE103083907700B6979D /* Sources */ = {
+		DA0033A137A49D147013602A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
 			files = (
+				29C14B0551E936B987D1EFC2 /* OpenCodeRemoteTests.swift in Sources */,
 			);
+			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		EB2AEDF730838FAD00B6979D /* PBXTargetDependency */ = {
+		84E341515F4FF52FF92DBFC0 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = EB2AEDE730838FAC00B6979D /* OpenCodeRemote */;
-			targetProxy = EB2AEDF630838FAD00B6979D /* PBXContainerItemProxy */;
+			target = CFA7FD0106CC1A1AD8A8CD87 /* OpenCodeRemote */;
+			targetProxy = 732828392DF9AB3E569C2DF2 /* PBXContainerItemProxy */;
 		};
-		EB2AEE0130838FAD00B6979D /* PBXTargetDependency */ = {
+		AF7963DDE68A7DE17FE0CD2A /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = EB2AEDE730838FAC00B6979D /* OpenCodeRemote */;
-			targetProxy = EB2AEE0030838FAD00B6979D /* PBXContainerItemProxy */;
+			target = CFA7FD0106CC1A1AD8A8CD87 /* OpenCodeRemote */;
+			targetProxy = 0008FCF63646A7ADA0B69037 /* PBXContainerItemProxy */;
 		};
-		EB2AEE1A3083907700B6979D /* PBXTargetDependency */ = {
+		EE1C460E4344BB7D9BF692D3 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = EB2AEE133083907700B6979D /* LocalPushProvider */;
-			targetProxy = EB2AEE193083907700B6979D /* PBXContainerItemProxy */;
+			target = 36C83A1B3A3A0F2EE34240CF /* LocalPushProvider */;
+			targetProxy = BDA1A86FAD3870F413A15F81 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		EB2AEE0530838FAD00B6979D /* Debug configuration for PBXProject "OpenCodeRemote" */ = {
+		3DB8DFB0BE7EF5FE5C118207 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "OpenCode Remote";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemote";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		461BE384877D913CA2C8460D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				INFOPLIST_FILE = LocalPushProvider/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemote.LocalPushProvider";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		4B460609BA1E9E93DE399796 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				INFOPLIST_FILE = LocalPushProvider/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemote.LocalPushProvider";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		609A1491B2DFBBA8C9D3B90A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteTests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCodeRemote.app/OpenCodeRemote";
+			};
+			name = Debug;
+		};
+		6C80BEA10A03916B3D7C6E4E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "OpenCode Remote";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemote";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		9FEFD23F323176E350C7102B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteUITests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OpenCodeRemote;
+			};
+			name = Release;
+		};
+		B65EE44AB8DD5887A9D272C1 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
 				CLANG_ENABLE_OBJC_WEAK = YES;
@@ -366,18 +508,97 @@
 				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		DBFFADD48633155DC142DD22 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteUITests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = OpenCodeRemote;
+			};
+			name = Debug;
+		};
+		F768FBE28BE9C09C09A2E3DC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_PREPROCESSOR_DEFINITIONS = (
-					"DEBUG=1",
 					"$(inherited)",
+					"DEBUG=1",
 				);
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
 				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
@@ -385,385 +606,117 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		EB2AEE0630838FAD00B6979D /* Release configuration for PBXProject "OpenCodeRemote" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ALWAYS_SEARCH_USER_PATHS = NO;
-				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
-				CLANG_ANALYZER_NONNULL = YES;
-				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
-				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
-				CLANG_ENABLE_MODULES = YES;
-				CLANG_ENABLE_OBJC_ARC = YES;
-				CLANG_ENABLE_OBJC_WEAK = YES;
-				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
-				CLANG_WARN_BOOL_CONVERSION = YES;
-				CLANG_WARN_COMMA = YES;
-				CLANG_WARN_CONSTANT_CONVERSION = YES;
-				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
-				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
-				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
-				CLANG_WARN_EMPTY_BODY = YES;
-				CLANG_WARN_ENUM_CONVERSION = YES;
-				CLANG_WARN_INFINITE_RECURSION = YES;
-				CLANG_WARN_INT_CONVERSION = YES;
-				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
-				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
-				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
-				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
-				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
-				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
-				CLANG_WARN_STRICT_PROTOTYPES = YES;
-				CLANG_WARN_SUSPICIOUS_MOVE = YES;
-				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
-				CLANG_WARN_UNREACHABLE_CODE = YES;
-				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
-				COPY_PHASE_STRIP = NO;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_NS_ASSERTIONS = NO;
-				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				GCC_C_LANGUAGE_STANDARD = gnu17;
-				GCC_NO_COMMON_BLOCKS = YES;
-				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
-				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
-				GCC_WARN_UNDECLARED_SELECTOR = YES;
-				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
-				GCC_WARN_UNUSED_FUNCTION = YES;
-				GCC_WARN_UNUSED_VARIABLE = YES;
-				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				MTL_FAST_MATH = YES;
-				SWIFT_COMPILATION_MODE = wholemodule;
-			};
-			name = Release;
-		};
-		EB2AEE0830838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemote" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = OpenCodeRemote/OpenCodeRemote.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4C8FWEBR8F;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "";
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemote";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 27.0;
-			};
-			name = Debug;
-		};
-		EB2AEE0930838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemote" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = OpenCodeRemote/OpenCodeRemote.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4C8FWEBR8F;
-				ENABLE_APP_SANDBOX = YES;
-				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "";
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
-				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
-				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemote";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
-				SDKROOT = auto;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 27.0;
-			};
-			name = Release;
-		};
-		EB2AEE0B30838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemoteTests" */ = {
+		FBC5C06C86FDC74B655FFB57 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4C8FWEBR8F;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCodeRemote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenCodeRemote";
-				XROS_DEPLOYMENT_TARGET = 27.0;
-			};
-			name = Debug;
-		};
-		EB2AEE0C30838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemoteTests" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4C8FWEBR8F;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteTests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCodeRemote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenCodeRemote";
-				XROS_DEPLOYMENT_TARGET = 27.0;
-			};
-			name = Release;
-		};
-		EB2AEE0E30838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemoteUITests" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4C8FWEBR8F;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteUITests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_TARGET_NAME = OpenCodeRemote;
-				XROS_DEPLOYMENT_TARGET = 27.0;
-			};
-			name = Debug;
-		};
-		EB2AEE0F30838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemoteUITests" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4C8FWEBR8F;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteUITests";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				TEST_TARGET_NAME = OpenCodeRemote;
-				XROS_DEPLOYMENT_TARGET = 27.0;
-			};
-			name = Release;
-		};
-		EB2AEE1E3083907700B6979D /* Debug configuration for PBXNativeTarget "LocalPushProvider" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = LocalPushProvider/LocalPushProvider.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4C8FWEBR8F;
-				ENABLE_APP_SANDBOX = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = LocalPushProvider/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LocalPushProvider;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
+					"@loader_path/Frameworks",
 				);
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@executable_path/../../../../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.LocalPushProvider";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 27.0;
-			};
-			name = Debug;
-		};
-		EB2AEE1F3083907700B6979D /* Release configuration for PBXNativeTarget "LocalPushProvider" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = LocalPushProvider/LocalPushProvider.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 4C8FWEBR8F;
-				ENABLE_APP_SANDBOX = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = LocalPushProvider/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = LocalPushProvider;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
-				);
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
-					"$(inherited)",
-					"@executable_path/../Frameworks",
-					"@executable_path/../../../../Frameworks",
-				);
-				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.LocalPushProvider";
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				SKIP_INSTALL = YES;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
-				XROS_DEPLOYMENT_TARGET = 27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteTests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCodeRemote.app/OpenCodeRemote";
 			};
 			name = Release;
 		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		EB2AEDE330838FAC00B6979D /* Build configuration list for PBXProject "OpenCodeRemote" */ = {
+		2934CC9A81984313C2CF5AEA /* Build configuration list for PBXProject "OpenCodeRemote" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				EB2AEE0530838FAD00B6979D /* Debug configuration for PBXProject "OpenCodeRemote" */,
-				EB2AEE0630838FAD00B6979D /* Release configuration for PBXProject "OpenCodeRemote" */,
+				F768FBE28BE9C09C09A2E3DC /* Debug */,
+				B65EE44AB8DD5887A9D272C1 /* Release */,
 			);
-			defaultConfigurationName = Release;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
-		EB2AEE0730838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemote" */ = {
+		2B6200DC97B68B8B8D445BB0 /* Build configuration list for PBXNativeTarget "OpenCodeRemoteUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				EB2AEE0830838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemote" */,
-				EB2AEE0930838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemote" */,
+				DBFFADD48633155DC142DD22 /* Debug */,
+				9FEFD23F323176E350C7102B /* Release */,
 			);
-			defaultConfigurationName = Release;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
-		EB2AEE0A30838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemoteTests" */ = {
+		B5398B6712B1DA1C836B924F /* Build configuration list for PBXNativeTarget "OpenCodeRemote" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				EB2AEE0B30838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemoteTests" */,
-				EB2AEE0C30838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemoteTests" */,
+				6C80BEA10A03916B3D7C6E4E /* Debug */,
+				3DB8DFB0BE7EF5FE5C118207 /* Release */,
 			);
-			defaultConfigurationName = Release;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
-		EB2AEE0D30838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemoteUITests" */ = {
+		BFDD231E20864FCBD3C7996E /* Build configuration list for PBXNativeTarget "OpenCodeRemoteTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				EB2AEE0E30838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemoteUITests" */,
-				EB2AEE0F30838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemoteUITests" */,
+				609A1491B2DFBBA8C9D3B90A /* Debug */,
+				FBC5C06C86FDC74B655FFB57 /* Release */,
 			);
-			defaultConfigurationName = Release;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
-		EB2AEE1D3083907700B6979D /* Build configuration list for PBXNativeTarget "LocalPushProvider" */ = {
+		EF6DFC7D9346F203B0FD3551 /* Build configuration list for PBXNativeTarget "LocalPushProvider" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				EB2AEE1E3083907700B6979D /* Debug configuration for PBXNativeTarget "LocalPushProvider" */,
-				EB2AEE1F3083907700B6979D /* Release configuration for PBXNativeTarget "LocalPushProvider" */,
+				4B460609BA1E9E93DE399796 /* Debug */,
+				461BE384877D913CA2C8460D /* Release */,
 			);
-			defaultConfigurationName = Release;
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		8B172E0FD006B223EA10CE9D /* XCLocalSwiftPackageReference "../Packages/OpenCodeKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/OpenCodeKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		072A738B11C02C6921C41986 /* OpenCodeTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenCodeTransport;
+		};
+		437A60895CC53C06DCB5DDAC /* OpenCodeStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenCodeStorage;
+		};
+		5DB991BC744E6FA7F40F1E3E /* OpenCodeDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenCodeDomain;
+		};
+		6292B27C77667C828F3C55D4 /* OpenCodeDomain */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenCodeDomain;
+		};
+		EB4EF03F4434199B28DE0C87 /* OpenCodeTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OpenCodeTransport;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
-	rootObject = EB2AEDE030838FAC00B6979D /* Project object */;
-	validationLevel = 1;
+	rootObject = 38B197ECAC0D3113FB8A18BD /* Project object */;
 }

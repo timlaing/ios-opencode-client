@@ -1,21 +1,65 @@
-//
-//  ContentView.swift
-//  OpenCodeRemote
-//
-//  Created by Tim Laing on 17/10/2026.
-//
-
 import SwiftUI
 
+/// Root navigation shell: Projects, Sessions, Settings (docs/navigation-screens.md).
+/// Screens are populated in follow-up slices; the tabs currently show honest
+/// empty states.
 struct ContentView: View {
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        TabView {
+            ProjectsTab()
+                .tabItem { Label("Projects", systemImage: "folder") }
+            SessionsTab()
+                .tabItem { Label("Sessions", systemImage: "bubble.left.and.bubble.right") }
+            SettingsTab()
+                .tabItem { Label("Settings", systemImage: "gearshape") }
         }
-        .padding()
+    }
+}
+
+private struct ProjectsTab: View {
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(
+                "No Hosts Configured",
+                systemImage: "server.rack",
+                description: Text("Add an OpenCode host over HTTPS to browse its projects.")
+            )
+            .navigationTitle("Projects")
+        }
+    }
+}
+
+private struct SessionsTab: View {
+    var body: some View {
+        NavigationStack {
+            ContentUnavailableView(
+                "No Sessions",
+                systemImage: "bubble.left.and.bubble.right",
+                description: Text("Sessions from your configured hosts appear here.")
+            )
+            .navigationTitle("Sessions")
+        }
+    }
+}
+
+private struct SettingsTab: View {
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    LabeledContent("Version", value: appVersion)
+                }
+                Section("Not Yet Implemented") {
+                    Text("Hosts, appearance, privacy, and storage settings arrive with follow-up slices.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .navigationTitle("Settings")
+        }
     }
 }
 

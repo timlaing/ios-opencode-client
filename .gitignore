@@ -12,3 +12,6 @@ xcuserdata/
 *.moved-aside
 .swiftpm/
 .netrc
+
+# SPM build cache (per-package .build dirs)
+.build/

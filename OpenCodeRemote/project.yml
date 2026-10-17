@@ -1,0 +1,98 @@
+# XcodeGen spec — source of truth for OpenCodeRemote.xcodeproj.
+# Run `xcodegen generate` in this directory after editing; never hand-edit the pbxproj.
+name: OpenCodeRemote
+options:
+  bundleIdPrefix: uk.co.laingcorp.opencode-client
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    DEVELOPMENT_TEAM: 4C8FWEBR8F
+    CODE_SIGN_STYLE: Automatic
+    SWIFT_VERSION: "5.0" # language mode 5 on the Swift 6.x compiler; revisit for Swift 6 strict concurrency
+    TARGETED_DEVICE_FAMILY: "1,2"
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    SUPPORTS_MACCATALYST: "NO"
+    IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+packages:
+  OpenCodeKit:
+    path: ../Packages/OpenCodeKit
+targets:
+  OpenCodeRemote:
+    type: application
+    platform: iOS
+    sources:
+      - path: OpenCodeRemote
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.laingcorp.opencode-client.OpenCodeRemote
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: OpenCode Remote
+        INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
+    dependencies:
+      - target: LocalPushProvider
+        embed: true
+      - package: OpenCodeKit
+        product: OpenCodeDomain
+      - package: OpenCodeKit
+        product: OpenCodeStorage
+      - package: OpenCodeKit
+        product: OpenCodeTransport
+  LocalPushProvider:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: LocalPushProvider
+        excludes:
+          - Info.plist
+    info:
+      path: LocalPushProvider/Info.plist
+      properties:
+        CFBundleDisplayName: LocalPushProvider
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.networkextension.app-push
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).OpenCodePushProvider
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: uk.co.laingcorp.opencode-client.OpenCodeRemote.LocalPushProvider
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+        SKIP_INSTALL: "YES"
+    dependencies:
+      - package: OpenCodeKit
+        product: OpenCodeTransport
+  OpenCodeRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: OpenCodeRemoteTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+    dependencies:
+      - target: OpenCodeRemote
+      - package: OpenCodeKit
+        product: OpenCodeDomain
+  OpenCodeRemoteUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: OpenCodeRemoteUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_TARGET_NAME: OpenCodeRemote
+    dependencies:
+      - target: OpenCodeRemote
+schemes:
+  OpenCodeRemote:
+    build:
+      targets:
+        OpenCodeRemote: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OpenCodeRemoteTests
+        # OpenCodeKitTests (package) runs via `swift test --package-path ../Packages/OpenCodeKit`
