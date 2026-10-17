@@ -12,25 +12,26 @@ struct ConnectHostView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            // Transparent form over one screen-sized, clipped background; the
+            // image is a background so it never affects the form's layout.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    labeledField("Pairing link", text: $pairingLink, placeholder: "Paste the pairing link from your host")
+                    labeledField("Display name (optional)", text: $displayName, placeholder: "e.g. Home server")
+                    Text("Connect is unavailable until the pairing transport ships in a follow-up build slice. Nothing is sent from this screen.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background {
                 Image("ConnectBackground")
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: .fill)
+                    .clipped()
                     .ignoresSafeArea()
-
-                ScrollView {
-                    VStack(spacing: 16) {
-                        labeledField("Pairing link", text: $pairingLink, placeholder: "Paste the pairing link from your host")
-                        labeledField("Display name (optional)", text: $displayName, placeholder: "e.g. Home server")
-                        Text("Connect is unavailable until the pairing transport ships in a follow-up build slice. Nothing is sent from this screen.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(20)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .padding(.horizontal, 20)
-                }
-                .scrollDismissesKeyboard(.interactively)
             }
             .navigationTitle("Connect Host")
             .navigationBarTitleDisplayMode(.inline)
