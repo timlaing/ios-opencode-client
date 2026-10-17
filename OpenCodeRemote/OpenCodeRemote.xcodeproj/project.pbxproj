@@ -1,0 +1,769 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 110;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		EB2AEE1B3083907700B6979D /* LocalPushProvider.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = EB2AEE143083907700B6979D /* LocalPushProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		EB2AEDF630838FAD00B6979D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EB2AEDE030838FAC00B6979D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EB2AEDE730838FAC00B6979D;
+			remoteInfo = OpenCodeRemote;
+		};
+		EB2AEE0030838FAD00B6979D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EB2AEDE030838FAC00B6979D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EB2AEDE730838FAC00B6979D;
+			remoteInfo = OpenCodeRemote;
+		};
+		EB2AEE193083907700B6979D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = EB2AEDE030838FAC00B6979D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EB2AEE133083907700B6979D;
+			remoteInfo = LocalPushProvider;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		EB2AEE203083907700B6979D /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolder = Product;
+			files = (
+				EB2AEE1B3083907700B6979D /* LocalPushProvider.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		EB2AEDE830838FAC00B6979D /* OpenCodeRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenCodeRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EB2AEDF530838FAD00B6979D /* OpenCodeRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenCodeRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EB2AEDFF30838FAD00B6979D /* OpenCodeRemoteUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OpenCodeRemoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		EB2AEE143083907700B6979D /* LocalPushProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = LocalPushProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		EB2AEE1C3083907700B6979D /* Exceptions for "LocalPushProvider" folder in "LocalPushProvider" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = EB2AEE133083907700B6979D /* LocalPushProvider */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		EB2AEDEA30838FAC00B6979D /* OpenCodeRemote */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OpenCodeRemote;
+			sourceTree = "<group>";
+		};
+		EB2AEDF830838FAD00B6979D /* OpenCodeRemoteTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OpenCodeRemoteTests;
+			sourceTree = "<group>";
+		};
+		EB2AEE0230838FAD00B6979D /* OpenCodeRemoteUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OpenCodeRemoteUITests;
+			sourceTree = "<group>";
+		};
+		EB2AEE153083907700B6979D /* LocalPushProvider */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				EB2AEE1C3083907700B6979D /* Exceptions for "LocalPushProvider" folder in "LocalPushProvider" target */,
+			);
+			path = LocalPushProvider;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		EB2AEDE530838FAC00B6979D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		EB2AEDF230838FAD00B6979D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		EB2AEDFC30838FAD00B6979D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+		EB2AEE113083907700B6979D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		EB2AEDDF30838FAC00B6979D = {
+			isa = PBXGroup;
+			children = (
+				EB2AEDEA30838FAC00B6979D /* OpenCodeRemote */,
+				EB2AEDF830838FAD00B6979D /* OpenCodeRemoteTests */,
+				EB2AEE0230838FAD00B6979D /* OpenCodeRemoteUITests */,
+				EB2AEE153083907700B6979D /* LocalPushProvider */,
+				EB2AEDE930838FAC00B6979D /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		EB2AEDE930838FAC00B6979D /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				EB2AEDE830838FAC00B6979D /* OpenCodeRemote.app */,
+				EB2AEDF530838FAD00B6979D /* OpenCodeRemoteTests.xctest */,
+				EB2AEDFF30838FAD00B6979D /* OpenCodeRemoteUITests.xctest */,
+				EB2AEE143083907700B6979D /* LocalPushProvider.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		EB2AEDE730838FAC00B6979D /* OpenCodeRemote */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB2AEE0730838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemote" */;
+			buildPhases = (
+				EB2AEDE430838FAC00B6979D /* Sources */,
+				EB2AEDE530838FAC00B6979D /* Frameworks */,
+				EB2AEDE630838FAC00B6979D /* Resources */,
+				EB2AEE203083907700B6979D /* Embed ExtensionKit Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EB2AEE1A3083907700B6979D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				EB2AEDEA30838FAC00B6979D /* OpenCodeRemote */,
+			);
+			name = OpenCodeRemote;
+			productName = OpenCodeRemote;
+			productReference = EB2AEDE830838FAC00B6979D /* OpenCodeRemote.app */;
+			productType = "com.apple.product-type.application";
+		};
+		EB2AEDF430838FAD00B6979D /* OpenCodeRemoteTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB2AEE0A30838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemoteTests" */;
+			buildPhases = (
+				EB2AEDF130838FAD00B6979D /* Sources */,
+				EB2AEDF230838FAD00B6979D /* Frameworks */,
+				EB2AEDF330838FAD00B6979D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EB2AEDF730838FAD00B6979D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				EB2AEDF830838FAD00B6979D /* OpenCodeRemoteTests */,
+			);
+			name = OpenCodeRemoteTests;
+			productName = OpenCodeRemoteTests;
+			productReference = EB2AEDF530838FAD00B6979D /* OpenCodeRemoteTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		EB2AEDFE30838FAD00B6979D /* OpenCodeRemoteUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB2AEE0D30838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemoteUITests" */;
+			buildPhases = (
+				EB2AEDFB30838FAD00B6979D /* Sources */,
+				EB2AEDFC30838FAD00B6979D /* Frameworks */,
+				EB2AEDFD30838FAD00B6979D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				EB2AEE0130838FAD00B6979D /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				EB2AEE0230838FAD00B6979D /* OpenCodeRemoteUITests */,
+			);
+			name = OpenCodeRemoteUITests;
+			productName = OpenCodeRemoteUITests;
+			productReference = EB2AEDFF30838FAD00B6979D /* OpenCodeRemoteUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		EB2AEE133083907700B6979D /* LocalPushProvider */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EB2AEE1D3083907700B6979D /* Build configuration list for PBXNativeTarget "LocalPushProvider" */;
+			buildPhases = (
+				EB2AEE103083907700B6979D /* Sources */,
+				EB2AEE113083907700B6979D /* Frameworks */,
+				EB2AEE123083907700B6979D /* Resources */,
+			);
+			buildRules = (
+			);
+			fileSystemSynchronizedGroups = (
+				EB2AEE153083907700B6979D /* LocalPushProvider */,
+			);
+			name = LocalPushProvider;
+			productName = LocalPushProvider;
+			productReference = EB2AEE143083907700B6979D /* LocalPushProvider.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		EB2AEDE030838FAC00B6979D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2710;
+				LastUpgradeCheck = 2710;
+				TargetAttributes = {
+					EB2AEDE730838FAC00B6979D = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					EB2AEDF430838FAD00B6979D = {
+						CreatedOnToolsVersion = 27.1;
+						TestTargetID = EB2AEDE730838FAC00B6979D;
+					};
+					EB2AEDFE30838FAD00B6979D = {
+						CreatedOnToolsVersion = 27.1;
+						TestTargetID = EB2AEDE730838FAC00B6979D;
+					};
+					EB2AEE133083907700B6979D = {
+						CreatedOnToolsVersion = 27.1;
+					};
+				};
+			};
+			buildConfigurationList = EB2AEDE330838FAC00B6979D /* Build configuration list for PBXProject "OpenCodeRemote" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = EB2AEDDF30838FAC00B6979D;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = EB2AEDE930838FAC00B6979D /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				EB2AEDE730838FAC00B6979D /* OpenCodeRemote */,
+				EB2AEDF430838FAD00B6979D /* OpenCodeRemoteTests */,
+				EB2AEDFE30838FAD00B6979D /* OpenCodeRemoteUITests */,
+				EB2AEE133083907700B6979D /* LocalPushProvider */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		EB2AEDE630838FAC00B6979D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		EB2AEDF330838FAD00B6979D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		EB2AEDFD30838FAD00B6979D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+		EB2AEE123083907700B6979D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		EB2AEDE430838FAC00B6979D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		EB2AEDF130838FAD00B6979D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		EB2AEDFB30838FAD00B6979D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+		EB2AEE103083907700B6979D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		EB2AEDF730838FAD00B6979D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EB2AEDE730838FAC00B6979D /* OpenCodeRemote */;
+			targetProxy = EB2AEDF630838FAD00B6979D /* PBXContainerItemProxy */;
+		};
+		EB2AEE0130838FAD00B6979D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EB2AEDE730838FAC00B6979D /* OpenCodeRemote */;
+			targetProxy = EB2AEE0030838FAD00B6979D /* PBXContainerItemProxy */;
+		};
+		EB2AEE1A3083907700B6979D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EB2AEE133083907700B6979D /* LocalPushProvider */;
+			targetProxy = EB2AEE193083907700B6979D /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		EB2AEE0530838FAD00B6979D /* Debug configuration for PBXProject "OpenCodeRemote" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		EB2AEE0630838FAD00B6979D /* Release configuration for PBXProject "OpenCodeRemote" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		EB2AEE0830838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemote" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = OpenCodeRemote/OpenCodeRemote.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemote";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		EB2AEE0930838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemote" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = OpenCodeRemote/OpenCodeRemote.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphoneos*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphonesimulator*]" = YES;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphoneos*]" = UIStatusBarStyleDefault;
+				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemote";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		EB2AEE0B30838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemoteTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCodeRemote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenCodeRemote";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		EB2AEE0C30838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemoteTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OpenCodeRemote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/OpenCodeRemote";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		EB2AEE0E30838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemoteUITests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = OpenCodeRemote;
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		EB2AEE0F30838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemoteUITests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.OpenCodeRemoteUITests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				TEST_TARGET_NAME = OpenCodeRemote;
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+		EB2AEE1E3083907700B6979D /* Debug configuration for PBXNativeTarget "LocalPushProvider" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LocalPushProvider/LocalPushProvider.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LocalPushProvider/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = LocalPushProvider;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.LocalPushProvider";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Debug;
+		};
+		EB2AEE1F3083907700B6979D /* Release configuration for PBXNativeTarget "LocalPushProvider" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = LocalPushProvider/LocalPushProvider.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 4C8FWEBR8F;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LocalPushProvider/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = LocalPushProvider;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "uk.co.laingcorp.opencode-client.LocalPushProvider";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2,7";
+				XROS_DEPLOYMENT_TARGET = 27.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		EB2AEDE330838FAC00B6979D /* Build configuration list for PBXProject "OpenCodeRemote" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB2AEE0530838FAD00B6979D /* Debug configuration for PBXProject "OpenCodeRemote" */,
+				EB2AEE0630838FAD00B6979D /* Release configuration for PBXProject "OpenCodeRemote" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		EB2AEE0730838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemote" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB2AEE0830838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemote" */,
+				EB2AEE0930838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemote" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		EB2AEE0A30838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemoteTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB2AEE0B30838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemoteTests" */,
+				EB2AEE0C30838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemoteTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		EB2AEE0D30838FAD00B6979D /* Build configuration list for PBXNativeTarget "OpenCodeRemoteUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB2AEE0E30838FAD00B6979D /* Debug configuration for PBXNativeTarget "OpenCodeRemoteUITests" */,
+				EB2AEE0F30838FAD00B6979D /* Release configuration for PBXNativeTarget "OpenCodeRemoteUITests" */,
+			);
+			defaultConfigurationName = Release;
+		};
+		EB2AEE1D3083907700B6979D /* Build configuration list for PBXNativeTarget "LocalPushProvider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EB2AEE1E3083907700B6979D /* Debug configuration for PBXNativeTarget "LocalPushProvider" */,
+				EB2AEE1F3083907700B6979D /* Release configuration for PBXNativeTarget "LocalPushProvider" */,
+			);
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = EB2AEDE030838FAC00B6979D /* Project object */;
+	validationLevel = 1;
+}

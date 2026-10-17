@@ -3,3 +3,12 @@ __pycache__/
 .DS_Store
 .venv/
 .mock-local/
+
+# Xcode / Swift
+Build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+.swiftpm/
+.netrc
