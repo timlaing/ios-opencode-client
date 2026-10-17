@@ -142,7 +142,17 @@ final class HostLibrary {
         }
     }
 
+    /// The shared store directory — the same location the local-push
+    /// extension resolves (docs/local-push-implementation.md §"Architecture
+    /// and ownership"), so both processes see one host registry. Falls back
+    /// to the app's own Application Support directory until the App Group
+    /// entitlement exists; that future path change needs a one-time
+    /// migration (see SharedStoreLocation's note for the entitlement slice).
     private static var databaseDirectory: URL {
+        (try? SharedStoreLocation.directory()) ?? appLocalFallback
+    }
+
+    private static var appLocalFallback: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
         return base.appendingPathComponent("OpenCodeRemote", isDirectory: true)

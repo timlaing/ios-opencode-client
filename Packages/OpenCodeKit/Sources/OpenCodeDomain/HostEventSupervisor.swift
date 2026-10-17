@@ -184,7 +184,6 @@ public actor HostEventSupervisor {
                 await publish(.establishing, generation: generation)
                 let credential = try await environment.credential()
                 let stream = environment.makeTransport(host.address, credential).events()
-                attempt = 0
                 var reconciled = false
                 for try await event in stream {
                     guard generation == self.generation else { return }
@@ -192,6 +191,10 @@ public actor HostEventSupervisor {
                     diagnostics.lastEventAt = environment.now()
                     if event.type == "server.connected", !reconciled {
                         reconciled = true
+                        // Only a proven connection resets the retry counter;
+                        // failures without a connect keep growing the
+                        // backoff (docs/local-push-implementation.md §5).
+                        attempt = 0
                         await publish(.available, generation: generation)
                         await callbacks.onReconnect()
                     }

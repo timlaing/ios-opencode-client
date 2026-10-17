@@ -129,6 +129,32 @@ final class ProjectServiceTests: XCTestCase {
         XCTAssertTrue(recorder.requests.isEmpty, "invalid names never reach the host")
     }
 
+    func testCreateProjectAtRootKeepsSlashAsLocation() async throws {
+        let recorder = Recorder()
+        let writeBody = #"{"location":{"directory":"/"},"data":{"path":"/Telescope/opencode.jsonc"}}"#
+        let resolveBody = #"{"directory":"/Telescope","project":{"id":"p","directory":"/Telescope","canonical":"/Telescope"}}"#
+        let resolved = try await service([
+            "experimental.fs.write": .success(json(writeBody)),
+            "location.get": .success(json(resolveBody)),
+        ], recorder: recorder).createProject(at: host, credential: credential, parentDirectory: "/", name: "Telescope")
+
+        XCTAssertEqual(resolved.directory, "/Telescope")
+        XCTAssertEqual(
+            recorder.requests[0].query.first,
+            QueryPair(key: "location[directory]", value: "/"),
+            "root parent must stay \"/\", never the empty string"
+        )
+        XCTAssertEqual(
+            recorder.requests[0].query.last,
+            QueryPair(key: "path", value: "/Telescope/opencode.jsonc"),
+            "no double slash when joining at the root"
+        )
+        XCTAssertEqual(
+            recorder.requests[1].query.first,
+            QueryPair(key: "location[directory]", value: "/Telescope")
+        )
+    }
+
     func testFolderNameAcceptsOrdinaryUnicode() throws {
         XCTAssertEqual(try FolderName.validate("  Café ünïcode  "), "Café ünïcode")
         XCTAssertEqual(try FolderName.validate("プロジェクト"), "プロジェクト")

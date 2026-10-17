@@ -288,6 +288,23 @@ final class HostEventSupervisorTests: XCTestCase {
 
     // MARK: - Backoff math
 
+    func testBackoffGrowsWhenConnectNeverProvesItself() async throws {
+        // Failures that never reach server.connected must NOT reset the
+        // retry counter, or a dead host would retry ~1s forever.
+        let env = makeSupervisor(scripts: [
+            .fail(.connectionFailed("dns down")),
+            .fail(.connectionFailed("dns down")),
+            .finish([connected()]),
+        ])
+        await env.supervisor.start()
+        try await waitUntil("third attempt reached") { env.transport.connectCount >= 3 }
+
+        let delays = env.sleeper.recorded
+        XCTAssertGreaterThanOrEqual(delays.count, 2, "backoff recorded before each retry")
+        XCTAssertEqual(delays[0], .seconds(1), "first failure: 1s")
+        XCTAssertEqual(delays[1], .seconds(2), "second unproven failure: 2s (backoff grows)")
+    }
+
     func testBackoffStaysWithinDocumentedBounds() {
         for attempt in 1...12 {
             for jitter in [0.0, 0.25, 0.5, 0.75, 1.0] {

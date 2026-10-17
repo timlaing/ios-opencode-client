@@ -291,6 +291,19 @@ private struct ProjectsTab: View {
 
     private var projectList: some View {
         List {
+            if !visibleErrors.isEmpty {
+                Section("Host Status") {
+                    ForEach(visibleErrors, id: \.name) { error in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(error.name)
+                                .font(.caption.weight(.medium))
+                            Text(error.message)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+            }
             if !projects.recentLocations.isEmpty, searchText.isEmpty {
                 Section("Recent Folders") {
                     ForEach(Array(projects.recentLocations.enumerated()), id: \.offset) { _, item in
@@ -310,11 +323,7 @@ private struct ProjectsTab: View {
                     ContentUnavailableView(
                         searchText.isEmpty ? "No Projects" : "No Matches",
                         systemImage: "folder",
-                        description: Text(
-                            searchText.isEmpty
-                                ? "This host has no projects yet. Use Open Unlisted Folder or New Project."
-                                : "No project name or path matches “\(searchText)”."
-                        )
+                        description: Text(emptyStateDescription)
                     )
                 }
             } else {
@@ -328,6 +337,27 @@ private struct ProjectsTab: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color("AppBackgroundColor"))
+    }
+
+    /// Host load failures relevant to the current filter (missing
+    /// credential, unreachable host) — never rendered as "no projects".
+    private var visibleErrors: [(name: String, message: String)] {
+        library.entries
+            .filter { hostFilter == nil || $0.id == hostFilter }
+            .compactMap { entry in
+                guard let message = projects.errorsByHost[entry.id] else { return nil }
+                return (entry.host.displayName, message)
+            }
+    }
+
+    private var emptyStateDescription: String {
+        if !searchText.isEmpty {
+            return "No project name or path matches “\(searchText)”."
+        }
+        if !visibleErrors.isEmpty {
+            return "Some hosts could not list projects — see Host Status above."
+        }
+        return "This host has no projects yet. Use Open Unlisted Folder or New Project."
     }
 
     @ViewBuilder

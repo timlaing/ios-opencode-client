@@ -97,8 +97,12 @@ public struct ProjectService: Sendable {
         name rawName: String
     ) async throws -> ResolvedLocation {
         let name = try FolderName.validate(rawName)
-        let parent = parentDirectory.hasSuffix("/") ? String(parentDirectory.dropLast()) : parentDirectory
-        let targetDirectory = parent + "/" + name
+        // Keep "/" as the root parent; only strip trailing slashes from
+        // deeper paths, and never emit a double slash when joining.
+        let parent = parentDirectory.count > 1 && parentDirectory.hasSuffix("/")
+            ? String(parentDirectory.dropLast())
+            : parentDirectory
+        let targetDirectory = parent == "/" ? "/" + name : parent + "/" + name
         _ = try await makeTransport(host)
             .perform(W02Requests.writeFile(
                 directory: parent,

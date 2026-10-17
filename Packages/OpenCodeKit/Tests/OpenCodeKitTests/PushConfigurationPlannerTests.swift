@@ -93,4 +93,45 @@ final class PushConfigurationPlannerTests: XCTestCase {
         XCTAssertEqual(planA, planB)
         XCTAssertEqual(planA.upserts.map(\.ssid), ["Alpha", "Zulu"])
     }
+
+    func testPlanMergesDuplicateSSIDsFromStalePreferences() {
+        // Persisted preferences can hold duplicates after an interrupted
+        // save; planning must not trap on them.
+        let current = [
+            ManagedPushConfiguration(ssid: "Home", hostIDs: ["host_a"], revision: 1),
+            ManagedPushConfiguration(ssid: "Home", hostIDs: ["host_b"], revision: 1),
+        ]
+        let plan = PushConfigurationPlanner.plan(desired: ["Home": ["host_a"]], current: current, revision: 2)
+        XCTAssertEqual(
+            plan.upserts.map(\.ssid), ["Home"],
+            "duplicate SSIDs are dirty: one rewrite reconciles them"
+        )
+        XCTAssertEqual(plan.removals, [])
+    }
+
+    func testFollowedSessionChangesTriggerUpsert() {
+        let desired = ["Home": ["host_a"]]
+        let current = [ManagedPushConfiguration(ssid: "Home", hostIDs: ["host_a"], revision: 1)]
+
+        let unchanged = PushConfigurationPlanner.plan(desired: desired, current: current, revision: 2, followedSessions: [])
+        XCTAssertTrue(unchanged.isEmpty, "nothing changed -> no manager write")
+
+        let followed = PushConfigurationPlanner.plan(
+            desired: desired,
+            current: current,
+            revision: 2,
+            followedSessions: ["ses_1"]
+        )
+        XCTAssertEqual(
+            followed.upserts,
+            [ManagedPushConfiguration(ssid: "Home", hostIDs: ["host_a"], revision: 2, followedSessions: ["ses_1"])],
+            "a follow/unfollow propagates to the extension payload"
+        )
+    }
+
+    func testPayloadDecodesLegacyJSONWithoutFollowedSessionsAsEmpty() throws {
+        let legacy = #"{"schemaVersion":1,"revision":4,"hostIDs":["host_a"]}"#
+        let payload = try JSONDecoder().decode(PushProviderConfiguration.self, from: Data(legacy.utf8))
+        XCTAssertEqual(payload.followedSessions, [], "absence means nothing followed, not a decode failure")
+    }
 }

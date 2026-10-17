@@ -33,6 +33,11 @@ final class LocalPushConfigurationController {
     private var queued: [LocalPushHostEligibility]?
     private(set) var lastFailure: String?
     private(set) var revision = 0
+    /// Sessions followed across hosts, propagated to the local-push
+    /// extension through the manager payload. Populated by the app's
+    /// session workflows (W03+); empty means "notify nothing yet", which
+    /// is the correct default until those flows exist.
+    var followedSessions: [String] = []
 
     init(adapter: PushManagerAdapter, settleDelay: TimeInterval = 0.5) {
         self.adapter = adapter
@@ -70,7 +75,12 @@ final class LocalPushConfigurationController {
         revision += 1
         let desired = PushConfigurationPlanner.desiredState(from: eligibility)
         let current = try await adapter.loadAll()
-        let plan = PushConfigurationPlanner.plan(desired: desired, current: current, revision: revision)
+        let plan = PushConfigurationPlanner.plan(
+            desired: desired,
+            current: current,
+            revision: revision,
+            followedSessions: followedSessions
+        )
         for ssid in plan.removals {
             try await adapter.remove(ssid: ssid)
         }
@@ -113,22 +123,36 @@ final class NEAppPushManagerAdapter: PushManagerAdapter {
                       let data = manager.providerConfiguration["payload"] as? Data,
                       let payload = try? JSONDecoder().decode(PushProviderConfiguration.self, from: data)
                 else { return nil }
-                return ManagedPushConfiguration(ssid: ssid, hostIDs: payload.hostIDs, revision: payload.revision)
+                return ManagedPushConfiguration(
+                    ssid: ssid,
+                    hostIDs: payload.hostIDs,
+                    revision: payload.revision,
+                    followedSessions: payload.followedSessions
+                )
             }
     }
 
     func save(_ configuration: ManagedPushConfiguration) async throws {
-        let existing = try await loadAllManagers().first {
+        let matches = try await loadAllManagers().filter {
             $0.providerBundleIdentifier == providerBundleIdentifier && $0.matchSSIDs.first == configuration.ssid
         }
-        let manager = existing ?? NEAppPushManager()
+        // Stale preferences can hold duplicates for one SSID (interrupted
+        // save): keep the first, remove the rest so the rewrite reconciles.
+        for extra in matches.dropFirst() {
+            try await removeFromPreferences(extra)
+        }
+        let manager = matches.first ?? NEAppPushManager()
         manager.providerBundleIdentifier = providerBundleIdentifier
         manager.localizedDescription = "OpenCode Client — \(configuration.ssid)"
         manager.matchSSIDs = [configuration.ssid]
         manager.isEnabled = true
         var providerConfiguration = manager.providerConfiguration
         providerConfiguration["payload"] = try JSONEncoder().encode(
-            PushProviderConfiguration(revision: configuration.revision, hostIDs: configuration.hostIDs)
+            PushProviderConfiguration(
+                revision: configuration.revision,
+                hostIDs: configuration.hostIDs,
+                followedSessions: configuration.followedSessions
+            )
         )
         manager.providerConfiguration = providerConfiguration
         try await saveToPreferences(manager)

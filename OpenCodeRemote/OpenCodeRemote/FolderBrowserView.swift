@@ -2,6 +2,41 @@ import SwiftUI
 import OpenCodeDomain
 import OpenCodeTransport
 
+/// Pure navigation state for the S05 folder browser.
+///
+/// Entry paths from `fs.list`/`fs.find` are **relative to the reviewed
+/// location** (docs/api-contract.md W02), so descending REPLACES the level
+/// path instead of appending to it — otherwise the second level duplicates
+/// path segments (`src` + `src/lib`). Root handling keeps `"/"` intact.
+struct FolderNavigation: Equatable {
+    /// Location-relative path of the current level (`""` = the location).
+    var current = ""
+    private(set) var stack: [String] = []
+
+    var canGoUp: Bool { !stack.isEmpty }
+
+    /// Entry paths are location-relative: the new level path is the entry
+    /// path itself.
+    mutating func descend(to locationRelativePath: String) {
+        stack.append(current)
+        current = locationRelativePath
+    }
+
+    mutating func goUp() {
+        current = stack.popLast() ?? ""
+    }
+
+    /// Absolute path of a location-relative level, preserving `"/"` as the
+    /// root and never emitting a double slash.
+    static func absolute(of relative: String, startDirectory: String) -> String {
+        let root = startDirectory.count > 1 && startDirectory.hasSuffix("/")
+            ? String(startDirectory.dropLast())
+            : startDirectory
+        if relative.isEmpty { return root }
+        return root == "/" ? "/" + relative : root + "/" + relative
+    }
+}
+
 /// S05 Folder browser (docs/navigation-screens.md): remote directories with
 /// parent navigation, directory-only selection, filename search, and
 /// readable permission/network errors. Entries are relative to the reviewed
@@ -17,9 +52,7 @@ struct FolderBrowserView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var service = ProjectService(makeTransport: { URLSessionTransport(baseURL: $0) })
-    /// Path levels visited below `startDirectory` (relative, `""` = root).
-    @State private var stack: [String] = []
-    @State private var current = ""
+    @State private var navigation = FolderNavigation()
     @State private var entries: [FileSystemEntry] = []
     @State private var searchText = ""
     @State private var searchResults: [FileSystemEntry]?
@@ -41,7 +74,7 @@ struct FolderBrowserView: View {
                     entryList
                 }
             }
-            .navigationTitle(current.isEmpty ? lastPathSegment(startDirectory) : lastPathSegment(current))
+            .navigationTitle(navigation.current.isEmpty ? lastPathSegment(startDirectory) : lastPathSegment(navigation.current))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -73,7 +106,7 @@ struct FolderBrowserView: View {
                 NewProjectView(
                     host: host,
                     credential: credential,
-                    parentDirectory: absolutePath(of: current)
+                    parentDirectory: currentAbsolutePath
                 ) { resolved in
                     showingNewFolder = false
                     onChoose(resolved)
@@ -87,13 +120,17 @@ struct FolderBrowserView: View {
         }
     }
 
+    private var currentAbsolutePath: String {
+        FolderNavigation.absolute(of: navigation.current, startDirectory: startDirectory)
+    }
+
     private var entryList: some View {
         List {
-            if !current.isEmpty {
+            if navigation.canGoUp {
                 Button {
                     Task { await goUp() }
                 } label: {
-                    Label("Back to \(lastPathSegment(parentOf(current)))", systemImage: "arrow.up")
+                    Label("Back to \(lastPathSegment(parentOf(navigation.current)))", systemImage: "arrow.up")
                 }
             }
             if let searchResults {
@@ -141,7 +178,7 @@ struct FolderBrowserView: View {
                 at: host.address,
                 credential: credential,
                 directory: startDirectory,
-                path: current.isEmpty ? "." : current
+                path: navigation.current.isEmpty ? "." : navigation.current
             )
             .sorted { lhs, rhs in
                 if lhs.type != rhs.type { return lhs.type == .directory }
@@ -153,14 +190,14 @@ struct FolderBrowserView: View {
         }
     }
 
-    private func descend(into relativePath: String) async {
-        stack.append(current)
-        current = join(current, relativePath)
+    private func descend(into entryPath: String) async {
+        // Entry paths are already location-relative (see FolderNavigation).
+        navigation.descend(to: entryPath)
         await reload()
     }
 
     private func goUp() async {
-        current = stack.popLast() ?? ""
+        navigation.goUp()
         await reload()
     }
 
@@ -194,7 +231,7 @@ struct FolderBrowserView: View {
             let resolved = try await service.resolveLocation(
                 at: host.address,
                 credential: credential,
-                directory: absolutePath(of: current)
+                directory: currentAbsolutePath
             )
             onChoose(resolved)
             dismiss()
@@ -203,21 +240,11 @@ struct FolderBrowserView: View {
         }
     }
 
-    // MARK: - Paths (relative levels anchored at the reviewed location)
-
-    private func join(_ base: String, _ component: String) -> String {
-        if base.isEmpty { return component }
-        return base + "/" + component
-    }
+    // MARK: - Presentation helpers
 
     private func parentOf(_ relative: String) -> String {
         guard let cut = relative.lastIndex(of: "/") else { return "" }
         return String(relative[..<cut])
-    }
-
-    private func absolutePath(of relative: String) -> String {
-        let root = startDirectory.hasSuffix("/") ? String(startDirectory.dropLast()) : startDirectory
-        return relative.isEmpty ? root : root + "/" + relative
     }
 
     private func lastPathSegment(_ path: String) -> String {

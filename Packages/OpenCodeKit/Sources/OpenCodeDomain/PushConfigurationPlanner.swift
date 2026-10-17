@@ -20,16 +20,19 @@ public struct LocalPushHostEligibility: Codable, Equatable, Sendable {
 
 /// One managed NEAppPushManager configuration, reduced to diffable identity.
 /// `hostIDs` is always sorted and deduplicated so list reordering never
-/// counts as a change (spec step 1).
+/// counts as a change (spec step 1). `followedSessions` rides along so a
+/// follow/unfollow propagates to the extension on the next reconcile.
 public struct ManagedPushConfiguration: Equatable, Sendable {
     public var ssid: String
     public var hostIDs: [String]
     public var revision: Int
+    public var followedSessions: [String]
 
-    public init(ssid: String, hostIDs: [String], revision: Int) {
+    public init(ssid: String, hostIDs: [String], revision: Int, followedSessions: [String] = []) {
         self.ssid = ssid
         self.hostIDs = hostIDs
         self.revision = revision
+        self.followedSessions = followedSessions
     }
 }
 
@@ -59,11 +62,31 @@ public struct PushProviderConfiguration: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var revision: Int
     public var hostIDs: [String]
+    /// Sessions followed on these hosts (populated by the app's session
+    /// workflows). The extension gates classification on this set — without
+    /// it the classifier discards everything, per the notify-only-followed
+    /// rule (docs/local-push-implementation.md §"Notification classification").
+    public var followedSessions: [String]
 
-    public init(schemaVersion: Int = PushProviderConfiguration.currentSchemaVersion, revision: Int, hostIDs: [String]) {
+    public init(
+        schemaVersion: Int = PushProviderConfiguration.currentSchemaVersion,
+        revision: Int,
+        hostIDs: [String],
+        followedSessions: [String] = []
+    ) {
         self.schemaVersion = schemaVersion
         self.revision = revision
         self.hostIDs = hostIDs
+        self.followedSessions = followedSessions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        revision = try container.decode(Int.self, forKey: .revision)
+        hostIDs = try container.decode([String].self, forKey: .hostIDs)
+        // Older payloads predate the field; absence means "nothing followed".
+        followedSessions = try container.decodeIfPresent([String].self, forKey: .followedSessions) ?? []
     }
 }
 
@@ -89,17 +112,37 @@ public enum PushConfigurationPlanner {
     /// Compares desired state against current managed configurations and
     /// returns the minimal diff. Identical desired state is a no-op; an
     /// SSID present in `current` but absent from `desired` is removed.
+    /// Duplicate SSIDs in persisted preferences (stale/interrupted saves)
+    /// are merged rather than trapping — the plan then rewrites or removes
+    /// the extras.
     public static func plan(
         desired: [String: [String]],
         current: [ManagedPushConfiguration],
-        revision: Int
+        revision: Int,
+        followedSessions: [String] = []
     ) -> PushConfigurationPlan {
-        let currentBySSID = Dictionary(uniqueKeysWithValues: current.map { ($0.ssid, $0) })
+        let currentBySSID = Dictionary(
+            current.map { ($0.ssid, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let duplicateSSIDs = Set(
+            Dictionary(grouping: current, by: \.ssid)
+                .filter { $0.value.count > 1 }
+                .keys
+        )
         var upserts: [ManagedPushConfiguration] = []
         for ssid in desired.keys.sorted() {
             let hostIDs = (desired[ssid] ?? []).sorted()
-            if currentBySSID[ssid]?.hostIDs != hostIDs {
-                upserts.append(ManagedPushConfiguration(ssid: ssid, hostIDs: hostIDs, revision: revision))
+            let existing = currentBySSID[ssid]
+            if existing?.hostIDs != hostIDs
+                || existing?.followedSessions != followedSessions
+                || duplicateSSIDs.contains(ssid) {
+                upserts.append(ManagedPushConfiguration(
+                    ssid: ssid,
+                    hostIDs: hostIDs,
+                    revision: revision,
+                    followedSessions: followedSessions
+                ))
             }
         }
         let removals = currentBySSID.keys.filter { desired[$0] == nil }.sorted()

@@ -44,9 +44,12 @@ struct NewProjectView: View {
     }
 
     private var targetPath: String {
-        let root = parentDirectory.hasSuffix("/") ? String(parentDirectory.dropLast()) : parentDirectory
+        let root = parentDirectory.count > 1 && parentDirectory.hasSuffix("/")
+            ? String(parentDirectory.dropLast())
+            : parentDirectory
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? root + "/" : root + "/" + trimmed
+        if trimmed.isEmpty { return root.hasSuffix("/") ? root : root + "/" }
+        return root == "/" ? "/" + trimmed : root + "/" + trimmed
     }
 
     private var canCreate: Bool {

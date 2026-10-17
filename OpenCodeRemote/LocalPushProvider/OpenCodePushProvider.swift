@@ -95,6 +95,12 @@ final class OpenCodePushProvider: NEAppPushProvider {
             }
             try prepareStores()
             startObservers(for: configuration, generation: generation)
+            // Existing streams keep running; only their notification policy
+            // diff (followed sessions) is refreshed.
+            let followed = Set(configuration.followedSessions)
+            for supervisor in supervisors.values {
+                Task { await supervisor.updatePolicy(NotificationPolicy(followedSessions: followed)) }
+            }
         } catch {
             logger.error("configuration change rejected: \(String(describing: error))")
         }
@@ -120,13 +126,16 @@ final class OpenCodePushProvider: NEAppPushProvider {
     }
 
     private func prepareStores() throws {
-        let directory = try SharedStoreLocation.directory()
+        // Extension fail-closed: without the App Group container there is no
+        // shared store, so refuse to run against a private diverging one.
+        let directory = try SharedStoreLocation.directory(allowAppLocalFallback: false)
         hostStore = try HostStore(writingAt: directory)
         ledger = try NotificationLedger(writingAt: directory)
     }
 
     private func startObservers(for configuration: ConfigurationPayload, generation: Int) {
         guard let hostStore, let ledger else { return }
+        let followed = Set(configuration.followedSessions)
         let hosts = (try? hostStore.hosts()) ?? []
         for host in hosts where configuration.hostIDs.contains(host.id.rawValue) {
             guard supervisors[host.id.rawValue] == nil else { continue } // never a second stream per host
@@ -136,25 +145,32 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 logger.warning("host has no stored credential; observer not started")
                 continue
             }
-            supervisors[host.id.rawValue] = makeSupervisor(
+            let supervisor = makeSupervisor(
                 host: host,
                 secret: secret,
+                followedSessions: followed,
                 ledger: ledger,
                 generation: generation
             )
+            supervisors[host.id.rawValue] = supervisor
+            Task { await supervisor.start() }
         }
     }
 
     private func makeSupervisor(
         host: OpenCodeDomain.Host,
         secret: String,
+        followedSessions: Set<String>,
         ledger: NotificationLedger,
         generation: Int
     ) -> HostEventSupervisor {
         let logger = self.logger
         return HostEventSupervisor(
             host: host,
-            classifier: EventClassifier(hostID: host.id.rawValue, policy: NotificationPolicy()),
+            classifier: EventClassifier(
+                hostID: host.id.rawValue,
+                policy: NotificationPolicy(followedSessions: followedSessions)
+            ),
             environment: .init(
                 makeTransport: { address, credential in
                     URLSessionTransport(baseURL: address, credential: credential)
