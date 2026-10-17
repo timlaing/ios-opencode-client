@@ -161,4 +161,18 @@ final class URLSessionTransportTests: XCTestCase {
         }
         XCTAssertEqual(received.map(\.type), ["server.connected"])
     }
+
+    /// The SSE spec allows CR-only line endings; such frames must still be
+    /// delivered (the stream loop flushes on any line-break byte).
+    func testEventsStreamDecodesCROnlyFrames() async throws {
+        stub(
+            body: "data: {\"id\":\"evt_2\",\"type\":\"server.idle\",\"data\":{}}\r\r",
+            contentType: "text/event-stream"
+        )
+        var received: [OpenCodeEvent] = []
+        for try await event in transport(credential: BasicCredential(secret: "pw")).events() {
+            received.append(event)
+        }
+        XCTAssertEqual(received.map(\.type), ["server.idle"])
+    }
 }

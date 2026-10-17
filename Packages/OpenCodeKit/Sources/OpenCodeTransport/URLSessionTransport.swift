@@ -90,8 +90,11 @@ public struct URLSessionTransport: OpenCodeTransport {
                         buffer.append(byte)
                         // Decode at each line boundary so complete frames are
                         // delivered promptly even on a quiet stream, instead
-                        // of waiting for a byte threshold to fill.
-                        guard byte == UInt8(ascii: "\n") else { continue }
+                        // of waiting for a byte threshold to fill. The SSE
+                        // format allows LF, CRLF, and CR-only endings, so
+                        // flush on either byte (a lone CR flush finds no
+                        // complete frame yet and is a harmless no-op).
+                        guard byte == UInt8(ascii: "\n") || byte == UInt8(ascii: "\r") else { continue }
                         for message in decoder.decode(buffer) {
                             deliver(message, to: continuation)
                         }

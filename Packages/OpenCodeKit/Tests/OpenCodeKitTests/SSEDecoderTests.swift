@@ -88,4 +88,29 @@ final class SSEDecoderTests: XCTestCase {
         let messages = decoder.decode(Data(": heartbeat\n\n".utf8))
         XCTAssertEqual(messages, [.comment(" heartbeat")])
     }
+
+    func testCROnlyLineEndingsDecodeFrames() {
+        var decoder = SSEDecoder()
+        let messages = decoder.decode(Data("data: first\rdata: second\r\r".utf8))
+        // Two `data:` lines in one frame join with "\n" per the SSE format.
+        XCTAssertEqual(messages, [.event(id: nil, event: nil, data: "first\nsecond")])
+    }
+
+    func testCRLFLineEndingsDecodeFrames() {
+        var decoder = SSEDecoder()
+        let messages = decoder.decode(Data("data: first\r\n\r\ndata: second\r\n\r\n".utf8))
+        XCTAssertEqual(messages, [
+            .event(id: nil, event: nil, data: "first"),
+            .event(id: nil, event: nil, data: "second"),
+        ])
+    }
+
+    func testCROnlyFramesSplitAcrossChunksDecodeIdentically() {
+        var decoder = SSEDecoder()
+        var messages: [SSEMessage] = []
+        for byte in Array("data: {\"id\":\"evt_1\"}\r\r".utf8) {
+            messages += decoder.decode(Data([byte]))
+        }
+        XCTAssertEqual(messages, [.event(id: nil, event: nil, data: #"{"id":"evt_1"}"#)])
+    }
 }

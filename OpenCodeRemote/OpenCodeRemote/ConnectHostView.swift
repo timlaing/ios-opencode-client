@@ -249,9 +249,10 @@ struct ConnectHostView: View {
                 ForEach(review.payload.destinations, id: \.self) { destination in
                     Button {
                         self.review?.selectedDestination = destination
-                        // The retained token was redeemed against this host;
-                        // re-prove it against the newly reviewed address.
-                        redeemedToken = nil
+                        // The retained token stays valid: every address in one
+                        // pairing payload is the same host, so a health check
+                        // may retry against another listed address without
+                        // re-spending the code (docs/navigation-screens.md).
                     } label: {
                         HStack {
                             Text(destination.absoluteString)
@@ -264,6 +265,9 @@ struct ConnectHostView: View {
                         }
                     }
                     .buttonStyle(.bordered)
+                    // Locked while pairing is in flight so the in-progress
+                    // redeem/health run keeps its reviewed destination.
+                    .disabled(phase == .working)
                 }
                 Text("The code lists several addresses for the same host. Connect uses the reviewed address.")
                     .font(.footnote)

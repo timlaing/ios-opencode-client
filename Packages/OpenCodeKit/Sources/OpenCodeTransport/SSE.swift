@@ -40,23 +40,37 @@ public struct SSEDecoder: Sendable {
         var totalEnd: Int
     }
 
+    /// Finds the next blank-line frame boundary. The SSE format permits LF,
+    /// CRLF, and CR-only line endings; a CRLF counts as one break, not two.
     private func nextFrameBoundary() -> FrameBoundary? {
         var index = 0
         while index < buffer.count {
-            guard buffer[index] == 0x0A else {
+            guard let breakLength = Self.lineBreakLength(in: buffer, at: index) else {
                 index += 1
                 continue
             }
-            let next = index + 1
-            if next < buffer.count, buffer[next] == 0x0A {
-                return FrameBoundary(contentEnd: index, totalEnd: next + 1)
+            let contentEnd = index
+            let secondStart = index + breakLength
+            if let secondLength = Self.lineBreakLength(in: buffer, at: secondStart) {
+                return FrameBoundary(contentEnd: contentEnd, totalEnd: secondStart + secondLength)
             }
-            if next + 1 < buffer.count, buffer[next] == 0x0D, buffer[next + 1] == 0x0A {
-                return FrameBoundary(contentEnd: index, totalEnd: next + 2)
-            }
-            index += 1
+            index = secondStart // continue scanning from just past this break
         }
         return nil
+    }
+
+    /// Length in bytes of the line break starting at `index` (LF = 1, CR = 1,
+    /// CRLF = 2), or nil when no break starts there.
+    private static func lineBreakLength(in buffer: [UInt8], at index: Int) -> Int? {
+        guard index < buffer.count else { return nil }
+        switch buffer[index] {
+        case 0x0A:
+            return 1
+        case 0x0D:
+            return index + 1 < buffer.count && buffer[index + 1] == 0x0A ? 2 : 1
+        default:
+            return nil
+        }
     }
 
     static func parseFrame(_ frame: String) -> [SSEMessage] {
@@ -65,7 +79,12 @@ public struct SSEDecoder: Sendable {
         var id: String?
         var eventName: String?
 
-        for rawLine in frame.split(separator: "\n", omittingEmptySubsequences: false) {
+        // The spec permits LF, CRLF, and CR-only line endings; normalize so
+        // the field split below sees one separator style.
+        let normalized = frame
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+        for rawLine in normalized.split(separator: "\n", omittingEmptySubsequences: false) {
             var line = String(rawLine)
             if line.hasSuffix("\r") { line.removeLast() }
             if line.isEmpty { continue }
