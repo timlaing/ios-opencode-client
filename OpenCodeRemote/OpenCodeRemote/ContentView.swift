@@ -4,27 +4,29 @@ import SwiftUI
 /// Screens are populated in follow-up slices; the tabs currently show honest
 /// empty states.
 struct ContentView: View {
+    @State private var showingConnectSheet = false
+
     var body: some View {
         TabView {
-            ProjectsTab()
+            ProjectsTab(onConnectHost: { showingConnectSheet = true })
                 .tabItem { Label("Projects", systemImage: "folder") }
             SessionsTab()
                 .tabItem { Label("Sessions", systemImage: "bubble.left.and.bubble.right") }
             SettingsTab()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        .sheet(isPresented: $showingConnectSheet) {
+            ConnectHostView()
+        }
     }
 }
 
 private struct ProjectsTab: View {
+    var onConnectHost: () -> Void
+
     var body: some View {
         NavigationStack {
-            ContentUnavailableView(
-                "No Hosts Configured",
-                systemImage: "server.rack",
-                description: Text("Add an OpenCode host over HTTPS to browse its projects.")
-            )
-            .navigationTitle("Projects")
+            WelcomeView(onConnectHost: onConnectHost)
         }
     }
 }
