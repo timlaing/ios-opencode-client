@@ -76,10 +76,13 @@ struct SessionsView: View {
             sessions.attach(hosts: library)
             // The shared ProjectsLibrary may not have loaded yet if the
             // user opens Sessions first — the project filter, row
-            // subtitles and New Session recents depend on it.
+            // subtitles and New Session recents depend on it. Load only
+            // the hosts not already cached (a partial cache must not
+            // starve the remaining hosts).
             projects.attach(hosts: library)
-            if projects.projectsByHost.isEmpty {
-                await projects.load(library.entries)
+            let missingProjects = library.entries.filter { projects.projectsByHost[$0.id] == nil }
+            if !missingProjects.isEmpty {
+                await projects.load(missingProjects)
             }
             await sessions.load(library.entries)
         }
@@ -103,11 +106,15 @@ struct SessionsView: View {
         }
         .onChange(of: hostFilter) { _, _ in
             projectFilter = nil
-            // Re-run the active search against the new scope — hosts
-            // outside the previous scope have no results yet.
-            if let term = sessions.activeSearch {
-                searchTask?.cancel()
-                searchTask = Task { await sessions.search(term, entries: visibleEntries) }
+            // Restart the search in the new scope from the CURRENT field
+            // text — the field can hold a newer term than activeSearch if
+            // the scope changed inside the debounce window; empty text
+            // clears the search outright.
+            searchTask?.cancel()
+            searchTask = Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard !Task.isCancelled else { return }
+                await sessions.search(searchText, entries: visibleEntries)
             }
         }
         .sheet(isPresented: $showingNewSession) {
