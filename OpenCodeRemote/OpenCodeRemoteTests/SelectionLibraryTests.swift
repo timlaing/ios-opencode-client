@@ -91,6 +91,39 @@ final class SelectionLibraryTests: XCTestCase {
         }
     }
 
+    /// Arms once: the NEXT matching request waits on its gate, later
+    /// ones pass — so one specific load's call can be held in flight.
+    private final class HoldSwitch: @unchecked Sendable {
+        private let lock = NSLock()
+        private var armed = false
+
+        func arm() {
+            lock.lock(); armed = true; lock.unlock()
+        }
+
+        /// True exactly once after `arm()` — the request to hold.
+        func take() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            let wasArmed = armed
+            armed = false
+            return wasArmed
+        }
+    }
+
+    /// Per-operation call counts so a handler can answer the CURRENT
+    /// load differently from a superseded load's late retry.
+    private final class CallCounters: @unchecked Sendable {
+        private let lock = NSLock()
+        private var counts: [String: Int] = [:]
+
+        func next(_ operation: String) -> Int {
+            lock.lock(); defer { lock.unlock() }
+            let index = counts[operation, default: 0]
+            counts[operation] = index + 1
+            return index
+        }
+    }
+
     private struct StubTransport: OpenCodeTransport {
         var recorder: Recorder
         var handler: @Sendable (APIRequest) throws -> APIResponse
@@ -830,5 +863,159 @@ final class SelectionLibraryTests: XCTestCase {
                       "A's late skill list never populates B's picker")
         XCTAssertNil(library.error, "A's late HTTP 500 must not surface under B")
         XCTAssertFalse(library.isLoading, "the superseded load never clears the busy flag")
+    }
+
+    func testASupersededLoadCannotOverwriteARepeatedHostsLoad() async throws {
+        let modelGate = Latch()
+        let commandGate = Latch()
+        let modelHold = HoldSwitch()
+        let commandHold = HoldSwitch()
+        let counters = CallCounters()
+        let recorder = Recorder()
+
+        // Host A answers per call: the CURRENT load's calls come first
+        // and succeed; the superseded load's late calls come second and
+        // differ (a model failure, an empty command list).
+        let handlerA: @Sendable (APIRequest) throws -> APIResponse = { request in
+            switch request.operationID {
+            case "model.list":
+                if counters.next("model.list") == 0 {
+                    return Fixtures.response(Fixtures.located("[\(Fixtures.modelJSON)]"))
+                }
+                throw TransportError.http(status: 500, envelope: nil)
+            case "model.default":
+                throw TransportError.http(status: 503, envelope: nil)
+            case "agent.list":
+                return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                if counters.next("command.list") == 0 {
+                    return Fixtures.response(Fixtures.located(Fixtures.commandsList))
+                }
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.skillsList))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        let handlerB: @Sendable (APIRequest) throws -> APIResponse = { request in
+            switch request.operationID {
+            case "model.list":
+                return Fixtures.response(Fixtures.located("[\(Fixtures.otherModelJSON)]"))
+            case "model.default":
+                throw TransportError.http(status: 503, envelope: nil)
+            case "agent.list":
+                return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list", "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        let stub: @Sendable (URL) -> StubTransport = { url in
+            let isHostA = url.host == "host_one.local"
+            return StubTransport(
+                recorder: recorder,
+                handler: isHostA ? handlerA : handlerB,
+                hook: { request in
+                    guard isHostA else { return }
+                    if request.operationID == "model.list", modelHold.take() {
+                        await modelGate.wait()
+                    }
+                    if request.operationID == "command.list", commandHold.take() {
+                        await commandGate.wait()
+                    }
+                }
+            )
+        }
+        let library = SelectionLibrary(
+            service: ModelAgentService(makeTransport: { url in stub(url) }),
+            actionService: SkillCommandService(makeTransport: { url in stub(url) }),
+            credentialProvider: { id in
+                ["host_one": BasicCredential(secret: "t"), "host_two": BasicCredential(secret: "t")][id.rawValue] ?? nil
+            }
+        )
+        modelHold.arm()
+
+        // The FIRST load of host A is held on its model list…
+        let loadA1 = Task { await library.load(host: one, session: seededSession) }
+        var arrived = false
+        for _ in 0..<100 {
+            if await modelGate.isArrived { arrived = true; break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertTrue(arrived, "the first A load must reach the transport")
+
+        // …host B takes over…
+        await library.load(host: two, session: seededSession)
+        XCTAssertEqual(library.models.map(\.id), ["other-code"], "precondition: B's model")
+
+        // …then host A is revisited by a NEW load that completes fully.
+        await library.load(host: one, session: seededSession)
+        XCTAssertEqual(library.models.map(\.id), ["demo-code"], "precondition: the current A load")
+        XCTAssertEqual(library.commands.map(\.id), ["review"])
+        XCTAssertNil(library.error, "precondition: the current A load is clean")
+
+        // Hold the superseded load's pending command call too, then
+        // release everything: its late answers must change nothing.
+        commandHold.arm()
+        await modelGate.signal()
+        await commandGate.signal()
+        await loadA1.value
+
+        XCTAssertEqual(library.models.map(\.id), ["demo-code"],
+                       "the superseded load's late model failure never touches the current load")
+        XCTAssertEqual(library.commands.map(\.id), ["review"],
+                       "the superseded load's late 'no commands' never overwrites")
+        XCTAssertNil(library.error, "the superseded load's late HTTP 500 surfaces nowhere")
+        XCTAssertFalse(library.isLoading, "the current load's completion owns the busy flag")
+    }
+
+    func testCredentialLessHostDoesNotLeaveTheBusyFlagStuck() async throws {
+        let modelGate = Latch()
+        let library = makeLibrary(
+            recorder: Recorder(),
+            handler: { request in
+                switch request.operationID {
+                case "model.list":
+                    return Fixtures.response(Fixtures.located("[\(Fixtures.modelJSON)]"))
+                case "model.default":
+                    return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
+                case "agent.list":
+                    return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+                case "command.list", "skill.list":
+                    return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+                default:
+                    throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+                }
+            },
+            hook: { request in
+                if request.operationID == "model.list" {
+                    await modelGate.wait()
+                }
+            },
+            credentials: ["host_one": BasicCredential(secret: "t")] // host_two deliberately absent
+        )
+
+        let loadA = Task { await library.load(host: one, session: seededSession) }
+        var arrived = false
+        for _ in 0..<100 {
+            if await modelGate.isArrived { arrived = true; break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertTrue(arrived, "the first load must reach the transport")
+
+        // A credential-less host supersedes the in-flight load: it
+        // fails closed WITHOUT leaving the busy flag stuck on.
+        await library.load(host: two, session: seededSession)
+        XCTAssertFalse(library.isLoading, "the credential-less load clears the busy flag")
+        XCTAssertEqual(library.error, "Re-pair this host to choose a model or agent.")
+
+        // The superseded load's completion changes nothing.
+        await modelGate.signal()
+        await loadA.value
+        XCTAssertFalse(library.isLoading, "the superseded load never resets the flag either")
+        XCTAssertEqual(library.error, "Re-pair this host to choose a model or agent.",
+                       "the superseded load's results land nowhere")
     }
 }

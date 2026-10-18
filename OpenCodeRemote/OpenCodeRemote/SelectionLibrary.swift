@@ -63,6 +63,10 @@ final class SelectionLibrary {
     /// never leave the previous host's models/agents/commands/skills
     /// offered under the new host.
     private var inventoriesHostID: HostID?
+    /// Identifies individual loads: host identity cannot (A → B → A
+    /// would pass it again, and A → A reloads are indistinguishable).
+    /// Every result, error and busy-flag write checks its load's token.
+    private var loadGeneration = 0
 
     init(
         service: ModelAgentService? = nil,
@@ -87,11 +91,13 @@ final class SelectionLibrary {
     /// seed) is remembered under that identity and always beats the
     /// immutable, possibly-stale snapshot.
     ///
-    /// A load that another host's load supersedes mid-flight writes
-    /// NOTHING — its late results, errors and busy flag belong to the
-    /// host it started with (`inventoriesHostID` is the identity each
-    /// write is checked against).
+    /// A load superseded mid-flight by ANY newer load — another host,
+    /// or the same host again — writes NOTHING at all: results, errors
+    /// and the busy flag all check this load's generation token.
     func load(host: OpenCodeDomain.Host, session: Session) async {
+        loadGeneration += 1
+        let generation = loadGeneration
+        func isCurrentLoad() -> Bool { loadGeneration == generation }
         let key = Self.key(hostID: host.id, sessionID: session.id)
         if let known = confirmedBySession[key] {
             selectedRef = known.ref
@@ -112,6 +118,9 @@ final class SelectionLibrary {
             inventoriesHostID = host.id
         }
         guard let credential = credentialProvider?(host.id) else {
+            // Superseding with a credential-less host must not leave the
+            // previous load's busy flag stuck on.
+            isLoading = false
             error = "Re-pair this host to choose a model or agent."
             return
         }
@@ -119,58 +128,59 @@ final class SelectionLibrary {
         error = nil
         notice = nil
         defer {
-            // A superseded load must not clear the CURRENT load's busy
-            // flag — the active host still owns the fetches in flight.
-            if inventoriesHostID == host.id {
+            // Only the load that still holds its token resets the busy
+            // flag — a superseded load must not clear it under the load
+            // that is still fetching.
+            if isCurrentLoad() {
                 isLoading = false
             }
         }
 
-        // Every result and failure is host-identity checked: a late
-        // response from a superseded load must not land under the host
-        // that is now active.
+        // Every write checks this load's generation token: a superseded
+        // load's late response belongs to a load that is no longer the
+        // current one and must land nowhere.
         var failures: [String] = []
         do {
             let fetched = try await service.models(at: host.address, credential: credential)
-            if inventoriesHostID == host.id { models = fetched }
+            if isCurrentLoad() { models = fetched }
         } catch {
-            if inventoriesHostID == host.id, !Self.isSilent(error) {
+            if isCurrentLoad(), !Self.isSilent(error) {
                 failures.append(Self.message(for: error))
             }
         }
         do {
             let fetched = try await service.defaultModel(at: host.address, credential: credential)
-            if inventoriesHostID == host.id { defaultModel = fetched }
+            if isCurrentLoad() { defaultModel = fetched }
         } catch {
-            if inventoriesHostID == host.id, !Self.isSilent(error) {
+            if isCurrentLoad(), !Self.isSilent(error) {
                 failures.append(Self.message(for: error))
             }
         }
         do {
             let fetched = try await service.agents(at: host.address, credential: credential)
-            if inventoriesHostID == host.id { agents = fetched }
+            if isCurrentLoad() { agents = fetched }
         } catch {
-            if inventoriesHostID == host.id, !Self.isSilent(error) {
+            if isCurrentLoad(), !Self.isSilent(error) {
                 failures.append(Self.message(for: error))
             }
         }
         do {
             let fetched = try await actionService.commands(at: host.address, credential: credential)
-            if inventoriesHostID == host.id { commands = fetched }
+            if isCurrentLoad() { commands = fetched }
         } catch {
-            if inventoriesHostID == host.id, !Self.isSilent(error) {
+            if isCurrentLoad(), !Self.isSilent(error) {
                 failures.append(Self.message(for: error))
             }
         }
         do {
             let fetched = try await actionService.skills(at: host.address, credential: credential)
-            if inventoriesHostID == host.id { skills = fetched }
+            if isCurrentLoad() { skills = fetched }
         } catch {
-            if inventoriesHostID == host.id, !Self.isSilent(error) {
+            if isCurrentLoad(), !Self.isSilent(error) {
                 failures.append(Self.message(for: error))
             }
         }
-        if inventoriesHostID == host.id {
+        if isCurrentLoad() {
             // One host, one problem: collapse duplicate messages (e.g.
             // three identical connection failures) preserving first
             // order. A superseded load contributes nothing.
