@@ -340,7 +340,7 @@ final class FormDraftTests: XCTestCase {
 
         let errors = draft.validate()
         XCTAssertEqual(errors["environment"]?.message, "This field is required.")
-        XCTAssertEqual(errors["notes"]?.message, "Use at most 200 symbols.")
+        XCTAssertEqual(errors["notes"]?.message, "Use at most 200 UTF-16 code units.")
         XCTAssertEqual(errors["replicas"]?.message, "Use at most 5.")
         XCTAssertNil(errors["checks"],
                      "an unselected optional multiselect is simply omitted — the host's "
@@ -493,7 +493,7 @@ final class FormDraftTests: XCTestCase {
         XCTAssertEqual(FormDraft.constraints(for: fixtureFields[0]), "Required · One of the options below")
         XCTAssertEqual(FormDraft.constraints(for: fixtureFields[1]), "Choose at least 1")
         XCTAssertEqual(FormDraft.constraints(for: fixtureFields[2]), "Required")
-        XCTAssertEqual(FormDraft.constraints(for: fixtureFields[3]), "At most 200 symbols")
+        XCTAssertEqual(FormDraft.constraints(for: fixtureFields[3]), "At most 200 UTF-16 code units")
         XCTAssertEqual(FormDraft.constraints(for: fixtureFields[4]), "Whole number · Between 1 and 5")
         XCTAssertNil(FormDraft.constraints(for: fixtureFields[5]), "an external link has no answer rules")
     }

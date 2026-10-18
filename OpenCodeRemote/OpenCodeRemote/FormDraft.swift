@@ -278,9 +278,13 @@ struct FormDraft: Equatable {
                 // UTF-16 (NSRegularExpression ranges).
                 let length = text.utf16.count
                 if let min = f.minLength, length < min {
-                    errors[f.key] = FieldError(message: "Use at least \(min) symbols.")
+                    // Name the unit the check actually uses: the host
+                    // counts UTF-16 code units, so neither "characters"
+                    // nor "symbols" (both graphemes — one 👍) can be
+                    // reconciled with a limit like 3.
+                    errors[f.key] = FieldError(message: "Use at least \(min) UTF-16 code units.")
                 } else if let max = f.maxLength, length > max {
-                    errors[f.key] = FieldError(message: "Use at most \(max) symbols.")
+                    errors[f.key] = FieldError(message: "Use at most \(max) UTF-16 code units.")
                 } else if let pattern = f.pattern, let regex = try? NSRegularExpression(pattern: pattern) {
                     // An uncompilable pattern is left to the host —
                     // never claimed as locally validated.
@@ -441,9 +445,9 @@ struct FormDraft: Equatable {
         switch field {
         case .string(let f):
             switch (f.minLength, f.maxLength) {
-            case (let min?, let max?): parts.append("\(min)–\(max) symbols")
-            case (let min?, nil): parts.append("At least \(min) symbols")
-            case (nil, let max?): parts.append("At most \(max) symbols")
+            case (let min?, let max?): parts.append("\(min)–\(max) UTF-16 code units")
+            case (let min?, nil): parts.append("At least \(min) UTF-16 code units")
+            case (nil, let max?): parts.append("At most \(max) UTF-16 code units")
             case (nil, nil): break
             }
             if let options = f.options, !options.isEmpty, f.custom != true {
