@@ -394,6 +394,30 @@ struct FormSheetView: View {
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("S12.form.option.\(f.key).\(option.value)")
                     }
+                    // Picks outside the declared options — a typed
+                    // custom addition, or a default recorded off-list —
+                    // render as selected rows too: a value with no row
+                    // is invisible AND unremovable, yet answer() still
+                    // submits it (and with custom == false an off-list
+                    // default could never be corrected, leaving the
+                    // form permanently un-submittable).
+                    ForEach((draft.picks[f.key] ?? []).filter { value in
+                        !f.options.contains { $0.value == value }
+                    }, id: \.self) { value in
+                        Button {
+                            draft.toggle(f.key, value)
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.square.fill")
+                                    .foregroundStyle(.tint)
+                                Text(value)
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("S12.form.custom.\(f.key).\(value)")
+                    }
                 }
                 if f.custom == true {
                     HStack(spacing: 8) {
@@ -493,7 +517,12 @@ struct FormSheetView: View {
             }
             TextField("Value", text: numberBinding(field.key))
                 .textFieldStyle(.roundedBorder)
-                .keyboardType(.decimalPad)
+                // NOT .decimalPad: it has no minus key, so a field
+                // whose bounds allow negatives (minimum < 0) could
+                // never be typed into — parseNumber already accepts
+                // the leading '-'. numbersAndPunctuation carries both
+                // the sign and the region's decimal separator.
+                .keyboardType(.numbersAndPunctuation)
         }
     }
 

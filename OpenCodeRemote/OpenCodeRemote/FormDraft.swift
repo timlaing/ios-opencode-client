@@ -82,8 +82,12 @@ struct FormDraft: Equatable {
                 $0.isNaN ? nil : Self.editingText($0)
             } ?? ""
         case .integer(let f):
+            // No whole number is non-finite: seed empty for ANY
+            // non-finite default, never "inf"/"-inf" — that buffer
+            // fails integrality validation forever, blocking an
+            // untouched optional field.
             numbers[f.key] = f.default.flatMap {
-                $0.isNaN ? nil : Self.editingText($0)
+                $0.isFinite ? Self.editingText($0) : nil
             } ?? ""
         case .boolean(let f):
             // A host default seeds the value; a required boolean
@@ -146,8 +150,11 @@ struct FormDraft: Equatable {
 
     /// A `when` entry evaluated against a current answer. A condition
     /// referencing a field with no answer is unsatisfied (even `neq`);
-    /// over a multiselect answer `eq` means inclusion.
+    /// over a multiselect answer `eq` means inclusion. An operator
+    /// this baseline does not define (`eq`/`neq`) is unsatisfied —
+    /// never guessed as a negation.
     private static func holds(_ when: FormWhen, against current: FormValue) -> Bool {
+        guard when.isEqual || when.isNotEqual else { return false }
         let equal: Bool
         if case .strings(let selected) = current {
             guard case .string(let token) = when.value else { return false }

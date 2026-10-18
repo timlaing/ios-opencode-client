@@ -309,14 +309,36 @@ extension FormField: Codable {
     }
 
     public func encode(to encoder: Encoder) throws {
+        // Round-trip contract: init(from:) reads the `type`
+        // discriminator, so encode must write it next to the payload —
+        // the inner structs' synthesised Codable carries no `type`, and
+        // any cached/persisted model must decode back (W10).
+        if case .unknown(_, let raw) = self {
+            try raw.encode(to: encoder)
+            return
+        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .string(let field): try field.encode(to: encoder)
-        case .number(let field): try field.encode(to: encoder)
-        case .integer(let field): try field.encode(to: encoder)
-        case .boolean(let field): try field.encode(to: encoder)
-        case .multiselect(let field): try field.encode(to: encoder)
-        case .external(let field): try field.encode(to: encoder)
-        case .unknown(_, let raw): try raw.encode(to: encoder)
+        case .string(let field):
+            try container.encode("string", forKey: .type)
+            try field.encode(to: encoder)
+        case .number(let field):
+            try container.encode("number", forKey: .type)
+            try field.encode(to: encoder)
+        case .integer(let field):
+            try container.encode("integer", forKey: .type)
+            try field.encode(to: encoder)
+        case .boolean(let field):
+            try container.encode("boolean", forKey: .type)
+            try field.encode(to: encoder)
+        case .multiselect(let field):
+            try container.encode("multiselect", forKey: .type)
+            try field.encode(to: encoder)
+        case .external(let field):
+            try container.encode("external", forKey: .type)
+            try field.encode(to: encoder)
+        case .unknown:
+            break
         }
     }
 

@@ -152,6 +152,14 @@ public enum OpenCodeAPI {
     public static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
+        // Mirror the decoder: a decoded non-finite bound ("Infinity",
+        // "-Infinity", "NaN") must encode back to the same wire name,
+        // never throw on re-encode (docs/api-contract.md W10).
+        encoder.nonConformingFloatEncodingStrategy = .convertToString(
+            positiveInfinity: "Infinity",
+            negativeInfinity: "-Infinity",
+            nan: "NaN"
+        )
         return encoder
     }()
 }

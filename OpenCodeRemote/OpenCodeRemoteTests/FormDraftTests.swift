@@ -72,6 +72,24 @@ final class FormDraftTests: XCTestCase {
                        "no answer for the referenced field satisfies nothing — even neq")
     }
 
+    func testUnknownConditionOperatorIsNeverGuessed() {
+        // The baseline defines only eq/neq. A host (or cached model)
+        // carrying another operator must not be silently evaluated as
+        // a negation — the field stays unsatisfied.
+        let fields: [FormField] = [
+            .string(FormStringField(key: "mode")),
+            .string(FormStringField(key: "detail", when: [
+                FormWhen(key: "mode", op: "gt", value: .string("simple")),
+            ])),
+        ]
+        var draft = FormDraft(fields: fields)
+        XCTAssertFalse(draft.isActive(fields[1]),
+                       "an operator outside the baseline satisfies nothing")
+        draft.texts["mode"] = "zzz"
+        XCTAssertFalse(draft.isActive(fields[1]),
+                       "the unknown operator is never reinterpreted as neq")
+    }
+
     func testMultiselectConditionsMatchByInclusion() {
         let fields: [FormField] = [
             .multiselect(FormMultiselectField(key: "tags", options: [
@@ -119,9 +137,29 @@ final class FormDraftTests: XCTestCase {
         XCTAssertNil(draft.answer()["replicas"])
     }
 
+    func testInfinityIntegerDefaultsSeedAnEmptyBufferNotInfinityText() {
+        // Like NaN (above), an infinite default is something no one can
+        // meaningfully submit for an INTEGER field: parseNumber accepts
+        // "inf" back, but validate() rejects a non-finite whole number —
+        // an untouched field would error. Such defaults seed empty.
+        let fields: [FormField] = [
+            .integer(FormIntegerField(key: "cap", default: .infinity)),
+            .integer(FormIntegerField(key: "floor", default: -.infinity)),
+        ]
+        let draft = FormDraft(fields: fields)
+        XCTAssertEqual(draft.numbers["cap"], "",
+                       "an infinite default never seeds editing text an integer field rejects")
+        XCTAssertEqual(draft.numbers["floor"], "")
+        XCTAssertTrue(draft.validate().isEmpty, "an untouched optional field stays valid")
+        XCTAssertNil(draft.answer()["cap"], "an infinite default answers nothing")
+        XCTAssertNil(draft.answer()["floor"])
+    }
+
     func testFiniteNonDefaultSeedsStillRoundTrip() {
-        // Finite defaults keep their exact editing text — only NaN is
-        // special-cased; ±infinity round-trips through parseNumber.
+        // Finite defaults keep their exact editing text — number
+        // fields also round-trip an infinite default ("-inf" parses
+        // back to the same value), but INTEGER fields seed empty for
+        // any non-finite default (see the test above).
         let fields: [FormField] = [
             .number(FormNumberField(key: "ratio", default: 2.5)),
             .integer(FormIntegerField(key: "replicas", default: 3)),

@@ -218,6 +218,53 @@ final class W10RequestsTests: XCTestCase {
         try OpenCodeAPI.decoder.decode(FormValue.self, from: Data(json.utf8))
     }
 
+    // MARK: - Encode/decode round trip
+
+    func testFormFieldsRoundTripTypeDiscriminatorAndNonFiniteBounds() throws {
+        // A form field must survive encode → decode: the encoder now
+        // writes the `type` discriminator beside the payload (decode
+        // requires it) and NAMES non-finite doubles the decoder
+        // already understands — previously both were silent data loss.
+        let fields: [FormField] = [
+            .integer(FormIntegerField(
+                key: "timeout", minimum: -.infinity, maximum: 0, default: .infinity
+            )),
+            .string(FormStringField(key: "mode", title: "Mode", required: true)),
+        ]
+        let data = try OpenCodeAPI.encoder.encode(fields)
+
+        // The wire JSON carries the discriminator and named strings.
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        )
+        XCTAssertEqual(json[0]["type"] as? String, "integer")
+        XCTAssertEqual(json[0]["minimum"] as? String, "-Infinity")
+        XCTAssertEqual(json[0]["default"] as? String, "Infinity")
+        XCTAssertEqual(json[1]["type"] as? String, "string")
+
+        let back = try OpenCodeAPI.decoder.decode([FormField].self, from: data)
+        XCTAssertEqual(back, fields,
+                       "encode → decode preserves every kind, bounds included")
+    }
+
+    func testNaNDefaultSurvivesTheNamedStringRoundTrip() throws {
+        // NaN is not equal to itself, so the round trip is asserted by
+        // case, not by Equatable.
+        let fields: [FormField] = [.number(FormNumberField(key: "jitter", default: .nan))]
+        let data = try OpenCodeAPI.encoder.encode(fields)
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: data) as? [[String: Any]]
+        )
+        XCTAssertEqual(json[0]["default"] as? String, "NaN",
+                       "the shared ENCODER names NaN the way the decoder already reads it")
+
+        let back = try OpenCodeAPI.decoder.decode([FormField].self, from: data)
+        guard case .number(let field) = back[0] else {
+            return XCTFail("a NaN default survives as a typed number field")
+        }
+        XCTAssertTrue(field.default?.isNaN == true)
+    }
+
     // MARK: - State lifecycle
 
     func testFormStateDecodesTheLifecycleAndSettledFlags() throws {
