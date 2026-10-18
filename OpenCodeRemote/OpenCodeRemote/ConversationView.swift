@@ -33,12 +33,12 @@ struct ConversationView: View {
     @State private var showingCamera = false
     @State private var showingFileImporter = false
     @State private var photoSelection: [PhotosPickerItem] = []
-    /// The confirmation currently ON SCREEN. The library's queue is the
-    /// source of truth; this local copy makes each question its own
-    /// presentation — SwiftUI ignores presented-data changes while an
-    /// alert is up, so the next queued question may only be presented
-    /// after the previous one has fully dismissed.
-    @State private var presentedConfirmation: AttachmentLibrary.PendingConfirmation?
+    /// Which queued confirmation is on screen. The library's queue is
+    /// the source of truth; the sequencer gives each question its own
+    /// presentation cycle (SwiftUI ignores presented-data swaps on a
+    /// live alert, and its dismissal write must never land on the next
+    /// question).
+    @State private var confirmationAlerts = ConfirmationAlertSequencer()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -140,24 +140,20 @@ struct ConversationView: View {
             }
         }
         .alert(
-            presentedConfirmation?.name ?? "Attachment",
+            confirmationAlerts.presented?.name ?? "Attachment",
             isPresented: Binding(
-                get: { presentedConfirmation != nil },
-                // The buttons never touch presentation state — the
-                // dismissal write is the ONLY thing that clears it, and
-                // it doubles as the barrier: the next queued question is
-                // scheduled from here, after SwiftUI has actually
-                // dismissed (a setter-side answer could race the accept
-                // button; a mid-flight swap could be swallowed or
-                // cleared by this very write).
+                get: { confirmationAlerts.presented != nil },
+                // The dismissal write is the sequencer's signal: it
+                // clears the on-screen copy and schedules the next
+                // question only after the dismissal settles. The buttons
+                // never touch presentation state, so this write can
+                // neither race the accept button nor land on the next
+                // confirmation.
                 set: { presented in
-                    if !presented {
-                        presentedConfirmation = nil
-                        presentNextConfirmationIfIdle()
-                    }
+                    if !presented { confirmationAlerts.alertDismissed() }
                 }
             ),
-            presenting: presentedConfirmation
+            presenting: confirmationAlerts.presented
         ) { confirmation in
             Button("Attach Anyway") {
                 attachments.answerConfirmation(true, host: host)
@@ -176,10 +172,11 @@ struct ConversationView: View {
             }
         }
         .onChange(of: attachments.pendingConfirmation) { _, _ in
-            presentNextConfirmationIfIdle()
+            confirmationAlerts.queueMayHaveAdvanced()
         }
         .onAppear {
-            presentNextConfirmationIfIdle()
+            confirmationAlerts.nextHead = { attachments.pendingConfirmation }
+            confirmationAlerts.queueMayHaveAdvanced()
         }
         .refreshable {
             await conversation.refresh(host: host, sessionID: session.id)
@@ -385,22 +382,6 @@ struct ConversationView: View {
             Image(systemName: "checkmark.circle").foregroundStyle(.green)
         case .failed:
             Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
-        }
-    }
-
-    /// Presents the queue's head as its OWN alert, only when nothing is
-    /// on screen. The dismissal write is the primary caller — it has
-    /// already cleared the presented copy, so after one runloop hop the
-    /// next question surfaces as a fresh presentation (SwiftUI ignores
-    /// data swaps on a live alert and its dismissal write must never
-    /// land on a second confirmation). `onAppear`/queue changes cover
-    /// the FIRST question, which follows no dismissal.
-    private func presentNextConfirmationIfIdle() {
-        guard presentedConfirmation == nil, attachments.pendingConfirmation != nil else { return }
-        Task { @MainActor in
-            guard presentedConfirmation == nil,
-                  let pending = attachments.pendingConfirmation else { return }
-            presentedConfirmation = pending
         }
     }
 
