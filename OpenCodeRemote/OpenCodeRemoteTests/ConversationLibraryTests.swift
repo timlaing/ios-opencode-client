@@ -283,6 +283,72 @@ final class ConversationLibraryTests: XCTestCase {
         )
     }
 
+    func testRefreshAfterFailedOpenRestoresPagingState() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            // Request 1 = open (fails), 2 = refresh (succeeds).
+            if recorder.requests.count == 1 {
+                throw TransportError.http(status: 503, envelope: nil)
+            }
+            return Fixtures.response(Fixtures.page([
+                Fixtures.user("msg_5", text: "newest", created: 500),
+                Fixtures.user("msg_4", text: "older", created: 400),
+            ], next: "cursor_from_refresh"))
+        }
+        await library.open(host: one, sessionID: "ses_a")
+        XCTAssertNotNil(library.error, "precondition: the first open failed")
+
+        await library.refresh(host: one, sessionID: "ses_a")
+
+        XCTAssertNil(library.error)
+        XCTAssertEqual(library.messages.map(\.id), ["msg_4", "msg_5"])
+        XCTAssertEqual(library.loadedSessionID, "ses_a", "refresh establishes the session it loaded")
+        XCTAssertTrue(library.hasMore, "paging state comes from the replacing page")
+        XCTAssertEqual(library.nextCursor, "cursor_from_refresh")
+    }
+
+    func testRefreshWithoutOverlapReplacesTranscriptAndCursor() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            let query = Fixtures.query(request)
+            if query["cursor"] == "cursor_gap" {
+                XCTFail("the stale cursor must not survive a wholesale replacement")
+                return Fixtures.response(Fixtures.page([]))
+            }
+            if query["cursor"] == "cursor_fresh" {
+                return Fixtures.response(Fixtures.page([
+                    Fixtures.user("msg_7", text: "reached from fresh cursor", created: 700),
+                ]))
+            }
+            // Request 1 = open (msg_1), 2 = refresh: >1 page of arrivals,
+            // so NO id overlaps the loaded transcript.
+            if recorder.requests.count == 1 {
+                return Fixtures.response(Fixtures.page([
+                    Fixtures.user("msg_1", text: "first", created: 100),
+                ], next: "cursor_gap"))
+            }
+            return Fixtures.response(Fixtures.page([
+                Fixtures.user("msg_9", text: "brand new", created: 900),
+                Fixtures.user("msg_8", text: "also new", created: 800),
+            ], next: "cursor_fresh"))
+        }
+        await library.open(host: one, sessionID: "ses_a")
+        await library.refresh(host: one, sessionID: "ses_a")
+
+        XCTAssertEqual(
+            library.messages.map(\.id), ["msg_8", "msg_9"],
+            "an unbridgeable gap replaces rather than splicing a hidden hole"
+        )
+        XCTAssertEqual(library.nextCursor, "cursor_fresh", "paging restarts from the replacing page")
+        XCTAssertTrue(library.hasMore)
+
+        await library.loadOlder(host: one)
+        XCTAssertEqual(
+            library.messages.map(\.id), ["msg_7", "msg_8", "msg_9"],
+            "older paging walks down from the replacing page's cursor"
+        )
+    }
+
     // MARK: - Active context (S14)
 
     func testLoadContextFetchesMessagesSinceCompaction() async throws {

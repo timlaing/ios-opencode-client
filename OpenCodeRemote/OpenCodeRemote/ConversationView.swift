@@ -21,17 +21,27 @@ struct ConversationView: View {
             if conversation.messages.isEmpty, conversation.isLoading {
                 ProgressView("Loading Conversation…")
             } else if conversation.messages.isEmpty, conversation.error != nil {
-                ContentUnavailableView(
-                    "Conversation Unavailable",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text(conversation.error ?? "")
-                )
+                // Not scrollable — pull-to-refresh is dead here, so the
+                // state MUST carry its own retry action.
+                ContentUnavailableView {
+                    Label("Conversation Unavailable", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(conversation.error ?? "")
+                } actions: {
+                    Button("Try Again") {
+                        Task { await conversation.open(host: host, sessionID: session.id) }
+                    }
+                }
             } else if conversation.messages.isEmpty {
-                ContentUnavailableView(
-                    "No Messages Yet",
-                    systemImage: "bubble.left.and.text.bubble.right",
-                    description: Text("This session has no messages yet. W05 adds sending the first prompt.")
-                )
+                ContentUnavailableView {
+                    Label("No Messages Yet", systemImage: "bubble.left.and.text.bubble.right")
+                } description: {
+                    Text("This session has no messages yet. W05 adds sending the first prompt.")
+                } actions: {
+                    Button("Refresh") {
+                        Task { await conversation.open(host: host, sessionID: session.id) }
+                    }
+                }
             } else {
                 transcript
             }
@@ -65,9 +75,11 @@ struct ConversationView: View {
         .task {
             conversation.attach(hosts: library)
             await conversation.open(host: host, sessionID: session.id)
-            // Opening the transcript acknowledges unread with the session's
-            // own server-observed epoch (never the phone clock).
-            await sessions?.markViewed(host: host, session: session)
+            // Acknowledge unread ONLY when the transcript was actually
+            // shown — a failed open must not clear the unread state.
+            if conversation.error == nil, conversation.loadedSessionID == session.id {
+                await sessions?.markViewed(host: host, session: session)
+            }
         }
     }
 

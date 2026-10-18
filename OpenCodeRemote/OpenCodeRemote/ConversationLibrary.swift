@@ -121,22 +121,28 @@ final class ConversationLibrary {
             )
             let fresh = Self.ordered(Self.deduped(page.data))
             let freshIDs = Set(fresh.map(\.id))
-            // Keep messages NEWER than the fresh page (a concurrent
-            // refresh may have added them) and messages OLDER than it;
-            // drop only records the fresh page covers, which it owns.
-            let newer = messages.filter { message in
-                guard !freshIDs.contains(message.id) else { return false }
-                return Self.sortKey(message) > Self.sortKey(fresh.last)
+            // The newest page only overlaps what it covers. Without ANY
+            // overlap (first load failed here, another session, or >1 page
+            // of arrivals) the loaded transcript cannot be joined
+            // honestly — a splice would hide the gap AND leave a cursor
+            // that walks from the wrong position, so replace instead.
+            let overlaps = messages.contains { freshIDs.contains($0.id) }
+            if messages.isEmpty || !overlaps || loadedSessionID != sessionID {
+                messages = fresh
+                nextCursor = page.cursor?.next
+                hasMore = page.cursor?.next != nil
+            } else {
+                // Overlap guarantees contiguity at the seam. Records the
+                // fresh page covers are owned by it (arrivals absorbed,
+                // in-range deletions honoured); records BELOW its oldest
+                // are unobservable at this depth, so they stay.
+                let older = messages.filter { message in
+                    guard !freshIDs.contains(message.id) else { return false }
+                    return Self.sortKey(message) < Self.sortKey(fresh.first)
+                }
+                messages = older + fresh
             }
-            let older = messages.filter { message in
-                guard !freshIDs.contains(message.id) else { return false }
-                return Self.sortKey(message) < Self.sortKey(fresh.first)
-            }
-            // Display order stays oldest first: older history, then the
-            // fresh page, then anything newer it did not cover.
-            messages = older + fresh + newer
-            // Cursor state from the first page describes the NEWEST page;
-            // older cursors already walked remain valid below it.
+            loadedSessionID = sessionID
             error = nil
         } catch {
             if !Self.isSilent(error) { self.error = Self.message(for: error) }
