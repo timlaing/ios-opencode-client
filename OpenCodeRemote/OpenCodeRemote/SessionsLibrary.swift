@@ -275,8 +275,10 @@ final class SessionsLibrary {
     }
 
     /// Applies a HOST-CONFIRMED (204) W06 agent/model selection to the
-    /// local inventory so no other view shows a stale selection. Called
-    /// only after the switch succeeded — never optimistically.
+    /// local caches so no other view shows a stale selection — both the
+    /// inventory and the active title-search results, exactly like
+    /// `rename`. Called only after the switch succeeded, never
+    /// optimistically.
     func noteSelection(
         host: OpenCodeDomain.Host,
         sessionID: String,
@@ -286,6 +288,10 @@ final class SessionsLibrary {
         updateLocal(sessionID: sessionID, in: host.id) { session in
             if let agent { session.agent = agent }
             if let model { session.model = model }
+        }
+        if let index = searchResultsByHost[host.id]?.firstIndex(where: { $0.id == sessionID }) {
+            if let agent { searchResultsByHost[host.id]?[index].agent = agent }
+            if let model { searchResultsByHost[host.id]?[index].model = model }
         }
     }
 

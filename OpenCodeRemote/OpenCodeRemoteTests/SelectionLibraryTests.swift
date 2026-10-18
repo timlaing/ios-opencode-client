@@ -96,6 +96,10 @@ final class SelectionLibraryTests: XCTestCase {
         )
     }
 
+    private func entry(_ host: OpenCodeDomain.Host) -> HostLibrary.Entry {
+        HostLibrary.Entry(host: host, connection: .reachable(version: nil))
+    }
+
     // MARK: - Load
 
     func testLoadSeedsSessionSelectionAndInventories() async throws {
@@ -186,6 +190,10 @@ final class SelectionLibraryTests: XCTestCase {
         let store = makeSessionsStore(handler: handler)
         await store.load(host: one)
         XCTAssertEqual(store.sessionsByHost[one.id]?.first?.model?.id, "old-model", "precondition")
+        // A title search is active while the switch happens — its cache
+        // feeds rows() and must be patched exactly like the inventory.
+        await store.search("demo", entries: [entry(one)])
+        XCTAssertEqual(store.searchResultsByHost[one.id]?.count, 1, "precondition: search cache holds the session")
 
         let library = makeLibrary(recorder: Recorder(), handler: handler)
         await library.load(host: one, session: seededSession)
@@ -200,6 +208,51 @@ final class SelectionLibraryTests: XCTestCase {
         let stored = store.sessionsByHost[one.id]?.first { $0.id == "ses_a" }
         XCTAssertEqual(stored?.model?.id, "demo-code", "the store is patched only after the host confirmed")
         XCTAssertEqual(stored?.agent, "plan", "an unrelated selection is untouched")
+        XCTAssertEqual(store.searchResultsByHost[one.id]?.first?.model?.id, "demo-code",
+                       "the active search cache never shows a stale selection")
+    }
+
+    func testReloadKeepsHostConfirmedSelectionOverStaleSnapshot() async throws {
+        let handler: @Sendable (APIRequest) throws -> APIResponse = { request in
+            switch request.operationID {
+            case "model.list":
+                return Fixtures.response(Fixtures.located("[\(Fixtures.modelJSON)]"))
+            case "model.default":
+                return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
+            case "agent.list":
+                return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "session.switchModel":
+                return Fixtures.empty()
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        let library = makeLibrary(recorder: Recorder(), handler: handler)
+        await library.load(host: one, session: seededSession)
+        XCTAssertEqual(library.selectedRef?.id, "old-model", "precondition: seeded from the snapshot")
+
+        let model = try XCTUnwrap(library.models.first)
+        let accepted = await library.selectModel(host: one, sessionID: "ses_a", model: model)
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(library.selectedRef?.id, "demo-code")
+
+        // The sheet reopens with the SAME immutable session snapshot.
+        await library.load(host: one, session: seededSession)
+
+        XCTAssertEqual(library.selectedRef?.id, "demo-code",
+                       "a reopen must not roll the confirmed selection back to the stale snapshot")
+        XCTAssertEqual(library.selectedAgentID, "plan")
+    }
+
+    func testOfflineInventoryFailuresCollapseToASingleMessage() async throws {
+        let library = makeLibrary(recorder: Recorder()) { _ in
+            throw TransportError.connectionFailed("down")
+        }
+
+        await library.load(host: one, session: seededSession)
+
+        XCTAssertEqual(library.error, "Connection failed — the host may be unreachable.",
+                       "one host, one problem — identical failures collapse to a single message")
     }
 
     func testRejectedSwitchesKeepPreviousSelection() async throws {

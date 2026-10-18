@@ -30,6 +30,10 @@ final class SelectionLibrary {
     private(set) var isLoading = false
     private(set) var isSwitching = false
     private(set) var error: String?
+    /// The session whose snapshot seeded the selection — re-seeding from
+    /// an immutable snapshot would roll a host-confirmed selection back
+    /// to stale values every time the sheet reopens.
+    private var seededSessionID: String?
 
     init(service: ModelAgentService? = nil, credentialProvider: CredentialProvider? = nil) {
         self.service = service ?? ModelAgentService(makeTransport: { URLSessionTransport(baseURL: $0) })
@@ -45,9 +49,15 @@ final class SelectionLibrary {
 
     /// Loads both inventories and the host default, seeded with the
     /// session's CURRENT selection so checkmarks appear immediately.
+    /// The snapshot seeds the selection only ONCE per session: after a
+    /// host-confirmed switch the local value wins over the (immutable,
+    /// possibly stale) snapshot on every reopen.
     func load(host: OpenCodeDomain.Host, session: Session) async {
-        selectedRef = session.model
-        selectedAgentID = session.agent
+        if seededSessionID != session.id {
+            selectedRef = session.model
+            selectedAgentID = session.agent
+            seededSessionID = session.id
+        }
         guard let credential = credentialProvider?(host.id) else {
             error = "Re-pair this host to choose a model or agent."
             return
@@ -72,7 +82,11 @@ final class SelectionLibrary {
         } catch {
             if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
         }
-        error = failures.isEmpty ? nil : failures.joined(separator: " ")
+        // One host, one problem: collapse duplicate messages (e.g. three
+        // identical connection failures) while preserving first order.
+        var seen = Set<String>()
+        let unique = failures.filter { seen.insert($0).inserted }
+        error = unique.isEmpty ? nil : unique.joined(separator: " ")
     }
 
     /// Switches the session's model for subsequent turns. Returns true
