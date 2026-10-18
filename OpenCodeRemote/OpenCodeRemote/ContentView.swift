@@ -6,6 +6,9 @@ import OpenCodeTransport
 /// (docs/navigation-screens.md).
 struct ContentView: View {
     @State private var library = HostLibrary()
+    /// Shared across Projects and Sessions (recent locations feed
+    /// New Session; project inventory feeds the S07 project filter).
+    @State private var projects = ProjectsLibrary()
     @State private var showingConnectSheet = false
 
     var body: some View {
@@ -14,13 +17,14 @@ struct ContentView: View {
                 .tabItem { Label("Servers", systemImage: "server.rack") }
             ProjectsTab()
                 .tabItem { Label("Projects", systemImage: "folder") }
-            SessionsTab()
+            SessionsView()
                 .tabItem { Label("Sessions", systemImage: "bubble.left.and.bubble.right") }
             SettingsTab()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .background(Color("AppBackgroundColor"))
         .environment(library)
+        .environment(projects)
         .sheet(isPresented: $showingConnectSheet) {
             // Injected explicitly rather than relying on sheet environment
             // inheritance — a missing HostLibrary is a fatal SwiftUI error.
@@ -166,7 +170,7 @@ private struct HostRow: View {
 /// friendly name is never ambiguous.
 private struct ProjectsTab: View {
     @Environment(HostLibrary.self) private var library
-    @State private var projects = ProjectsLibrary()
+    @Environment(ProjectsLibrary.self) private var projects
     @State private var hostFilter: HostID?
     @State private var searchText = ""
     @State private var browsing: BrowseTarget?
@@ -423,19 +427,6 @@ private struct NewProjectTarget: Identifiable {
         self.host = host
         self.credential = credential
         self.parent = parent
-    }
-}
-
-private struct SessionsTab: View {
-    var body: some View {
-        NavigationStack {
-            ContentUnavailableView(
-                "No Sessions",
-                systemImage: "bubble.left.and.bubble.right",
-                description: Text("Sessions from your connected servers appear here.")
-            )
-            .navigationTitle("Sessions")
-        }
     }
 }
 
