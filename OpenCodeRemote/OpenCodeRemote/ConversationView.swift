@@ -29,7 +29,7 @@ struct ConversationView: View {
                     Text(conversation.error ?? "")
                 } actions: {
                     Button("Try Again") {
-                        Task { await conversation.open(host: host, sessionID: session.id) }
+                        Task { await openTranscript() }
                     }
                 }
             } else if conversation.messages.isEmpty {
@@ -39,7 +39,7 @@ struct ConversationView: View {
                     Text("This session has no messages yet. W05 adds sending the first prompt.")
                 } actions: {
                     Button("Refresh") {
-                        Task { await conversation.open(host: host, sessionID: session.id) }
+                        Task { await openTranscript() }
                     }
                 }
             } else {
@@ -74,12 +74,17 @@ struct ConversationView: View {
         }
         .task {
             conversation.attach(hosts: library)
-            await conversation.open(host: host, sessionID: session.id)
-            // Acknowledge unread ONLY when the transcript was actually
-            // shown — a failed open must not clear the unread state.
-            if conversation.error == nil, conversation.loadedSessionID == session.id {
-                await sessions?.markViewed(host: host, session: session)
-            }
+            await openTranscript()
+        }
+    }
+
+    /// Opens the transcript and acknowledges unread ONLY when it actually
+    /// showed (error nil + session matched) — a failed open must not
+    /// clear unread, and a successful retry must.
+    private func openTranscript() async {
+        await conversation.open(host: host, sessionID: session.id)
+        if conversation.error == nil, conversation.loadedSessionID == session.id {
+            await sessions?.markViewed(host: host, session: session)
         }
     }
 
