@@ -56,11 +56,12 @@ final class ConversationLibrary {
     private(set) var inboxError: String?
     private(set) var isLoadingInbox = false
     /// Stable ID of the last UNCONFIRMED submission, keyed to its exact
-    /// text AND its host+session context — reused only for a retry of
-    /// the same draft in the same place, so the server sees the
-    /// duplicate (409) and reconciliation finds it. A different
-    /// session/host always earns a fresh ID.
-    private var pendingSubmission: (hostID: HostID, sessionID: String, messageID: String, text: String)?
+    /// text AND its attachments AND its host+session context — reused
+    /// only for a retry of the same draft in the same place (same files
+    /// included), so the server sees the duplicate (409) and
+    /// reconciliation finds it. A different session/host/draft always
+    /// earns a fresh ID.
+    private var pendingSubmission: (hostID: HostID, sessionID: String, messageID: String, text: String, files: [PromptFileAttachment]?)?
     /// Admitted-but-not-yet-delivered projections, SCOPED to the session
     /// that admitted them, kept through refreshes until that session's
     /// transcript contains them or its inbox no longer lists them
@@ -218,8 +219,15 @@ final class ConversationLibrary {
     /// claim). Returns true only when the prompt is durably admitted —
     /// directly or by reconciliation — so callers clear the draft exactly
     /// then and never otherwise.
-    func send(host: OpenCodeDomain.Host, sessionID: String, text: String, delivery: InboxDelivery? = nil) async -> Bool {
+    func send(
+        host: OpenCodeDomain.Host,
+        sessionID: String,
+        text: String,
+        files: [PromptFileAttachment]? = nil,
+        delivery: InboxDelivery? = nil
+    ) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let attachments = (files?.isEmpty ?? true) ? nil : files
         guard !trimmed.isEmpty, !isSending else { return false }
         guard let credential = credentialProvider?(host.id) else {
             bannerError = "Re-pair this host to send messages."
@@ -229,20 +237,21 @@ final class ConversationLibrary {
         defer { isSending = false }
         // The same draft retries under the SAME stable ID in the SAME
         // host+session — a duplicate then gets 409 and is reconciled.
-        // Any other context (different text, session, or host) earns a
-        // fresh ID.
+        // Any other context (different text, attachments, session, or
+        // host) earns a fresh ID.
         let messageID: String
         if let pending = pendingSubmission,
-           pending.hostID == host.id, pending.sessionID == sessionID, pending.text == trimmed {
+           pending.hostID == host.id, pending.sessionID == sessionID,
+           pending.text == trimmed, pending.files == attachments {
             messageID = pending.messageID
         } else {
             messageID = Self.stableMessageID()
         }
-        pendingSubmission = (host.id, sessionID, messageID, trimmed)
+        pendingSubmission = (host.id, sessionID, messageID, trimmed, attachments)
         do {
             let item = try await promptService.prompt(
                 at: host.address, credential: credential, sessionID: sessionID,
-                text: trimmed, messageID: messageID, delivery: delivery
+                text: trimmed, files: attachments, messageID: messageID, delivery: delivery
             )
             admit(item, sessionID: sessionID)
             pendingSubmission = nil

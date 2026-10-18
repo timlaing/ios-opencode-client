@@ -15,18 +15,20 @@ public struct PromptService: Sendable {
         self.makeTransport = makeTransport
     }
 
-    /// Admits one text prompt. `messageID` should be the app's stable
-    /// `msg_` ID so failures can be reconciled against the inbox instead
-    /// of blindly retried.
+    /// Admits one prompt with optional W08 attachments. `messageID`
+    /// should be the app's stable `msg_` ID so failures can be reconciled
+    /// against the inbox instead of blindly retried — a retry must resend
+    /// the SAME body (same ID, same attachments).
     public func prompt(
         at host: URL,
         credential: BasicCredential?,
         sessionID: String,
         text: String,
+        files: [PromptFileAttachment]? = nil,
         messageID: String? = nil,
         delivery: InboxDelivery? = nil
     ) async throws -> InboxItem {
-        let body = PromptBody(id: messageID, text: text, delivery: delivery, resume: nil)
+        let body = PromptBody(id: messageID, text: text, files: files, delivery: delivery, resume: nil)
         return try await makeTransport(host)
             .perform(try W05Requests.prompt(sessionID: sessionID, body: body, credential: credential))
             .decodedJSON(InboxEnvelope.self)

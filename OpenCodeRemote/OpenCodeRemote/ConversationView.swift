@@ -1,6 +1,8 @@
 import SwiftUI
 import OpenCodeDomain
 import OpenCodeTransport
+import PhotosUI
+import UniformTypeIdentifiers
 
 /// S08 conversation (W04 read scope + W05 writing): the paged transcript
 /// with honest per-variant rendering — user bubbles, assistant content
@@ -24,6 +26,13 @@ struct ConversationView: View {
     @State private var showingInbox = false
     /// Preserved across failures — cleared ONLY on durable admission.
     @State private var draft = ""
+    /// W08 attachments (S09): prepared per the web inline/staging rule;
+    /// chips mirror the tray beside the draft.
+    @State private var attachments = AttachmentLibrary()
+    @State private var showingTray = false
+    @State private var showingCamera = false
+    @State private var showingFileImporter = false
+    @State private var photoSelection: [PhotosPickerItem] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -97,12 +106,60 @@ struct ConversationView: View {
                     }
             }
         }
+        .sheet(isPresented: $showingTray) {
+            // State is injected inside the sheet closure — the
+            // presenter's environment does not reach sheets.
+            AttachmentTrayView(
+                attachments: attachments, host: host, inputCapabilities: inputCapabilities
+            )
+        }
+        .fullScreenCover(isPresented: $showingCamera) {
+            CameraPickerView { image in
+                attachments.addCameraImage(image, host: host)
+            }
+            .ignoresSafeArea()
+        }
+        .onChange(of: photoSelection) { _, items in
+            guard !items.isEmpty else { return }
+            attachments.addPhotos(items, host: host)
+            photoSelection = []
+        }
+        .fileImporter(
+            isPresented: $showingFileImporter,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: true
+        ) { result in
+            if case .success(let urls) = result {
+                attachments.addFiles(urls, host: host)
+            }
+        }
+        .alert(
+            attachments.pendingConfirmation?.name ?? "Attachment",
+            isPresented: Binding(
+                get: { attachments.pendingConfirmation != nil },
+                set: { if !$0 { attachments.answerConfirmation(false, host: host) } }
+            ),
+            presenting: attachments.pendingConfirmation
+        ) { confirmation in
+            Button("Attach Anyway") { attachments.answerConfirmation(true, host: host) }
+                .accessibilityIdentifier("S09.confirm.accept")
+            Button("Cancel", role: .cancel) { attachments.answerConfirmation(false, host: host) }
+                .accessibilityIdentifier("S09.confirm.cancel")
+        } message: { confirmation in
+            switch confirmation.kind {
+            case .oversized(let byteCount):
+                Text("\(confirmation.name) is \(byteCount.formatted(.byteCount(style: .file))) — over the \(AttachmentRouter.warningThresholdBytes.formatted(.byteCount(style: .file))) warning threshold. This is not a hard limit; the host may still accept it.")
+            case .duplicate:
+                Text("\(confirmation.name) is already attached with the same size.")
+            }
+        }
         .refreshable {
             await conversation.refresh(host: host, sessionID: session.id)
         }
         .task {
             conversation.attach(hosts: library)
             selection.attach(hosts: library)
+            attachments.attach(hosts: library)
             await openTranscript()
         }
     }
@@ -173,45 +230,143 @@ struct ConversationView: View {
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            TextField("Message…", text: $draft, axis: .vertical)
-                .textFieldStyle(.roundedBorder)
-                .lineLimit(1...4)
-                .accessibilityIdentifier("S08.composer.field")
-            Button {
-                Task {
-                    let text = draft
-                    // The draft is cleared ONLY when admission is durable
-                    // (directly or reconciled) AND the field still holds
-                    // what was sent — text typed DURING the send is kept.
-                    if await conversation.send(host: host, sessionID: session.id, text: text) {
-                        if draft == text { draft = "" }
+        VStack(alignment: .leading, spacing: 6) {
+            if !attachments.drafts.isEmpty {
+                chips
+            }
+            HStack(alignment: .bottom, spacing: 8) {
+                Menu {
+                    PhotosPicker(selection: $photoSelection, maxSelectionCount: 5, matching: .images) {
+                        Label("Photos", systemImage: "photo.on.rectangle.angled")
                     }
-                }
-            } label: {
-                if conversation.isSending {
-                    ProgressView()
-                } else {
-                    Image(systemName: "arrow.up.circle.fill")
+                    Button {
+                        showingFileImporter = true
+                    } label: {
+                        Label("Files", systemImage: "folder")
+                    }
+                    if UIImagePickerController.isSourceTypeAvailable(.camera) {
+                        Button {
+                            showingCamera = true
+                        } label: {
+                            Label("Camera", systemImage: "camera")
+                        }
+                    }
+                    if !attachments.drafts.isEmpty {
+                        Button {
+                            showingTray = true
+                        } label: {
+                            Label("Attachments", systemImage: "paperclip.badge.plus")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "plus.circle")
                         .font(.title)
                 }
+                .accessibilityIdentifier("S09.attach.open")
+                TextField("Message…", text: $draft, axis: .vertical)
+                    .textFieldStyle(.roundedBorder)
+                    .lineLimit(1...4)
+                    .accessibilityIdentifier("S08.composer.field")
+                Button {
+                    Task {
+                        let text = draft
+                        let files = attachments.readyAttachments()
+                        let sentIDs = attachments.drafts.compactMap { item -> UUID? in
+                            if case .ready = item.state { return item.id }
+                            return nil
+                        }
+                        // The draft is cleared ONLY when admission is durable
+                        // (directly or reconciled) AND the field still holds
+                        // what was sent — text typed DURING the send is kept.
+                        // Sent attachments leave the tray; failed references
+                        // stay put.
+                        if await conversation.send(
+                            host: host, sessionID: session.id, text: text,
+                            files: files.isEmpty ? nil : files
+                        ) {
+                            if draft == text { draft = "" }
+                            attachments.consume(sentIDs)
+                        }
+                    }
+                } label: {
+                    if conversation.isSending {
+                        ProgressView()
+                    } else {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.title)
+                    }
+                }
+                .disabled(
+                    draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || conversation.isSending
+                        // Send waits for pending attachments rather than
+                        // sending a partial draft.
+                        || attachments.hasPending
+                )
+                .accessibilityIdentifier("S08.composer.send")
+                Button {
+                    Task { await conversation.stop(host: host, sessionID: session.id) }
+                } label: {
+                    Label("Stop", systemImage: "stop.circle")
+                        .labelStyle(.iconOnly)
+                        .font(.title)
+                }
+                .disabled(conversation.isSending)
+                .accessibilityIdentifier("S08.stop")
             }
-            .disabled(
-                draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || conversation.isSending
-            )
-            .accessibilityIdentifier("S08.composer.send")
-            Button {
-                Task { await conversation.stop(host: host, sessionID: session.id) }
-            } label: {
-                Label("Stop", systemImage: "stop.circle")
-                    .labelStyle(.iconOnly)
-                    .font(.title)
-            }
-            .disabled(conversation.isSending)
-            .accessibilityIdentifier("S08.stop")
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+    }
+
+    /// Attachment chips beside the draft (S08/S09): name plus honest
+    /// per-item state; tapping opens the tray.
+    private var chips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(attachments.drafts) { item in
+                    Button {
+                        showingTray = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            chipStateIcon(item)
+                            Text(item.name)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .font(.footnote)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(.thinMaterial, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("S09.chip")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func chipStateIcon(_ draft: AttachmentLibrary.Draft) -> some View {
+        switch draft.state {
+        case .preparing:
+            ProgressView()
+        case .uploading:
+            ProgressView()
+        case .ready:
+            Image(systemName: "checkmark.circle").foregroundStyle(.green)
+        case .failed:
+            Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
+        }
+    }
+
+    /// The selected model's input capabilities — drives the honest
+    /// "can't read directly" labels; nil while the selection is unknown.
+    private var inputCapabilities: Set<String>? {
+        guard let modelRef = session.model,
+              let model = selection.models.first(where: { $0.id == modelRef.id })
+        else { return nil }
+        return Set(model.capabilities.input)
     }
 
     private var transcript: some View {

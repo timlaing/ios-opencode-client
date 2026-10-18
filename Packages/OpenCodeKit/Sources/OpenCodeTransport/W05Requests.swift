@@ -4,17 +4,26 @@ import Foundation
 /// STABLE client-chosen message ID (`msg_` pattern): after a timeout or
 /// disconnect the app reconciles admission by searching the inbox and
 /// transcript for it before ever offering a retry (docs/api-contract.md
-/// W05). `files`/`agents`/`skills` are W08/W06 territory — the W05
-/// composer sends text only.
+/// W05). `files` carries W08 attachments (`PromptFileAttachment`); nil is
+/// omitted, so text-only prompts keep their exact W05 payload. `agents`/
+/// `skills` remain later scope.
 public struct PromptBody: Codable, Equatable, Sendable {
     public var id: String?
     public var text: String
+    public var files: [PromptFileAttachment]?
     public var delivery: InboxDelivery?
     public var resume: Bool?
 
-    public init(id: String? = nil, text: String, delivery: InboxDelivery? = nil, resume: Bool? = nil) {
+    public init(
+        id: String? = nil,
+        text: String,
+        files: [PromptFileAttachment]? = nil,
+        delivery: InboxDelivery? = nil,
+        resume: Bool? = nil
+    ) {
         self.id = id
         self.text = text
+        self.files = files
         self.delivery = delivery
         self.resume = resume
     }

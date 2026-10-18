@@ -209,15 +209,28 @@ public struct PairingSession: Decodable, Equatable, Sendable {
     }
 }
 
-/// `server.info` — identifies the host build for S02 display. Unknown fields
-/// are tolerated so baseline-plus servers decode.
+/// `server.info` — identifies the host build for S02 display, and (W08)
+/// reports `paths.tmp` as the staging directory for attachments. Unknown
+/// fields are tolerated so baseline-plus servers decode; `paths` is
+/// optional here so an older host still pairs, while staging fails
+/// honestly ("no temp directory") instead of decoding into garbage.
 public struct ServerInfo: Decodable, Equatable, Sendable {
+    public struct Paths: Decodable, Equatable, Sendable {
+        public var tmp: String
+
+        public init(tmp: String) {
+            self.tmp = tmp
+        }
+    }
+
     public var version: String
     public var urls: [String]?
+    public var paths: Paths?
 
-    public init(version: String, urls: [String]? = nil) {
+    public init(version: String, urls: [String]? = nil, paths: Paths? = nil) {
         self.version = version
         self.urls = urls
+        self.paths = paths
     }
 }
 
