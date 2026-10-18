@@ -175,7 +175,13 @@ struct ConversationView: View {
             confirmationAlerts.queueMayHaveAdvanced()
         }
         .onAppear {
-            confirmationAlerts.nextHead = { attachments.pendingConfirmation }
+            // Capture only the library (weakly) — capturing the view
+            // value would pull the sequencer's own State storage into
+            // nextHead: sequencer → closure → view State → sequencer.
+            let attachments = attachments
+            confirmationAlerts.nextHead = { [weak attachments] in
+                attachments?.pendingConfirmation
+            }
             confirmationAlerts.queueMayHaveAdvanced()
         }
         .refreshable {
