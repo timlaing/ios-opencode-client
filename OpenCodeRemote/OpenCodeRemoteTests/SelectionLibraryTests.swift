@@ -69,6 +69,14 @@ final class SelectionLibraryTests: XCTestCase {
         lastVersion: nil
     )
 
+    private let two = OpenCodeDomain.Host(
+        id: HostID(rawValue: "host_two"),
+        displayName: "Mock B",
+        address: URL(string: "http://host_two.local:4097")!,
+        createdAt: Date(timeIntervalSince1970: 0),
+        lastVersion: nil
+    )
+
     private let seededSession = Session(
         id: "ses_a", parentID: nil, projectID: nil, title: "Demo",
         agent: "plan", model: Session.ModelRef(id: "old-model", providerID: "other")
@@ -242,6 +250,88 @@ final class SelectionLibraryTests: XCTestCase {
         XCTAssertEqual(library.selectedRef?.id, "demo-code",
                        "a reopen must not roll the confirmed selection back to the stale snapshot")
         XCTAssertEqual(library.selectedAgentID, "plan")
+    }
+
+    func testReturningToASessionPreservesConfirmedSelection() async throws {
+        let handler: @Sendable (APIRequest) throws -> APIResponse = { request in
+            switch request.operationID {
+            case "model.list":
+                return Fixtures.response(Fixtures.located("[\(Fixtures.modelJSON)]"))
+            case "model.default":
+                return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
+            case "agent.list":
+                return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "session.switchModel":
+                return Fixtures.empty()
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        let library = makeLibrary(recorder: Recorder(), handler: handler)
+        let sessionB = Session(
+            id: "ses_b", parentID: nil, projectID: nil, title: "Other",
+            agent: "plan", model: Session.ModelRef(id: "other-model", providerID: "x")
+        )
+
+        // Confirm a switch in session A.
+        await library.load(host: one, session: seededSession)
+        let model = try XCTUnwrap(library.models.first)
+        let accepted = await library.selectModel(host: one, sessionID: "ses_a", model: model)
+        XCTAssertTrue(accepted)
+        XCTAssertEqual(library.selectedRef?.id, "demo-code")
+
+        // Visit session B — it seeds from ITS snapshot.
+        await library.load(host: one, session: sessionB)
+        XCTAssertEqual(library.selectedRef?.id, "other-model")
+
+        // Returning to A must restore A's CONFIRMED selection — its
+        // immutable snapshot still says "old-model".
+        await library.load(host: one, session: seededSession)
+        XCTAssertEqual(library.selectedRef?.id, "demo-code",
+                       "returning to a session never restores its stale snapshot")
+        XCTAssertEqual(library.selectedAgentID, "plan")
+    }
+
+    func testSeedingIsScopedToTheHostAndSessionPair() async throws {
+        let handler: @Sendable (APIRequest) throws -> APIResponse = { request in
+            switch request.operationID {
+            case "model.list":
+                return Fixtures.response(Fixtures.located("[\(Fixtures.modelJSON)]"))
+            case "model.default":
+                return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
+            case "agent.list":
+                return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "session.switchModel":
+                return Fixtures.empty()
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        let library = makeLibrary(recorder: Recorder(), handler: handler, credentials: [
+            "host_one": BasicCredential(secret: "t"),
+            "host_two": BasicCredential(secret: "t"),
+        ])
+        let sharedIDA = Session(
+            id: "ses_x", parentID: nil, projectID: nil, title: "A's",
+            agent: "plan", model: Session.ModelRef(id: "old-a", providerID: "x")
+        )
+        let sharedIDB = Session(
+            id: "ses_x", parentID: nil, projectID: nil, title: "B's",
+            agent: "plan", model: Session.ModelRef(id: "old-b", providerID: "y")
+        )
+
+        await library.load(host: one, session: sharedIDA)
+        XCTAssertEqual(library.selectedRef?.id, "old-a", "precondition")
+        let model = try XCTUnwrap(library.models.first)
+        let acceptedOnX = await library.selectModel(host: one, sessionID: "ses_x", model: model)
+        XCTAssertTrue(acceptedOnX)
+        XCTAssertEqual(library.selectedRef?.id, "demo-code")
+
+        // The SAME session ID on ANOTHER host is a different selection:
+        // it seeds from its own snapshot, never inherits host one's.
+        await library.load(host: two, session: sharedIDB)
+        XCTAssertEqual(library.selectedRef?.id, "old-b",
+                       "session identity is the (host, session) pair")
     }
 
     func testOfflineInventoryFailuresCollapseToASingleMessage() async throws {
