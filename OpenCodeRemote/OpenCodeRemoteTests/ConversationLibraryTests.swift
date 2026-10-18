@@ -650,6 +650,37 @@ final class ConversationLibraryTests: XCTestCase {
         XCTAssertTrue(library.messages.isEmpty, "projections never cross sessions")
     }
 
+    func testProjectionNeverRidesIntoADifferentSessionsTranscript() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.prompt":
+                return Fixtures.response(#"{"data":\#(Fixtures.inboxUser(id: "msg_x", text: "hello", created: 1000))}"#)
+            case "session.message.list":
+                // The send's follow-up refresh FAILS (loadedSessionID
+                // stays nil); the later open of session B succeeds.
+                let count = recorder.requests.filter { $0.operationID == "session.message.list" }.count
+                if count == 1 { throw TransportError.connectionFailed("refresh lost") }
+                return Fixtures.response(Fixtures.page([]))
+            case "session.inbox.list":
+                let item = Fixtures.inboxUser(id: "msg_x", text: "hello", created: 1000)
+                return Fixtures.response(#"{"data":[\#(item)]}"#)
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        // Admit into session A with NO transcript loaded yet, and the
+        // follow-up refresh fails — loadedSessionID stays nil.
+        let admitted = await library.send(host: one, sessionID: "ses_a", text: "hello")
+        XCTAssertTrue(admitted)
+        XCTAssertNotNil(library.error, "the failed refresh is surfaced honestly")
+
+        // Opening session B must not inherit session A's projection.
+        await library.open(host: one, sessionID: "ses_b")
+        XCTAssertTrue(library.messages.isEmpty, "a projection never rides into another session's transcript")
+    }
+
     // MARK: - Inbox (S09)
 
     func testInboxLifecycleLoadDeliverCancel() async throws {

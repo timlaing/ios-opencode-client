@@ -61,10 +61,12 @@ final class ConversationLibrary {
     /// duplicate (409) and reconciliation finds it. A different
     /// session/host always earns a fresh ID.
     private var pendingSubmission: (hostID: HostID, sessionID: String, messageID: String, text: String)?
-    /// Admitted-but-not-yet-delivered projections, kept through refreshes
-    /// until the transcript itself contains them or the inbox no longer
-    /// lists them (cancelled elsewhere).
-    private var projectedPending: [String: SessionMessage] = [:]
+    /// Admitted-but-not-yet-delivered projections, SCOPED to the session
+    /// that admitted them, kept through refreshes until that session's
+    /// transcript contains them or its inbox no longer lists them
+    /// (cancelled elsewhere). A projection never rides into another
+    /// session's transcript.
+    private var projectedPending: [String: (sessionID: String, message: SessionMessage)] = [:]
 
     init(
         service: SessionHistoryService? = nil,
@@ -112,7 +114,7 @@ final class ConversationLibrary {
             error = nil
             // A re-open must not erase an admission whose delivery the
             // page does not cover yet.
-            carryProjected()
+            carryProjected(sessionID: sessionID)
         } catch {
             if !Self.isSilent(error) { self.error = Self.message(for: error) }
         }
@@ -194,7 +196,7 @@ final class ConversationLibrary {
             // the inbox still admits it; once the transcript contains it
             // it's retired to the transcript's ownership.
             await pruneProjected(host: host, sessionID: sessionID, credential: credential)
-            carryProjected()
+            carryProjected(sessionID: sessionID)
         } catch {
             if !Self.isSilent(error) { self.error = Self.message(for: error) }
         }
@@ -254,7 +256,7 @@ final class ConversationLibrary {
                 at: host.address, credential: credential, sessionID: sessionID,
                 text: trimmed, messageID: messageID, delivery: delivery
             )
-            admit(item)
+            admit(item, sessionID: sessionID)
             pendingSubmission = nil
             bannerError = nil
             notice = nil
@@ -301,7 +303,7 @@ final class ConversationLibrary {
     ) async -> Bool {
         if let items = try? await promptService.inbox(at: host.address, credential: credential, sessionID: sessionID),
            let item = items.first(where: { $0.id == messageID }) {
-            admit(item)
+            admit(item, sessionID: sessionID)
             return true
         }
         await refresh(host: host, sessionID: sessionID)
@@ -310,41 +312,54 @@ final class ConversationLibrary {
     }
 
     /// Projects an admitted user item into the transcript once; a later
-    /// refresh dedupes by the shared ID. The projection is TRACKED until
-    /// delivery so an immediate refresh cannot erase the just-sent
-    /// message while the server still has it only in the inbox.
-    private func admit(_ item: InboxItem) {
+    /// refresh dedupes by the shared ID. The projection is TRACKED under
+    /// its session until delivery so an immediate refresh cannot erase
+    /// the just-sent message while the server still has it only in the
+    /// inbox — and it only ever lands in ITS OWN session's transcript.
+    private func admit(_ item: InboxItem, sessionID: String) {
         guard let projected = item.projectedMessage else { return }
+        projectedPending[projected.id] = (sessionID, projected)
+        // Land it visibly only when it belongs to the transcript on
+        // screen (or none has loaded yet).
+        guard loadedSessionID == nil || loadedSessionID == sessionID else { return }
         guard !messages.contains(where: { $0.id == projected.id }) else { return }
         messages.append(projected)
-        projectedPending[projected.id] = projected
     }
 
-    /// Re-attaches admitted-but-undelivered projections after a page
-    /// merge, retiring the ones the transcript now owns. Each projection
-    /// is INSERTED at its server-sort position — the projection's
-    /// timestamp comes from server time at admission, but a clock skew
-    /// must not strand it out of order until delivery.
-    private func carryProjected() {
-        let delivered = projectedPending.keys.filter { id in messages.contains { $0.id == id } }
+    /// Re-attaches admitted-but-undelivered projections of THIS session
+    /// after a page merge, retiring the ones its transcript now owns.
+    /// Each projection is INSERTED at its server-sort position — the
+    /// projection's timestamp comes from server time at admission, but a
+    /// clock skew must not strand it out of order until delivery.
+    private func carryProjected(sessionID: String) {
+        let scoped = projectedPending.filter { $0.value.sessionID == sessionID }
+        let delivered = scoped.filter { entry in
+            messages.contains { $0.id == entry.value.message.id }
+        }.map(\.key)
         delivered.forEach { projectedPending.removeValue(forKey: $0) }
-        for projection in projectedPending.values.sorted(by: { $0.time.created < $1.time.created }) {
-            guard !messages.contains(where: { $0.id == projection.id }) else { continue }
+        let missing = scoped.values
+            .map(\.message)
+            .filter { projection in !messages.contains { $0.id == projection.id } }
+            .sorted { $0.time.created < $1.time.created }
+        for projection in missing {
             let index = messages.firstIndex { Self.sortKey($0) > Self.sortKey(projection) } ?? messages.endIndex
             messages.insert(projection, at: index)
         }
     }
 
-    /// Drops projections the server no longer admits (cancelled from the
-    /// inbox elsewhere). A failed inbox read KEEPS them — unverifiable is
-    /// not gone.
+    /// Drops this session's projections the server no longer admits
+    /// (cancelled from the inbox elsewhere). A failed inbox read KEEPS
+    /// them — unverifiable is not gone. Other sessions' projections are
+    /// never judged against this inbox.
     private func pruneProjected(host: OpenCodeDomain.Host, sessionID: String, credential: BasicCredential?) async {
-        guard !projectedPending.isEmpty else { return }
+        guard projectedPending.values.contains(where: { $0.sessionID == sessionID }) else { return }
         guard let admitted = try? await promptService.inbox(at: host.address, credential: credential, sessionID: sessionID) else {
             return
         }
         let admittedIDs = Set(admitted.map(\.id))
-        let gone = projectedPending.keys.filter { !admittedIDs.contains($0) }
+        let gone = projectedPending
+            .filter { $0.value.sessionID == sessionID && !admittedIDs.contains($0.key) }
+            .map(\.key)
         gone.forEach { projectedPending.removeValue(forKey: $0) }
     }
 
