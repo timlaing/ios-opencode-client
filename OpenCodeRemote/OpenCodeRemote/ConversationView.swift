@@ -64,7 +64,8 @@ struct ConversationView: View {
             // on the presenter does not reach into the sheet.
             NavigationStack {
                 ModelAgentPickerView(
-                    host: host, session: session, selection: selection, sessions: sessions
+                    host: host, session: session, selection: selection,
+                    sessions: sessions, conversation: conversation
                 )
                 .navigationTitle("Model & Agent")
                 .toolbar {

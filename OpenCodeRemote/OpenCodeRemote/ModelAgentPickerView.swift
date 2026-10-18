@@ -2,12 +2,15 @@ import SwiftUI
 import OpenCodeDomain
 import OpenCodeTransport
 
-/// S10 model/agent picker (W06): searchable host inventories with
-/// honest selected / default / unavailable states. Tapping a row runs
-/// the native session switch; the checkmark moves ONLY after the host's
-/// 204 — a rejected switch leaves the previous selection visible and
-/// shows the failure. Disabled/deprecated models stay listed but are
-/// never selectable. Commands and skills join this sheet with W07.
+/// S10 model/agent/actions picker (W06 + W07): searchable host
+/// inventories with honest selected / default / unavailable states.
+/// Tapping a model/agent row runs the native session switch; the
+/// checkmark moves ONLY after the host's 204 — a rejected switch leaves
+/// the previous selection visible and shows the failure. Disabled/
+/// deprecated models stay listed but are never selectable. Discovered
+/// commands and skills (W07) are invoked here too — a 204 means the
+/// HOST applied it, so the conversation is re-read instead of rendering
+/// anything locally.
 struct ModelAgentPickerView: View {
     let host: OpenCodeDomain.Host
     let session: Session
@@ -15,6 +18,9 @@ struct ModelAgentPickerView: View {
     /// (sheets do not receive `.environment` from their presenter).
     let selection: SelectionLibrary
     var sessions: SessionsLibrary?
+    /// Post-invocation transcript refresh (W07) — the effect lands
+    /// host-side, so only an authoritative re-read shows it.
+    var conversation: ConversationLibrary?
 
     @State private var query = ""
 
@@ -40,10 +46,27 @@ struct ModelAgentPickerView: View {
         }
     }
 
+    private var filteredCommands: [CommandInfo] {
+        guard !term.isEmpty else { return selection.commands }
+        return selection.commands.filter {
+            $0.name.lowercased().contains(term)
+                || ($0.description?.lowercased().contains(term) ?? false)
+        }
+    }
+
+    private var filteredSkills: [SkillInfo] {
+        guard !term.isEmpty else { return selection.skills }
+        return selection.skills.filter {
+            $0.name.lowercased().contains(term)
+                || $0.id.lowercased().contains(term)
+                || ($0.description?.lowercased().contains(term) ?? false)
+        }
+    }
+
     var body: some View {
         List {
             if selection.isLoading {
-                Section { ProgressView("Loading Models and Agents…") }
+                Section { ProgressView("Loading Models, Agents and Actions…") }
             }
             if let error = selection.error {
                 Section {
@@ -53,12 +76,21 @@ struct ModelAgentPickerView: View {
                         .accessibilityIdentifier("S10.error")
                 }
             }
-            if !selection.isLoading, selection.models.isEmpty, selection.agents.isEmpty, selection.error == nil {
+            if let notice = selection.notice {
+                Section {
+                    Label(notice, systemImage: "checkmark.circle")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
+                        .accessibilityIdentifier("S10.notice")
+                }
+            }
+            if !selection.isLoading, selection.models.isEmpty, selection.agents.isEmpty,
+               selection.commands.isEmpty, selection.skills.isEmpty, selection.error == nil {
                 Section {
                     ContentUnavailableView(
                         "Nothing to Select",
                         systemImage: "slider.horizontal.3",
-                        description: Text("This host reported no models or agents.")
+                        description: Text("This host reported no models, agents, commands or skills.")
                     )
                     .accessibilityIdentifier("S10.empty")
                 }
@@ -87,9 +119,33 @@ struct ModelAgentPickerView: View {
                         }
                     }
                 }
+                Section("Commands") {
+                    if filteredCommands.isEmpty {
+                        Text(term.isEmpty ? "The host reported no commands." : "No commands match your search.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("S10.commands.empty")
+                    } else {
+                        ForEach(filteredCommands) { command in
+                            commandRow(command)
+                        }
+                    }
+                }
+                Section("Skills") {
+                    if filteredSkills.isEmpty {
+                        Text(term.isEmpty ? "The host reported no skills." : "No skills match your search.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("S10.skills.empty")
+                    } else {
+                        ForEach(filteredSkills) { skill in
+                            skillRow(skill)
+                        }
+                    }
+                }
             }
         }
-        .searchable(text: $query, prompt: "Search models and agents")
+        .searchable(text: $query, prompt: "Search models, agents, actions")
         .task {
             await selection.load(host: host, session: session)
         }
@@ -195,6 +251,75 @@ struct ModelAgentPickerView: View {
         }
         .disabled(selection.isSwitching)
         .accessibilityIdentifier("S10.agent.\(agent.id)")
+    }
+
+    private func commandRow(_ command: CommandInfo) -> some View {
+        Button {
+            Task {
+                let sent = await selection.invokeCommand(
+                    host: host, sessionID: session.id, command: command
+                )
+                if sent {
+                    // The effect lands host-side — only an authoritative
+                    // transcript re-read may show it.
+                    await conversation?.refresh(host: host, sessionID: session.id)
+                }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("/\(command.name)")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                if let description = command.description {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .disabled(selection.isInvoking || selection.isSwitching)
+        .accessibilityIdentifier("S10.command.\(command.name)")
+    }
+
+    private func skillRow(_ skill: SkillInfo) -> some View {
+        Button {
+            Task {
+                let activated = await selection.activateSkill(
+                    host: host, sessionID: session.id, skill: skill
+                )
+                if activated {
+                    await conversation?.refresh(host: host, sessionID: session.id)
+                }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(skill.name)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    if skill.autoinvoke == true {
+                        Text("Auto")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                if let description = skill.description {
+                    Text(description)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .disabled(selection.isInvoking || selection.isSwitching)
+        .accessibilityIdentifier("S10.skill.\(skill.id)")
     }
 
     // MARK: - Presentation helpers

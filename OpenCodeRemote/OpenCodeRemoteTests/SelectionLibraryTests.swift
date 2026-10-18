@@ -30,6 +30,10 @@ final class SelectionLibraryTests: XCTestCase {
 
         static let agentsList = #"[{"id":"build","name":"Build","description":"Dev agent","mode":"primary","hidden":false},{"id":"reviewer","name":"Reviewer","mode":"subagent","hidden":false},{"id":"secret","name":"Secret","mode":"primary","hidden":true}]"#
 
+        static let commandsList = #"[{"name":"review","description":"Synthetic review command"}]"#
+        static let skillsList = #"[{"id":"demo-review","name":"Demo review","path":"/srv/demo/.opencode/skills/review.md","content":"Review generated files only."}]"#
+        static let emptyActions = located("[]")
+
         static let sessionJSON = #"{"id":"ses_a","title":"Demo","agent":"plan","model":{"id":"old-model","providerID":"other"}}"#
         static let sessionList = #"{"data":[\#(sessionJSON)]}"#
         static let active = #"{"data":{}}"#
@@ -117,6 +121,7 @@ final class SelectionLibraryTests: XCTestCase {
         }
         return SelectionLibrary(
             service: ModelAgentService(makeTransport: { _ in stub() }),
+            actionService: SkillCommandService(makeTransport: { _ in stub() }),
             credentialProvider: { id in credentials[id.rawValue] ?? nil }
         )
     }
@@ -146,6 +151,10 @@ final class SelectionLibraryTests: XCTestCase {
                 return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
             case "agent.list":
                 return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.commandsList))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.skillsList))
             default:
                 throw TransportError.connectionFailed("unstubbed \(request.operationID)")
             }
@@ -160,6 +169,8 @@ final class SelectionLibraryTests: XCTestCase {
                        "the raw inventory is kept; the VIEW filters offerable agents")
         XCTAssertEqual(library.selectedRef?.id, "old-model", "selection is seeded from the session")
         XCTAssertEqual(library.selectedAgentID, "plan")
+        XCTAssertEqual(library.commands.map(\.id), ["review"], "W07 action discovery joins the inventories")
+        XCTAssertEqual(library.skills.map(\.id), ["demo-review"])
         XCTAssertFalse(library.isLoading)
     }
 
@@ -173,6 +184,10 @@ final class SelectionLibraryTests: XCTestCase {
                 throw TransportError.http(status: 503, envelope: nil)
             case "agent.list":
                 throw TransportError.http(status: 500, envelope: nil)
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.commandsList))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.skillsList))
             default:
                 throw TransportError.connectionFailed("unstubbed \(request.operationID)")
             }
@@ -183,6 +198,8 @@ final class SelectionLibraryTests: XCTestCase {
         XCTAssertEqual(library.models.map(\.id), ["demo-code"], "a failing agent list must not erase the models")
         XCTAssertNil(library.defaultModel)
         XCTAssertTrue(library.agents.isEmpty)
+        XCTAssertEqual(library.commands.map(\.id), ["review"], "action inventories load independently too")
+        XCTAssertEqual(library.skills.map(\.id), ["demo-review"])
         XCTAssertEqual(library.error, "The host rejected the request (HTTP 500).",
                        "503 contributes no error; the real failure surfaces alone")
     }
@@ -212,6 +229,10 @@ final class SelectionLibraryTests: XCTestCase {
                 return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
             case "agent.list":
                 return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
             case "session.list":
                 return Fixtures.response(Fixtures.sessionList)
             case "session.active":
@@ -256,6 +277,10 @@ final class SelectionLibraryTests: XCTestCase {
                 return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
             case "agent.list":
                 return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
             case "session.switchModel":
                 return Fixtures.empty()
             default:
@@ -288,6 +313,10 @@ final class SelectionLibraryTests: XCTestCase {
                 return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
             case "agent.list":
                 return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
             case "session.switchModel":
                 return Fixtures.empty()
             default:
@@ -328,6 +357,10 @@ final class SelectionLibraryTests: XCTestCase {
                 return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
             case "agent.list":
                 return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
             case "session.switchModel":
                 return Fixtures.empty()
             default:
@@ -371,6 +404,10 @@ final class SelectionLibraryTests: XCTestCase {
                 return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
             case "agent.list":
                 return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
             case "session.switchModel":
                 return Fixtures.empty()
             default:
@@ -446,6 +483,10 @@ final class SelectionLibraryTests: XCTestCase {
                 return Fixtures.response(Fixtures.located("[\(Fixtures.modelJSON)]"))
             case "agent.list":
                 return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
             case "model.default":
                 throw TransportError.http(status: 503, envelope: nil)
             case "session.list":
@@ -484,6 +525,10 @@ final class SelectionLibraryTests: XCTestCase {
             switch request.operationID {
             case "agent.list":
                 return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
             case "session.list":
                 return Fixtures.response(Fixtures.sessionList)
             case "session.active":
@@ -508,5 +553,74 @@ final class SelectionLibraryTests: XCTestCase {
         XCTAssertNil(library.error)
         XCTAssertEqual(store.sessionsByHost[one.id]?.first?.agent, "build",
                        "the store reflects the host-confirmed agent")
+    }
+
+    // MARK: - Commands and skills (W07)
+
+    func testInvocationsAre204Authoritative() async throws {
+        let library = makeLibrary(recorder: Recorder()) { request in
+            switch request.operationID {
+            case "session.command", "experimental.session.skill":
+                return Fixtures.empty()
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        let command = CommandInfo(name: "review", description: "Synthetic review command")
+        let skill = SkillInfo(
+            id: "demo-review", name: "Demo review",
+            path: "/srv/demo/.opencode/skills/review.md",
+            content: "Review generated files only."
+        )
+
+        let sent = await library.invokeCommand(host: one, sessionID: "ses_a", command: command)
+        XCTAssertTrue(sent, "204 is the authority — nothing rendered locally")
+        XCTAssertNil(library.error)
+        XCTAssertNotNil(library.notice, "a confirmed invocation is acknowledged")
+        XCTAssertFalse(library.isInvoking)
+
+        let activated = await library.activateSkill(host: one, sessionID: "ses_a", skill: skill)
+        XCTAssertTrue(activated)
+        XCTAssertNil(library.error)
+        XCTAssertNotNil(library.notice)
+        XCTAssertFalse(library.isInvoking)
+    }
+
+    func testRejectedInvocationsClaimNothing() async throws {
+        let library = makeLibrary(recorder: Recorder()) { request in
+            switch request.operationID {
+            case "session.command", "experimental.session.skill":
+                throw TransportError.http(status: 404, envelope: nil)
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        let command = CommandInfo(name: "nope")
+        let skill = SkillInfo(id: "missing", name: "Missing", path: "/p", content: "c")
+
+        let sent = await library.invokeCommand(host: one, sessionID: "ses_a", command: command)
+        XCTAssertFalse(sent, "a rejected command must not claim anything ran")
+        XCTAssertEqual(library.error, "The host rejected the request (HTTP 404).")
+        XCTAssertNil(library.notice)
+
+        let activated = await library.activateSkill(host: one, sessionID: "ses_a", skill: skill)
+        XCTAssertFalse(activated, "a rejected skill must not claim activation")
+        XCTAssertEqual(library.error, "The host rejected the request (HTTP 404).")
+        XCTAssertNil(library.notice)
+    }
+
+    func testInvocationsFailClosedWithoutCredential() async throws {
+        let library = makeLibrary(
+            recorder: Recorder(),
+            handler: { _ in Fixtures.empty() },
+            credentials: [:]
+        )
+
+        let sent = await library.invokeCommand(
+            host: one, sessionID: "ses_a", command: CommandInfo(name: "review")
+        )
+
+        XCTAssertFalse(sent)
+        XCTAssertEqual(library.error, "Re-pair this host to run commands or skills.")
     }
 }

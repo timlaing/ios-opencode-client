@@ -18,10 +18,15 @@ final class SelectionLibrary {
     typealias CredentialProvider = @MainActor (HostID) -> BasicCredential?
 
     private let service: ModelAgentService
+    private let actionService: SkillCommandService
     private var credentialProvider: CredentialProvider?
 
     private(set) var models: [ModelInfo] = []
     private(set) var agents: [AgentInfo] = []
+    /// Discovered host actions (W07) — listing never implies they can
+    /// be installed or edited through these routes.
+    private(set) var commands: [CommandInfo] = []
+    private(set) var skills: [SkillInfo] = []
     private(set) var defaultModel: ModelInfo?
     /// The session's current `Model.Ref` (selection identity — never a
     /// bare `modelID`).
@@ -29,6 +34,11 @@ final class SelectionLibrary {
     private(set) var selectedAgentID: String?
     private(set) var isLoading = false
     private(set) var isSwitching = false
+    /// A command/skill invocation is in flight (W07).
+    private(set) var isInvoking = false
+    /// Success feedback for a host-confirmed action (S10) — never a
+    /// claim about what the host rendered.
+    private(set) var notice: String?
     private(set) var error: String?
 
     /// The last known selection per (host, session). Session identity
@@ -49,8 +59,13 @@ final class SelectionLibrary {
     private var activeHostID: HostID?
     private var activeSessionID: String?
 
-    init(service: ModelAgentService? = nil, credentialProvider: CredentialProvider? = nil) {
+    init(
+        service: ModelAgentService? = nil,
+        actionService: SkillCommandService? = nil,
+        credentialProvider: CredentialProvider? = nil
+    ) {
         self.service = service ?? ModelAgentService(makeTransport: { URLSessionTransport(baseURL: $0) })
+        self.actionService = actionService ?? SkillCommandService(makeTransport: { URLSessionTransport(baseURL: $0) })
         self.credentialProvider = credentialProvider
     }
 
@@ -84,6 +99,7 @@ final class SelectionLibrary {
         }
         isLoading = true
         error = nil
+        notice = nil
         defer { isLoading = false }
 
         var failures: [String] = []
@@ -99,6 +115,16 @@ final class SelectionLibrary {
         }
         do {
             agents = try await service.agents(at: host.address, credential: credential)
+        } catch {
+            if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
+        }
+        do {
+            commands = try await actionService.commands(at: host.address, credential: credential)
+        } catch {
+            if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
+        }
+        do {
+            skills = try await actionService.skills(at: host.address, credential: credential)
         } catch {
             if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
         }
@@ -124,6 +150,7 @@ final class SelectionLibrary {
         }
         isSwitching = true
         defer { isSwitching = false }
+        notice = nil
         let ref = model.selectionRef()
         do {
             try await service.switchModel(at: host.address, credential: credential, sessionID: sessionID, to: ref)
@@ -154,6 +181,7 @@ final class SelectionLibrary {
         }
         isSwitching = true
         defer { isSwitching = false }
+        notice = nil
         do {
             try await service.switchAgent(at: host.address, credential: credential, sessionID: sessionID, agent: agent.id)
             updateConfirmed(hostID: host.id, sessionID: sessionID) { $0.agent = agent.id }
@@ -162,6 +190,66 @@ final class SelectionLibrary {
             }
             error = nil
             sessions?.noteSelection(host: host, sessionID: sessionID, agent: agent.id, model: nil)
+            return true
+        } catch {
+            if !Self.isSilent(error) { self.error = Self.message(for: error) }
+            return false
+        }
+    }
+
+    // MARK: - Command and skill invocation (W07)
+
+    /// Invokes a discovered command in a session (empty argument text —
+    /// template commands expand host-side). Returns true ONLY on the
+    /// host's 204: nothing executes or renders locally, so the caller
+    /// re-reads the transcript for the effect.
+    func invokeCommand(
+        host: OpenCodeDomain.Host,
+        sessionID: String,
+        command: CommandInfo
+    ) async -> Bool {
+        guard let credential = credentialProvider?(host.id) else {
+            error = "Re-pair this host to run commands or skills."
+            return false
+        }
+        isInvoking = true
+        defer { isInvoking = false }
+        notice = nil
+        do {
+            try await actionService.invokeCommand(
+                at: host.address, credential: credential,
+                sessionID: sessionID, name: command.name, text: ""
+            )
+            error = nil
+            notice = "Command “\(command.name)” sent — the host works it into the conversation."
+            return true
+        } catch {
+            if !Self.isSilent(error) { self.error = Self.message(for: error) }
+            return false
+        }
+    }
+
+    /// Activates a discovered skill for subsequent turns; same
+    /// 204-is-the-only-authority rule as `invokeCommand`.
+    func activateSkill(
+        host: OpenCodeDomain.Host,
+        sessionID: String,
+        skill: SkillInfo
+    ) async -> Bool {
+        guard let credential = credentialProvider?(host.id) else {
+            error = "Re-pair this host to run commands or skills."
+            return false
+        }
+        isInvoking = true
+        defer { isInvoking = false }
+        notice = nil
+        do {
+            try await actionService.activateSkill(
+                at: host.address, credential: credential,
+                sessionID: sessionID, id: skill.id
+            )
+            error = nil
+            notice = "Skill “\(skill.name)” activated for subsequent turns."
             return true
         } catch {
             if !Self.isSilent(error) { self.error = Self.message(for: error) }
