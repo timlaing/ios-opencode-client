@@ -274,6 +274,21 @@ final class SessionsLibrary {
         }
     }
 
+    /// Applies a HOST-CONFIRMED (204) W06 agent/model selection to the
+    /// local inventory so no other view shows a stale selection. Called
+    /// only after the switch succeeded — never optimistically.
+    func noteSelection(
+        host: OpenCodeDomain.Host,
+        sessionID: String,
+        agent: String?,
+        model: Session.ModelRef?
+    ) {
+        updateLocal(sessionID: sessionID, in: host.id) { session in
+            if let agent { session.agent = agent }
+            if let model { session.model = model }
+        }
+    }
+
     private func updateLocal(sessionID: String, in hostID: HostID, _ mutate: (inout Session) -> Void) {
         if let index = sessionsByHost[hostID]?.firstIndex(where: { $0.id == sessionID }) {
             mutate(&sessionsByHost[hostID]![index])

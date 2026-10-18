@@ -13,9 +13,11 @@
 		2CC62EE5E90DDE822EB9B6FD /* HostLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 557CD3B06333747A5958EEEA /* HostLibraryTests.swift */; };
 		323C25D93319E5FAE736AA03 /* OpenCodeStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 3CE58B3F620052B4312CB22F /* OpenCodeStorage */; };
 		3D278520E2E9573DDFF88C19 /* OpenCodeStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 437A60895CC53C06DCB5DDAC /* OpenCodeStorage */; };
+		3E0B6F6FCB767690D722FA56 /* ModelAgentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D65D183486C0DE9CB0FE855 /* ModelAgentPickerView.swift */; };
 		3EA4D87AAB4A8F89219DBD83 /* SessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 118BAFECEFA9DD1F3DFC7F9D /* SessionsView.swift */; };
 		46C696508541FF6C05EC1694 /* ConnectHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06EB5D222785B49795B89A59 /* ConnectHostView.swift */; };
 		4A673D0FF54E2757EB3ABD73 /* OpenCodeDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 5DB991BC744E6FA7F40F1E3E /* OpenCodeDomain */; };
+		4EA3B4C2FBAB4ED9FBE467D8 /* SelectionLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D765A067EB12DEFAE6CA558A /* SelectionLibraryTests.swift */; };
 		54DDBF68BC53CB3F1F93834C /* LocalPushConfigurationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BA2EB179D0D74E5233F1BB6 /* LocalPushConfigurationController.swift */; };
 		55594B3DF9CFB129CE822E88 /* SessionLocalStateStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94EE53AFEC0878CF834794 /* SessionLocalStateStoreTests.swift */; };
 		58BAF77E85BB89F2E0D829B3 /* ProjectsLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */; };
@@ -26,6 +28,7 @@
 		8F91DCC678184AC1077AAFF9 /* OpenCodeStorage in Frameworks */ = {isa = PBXBuildFile; productRef = A6940D2F42398004DE2F4E66 /* OpenCodeStorage */; };
 		95A10F74E73445C83D72738D /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86AB16C65ED59D9FC9A77E57 /* WelcomeView.swift */; };
 		95F8BCCCA82D4D19AA466FB9 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = EB4EF03F4434199B28DE0C87 /* OpenCodeTransport */; };
+		A37D8A660177A84B37F3EF61 /* SelectionLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 547D33894F8710622BEEAAF9 /* SelectionLibrary.swift */; };
 		A73F651900612517D6F962C0 /* HostLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45806627CE3F3195AAF1D97E /* HostLibrary.swift */; };
 		B3ACFE2C0E337D4266F15364 /* OpenCodeDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 6292B27C77667C828F3C55D4 /* OpenCodeDomain */; };
 		B5E96920151DA9CAC68F30FA /* OpenCodeDomain in Frameworks */ = {isa = PBXBuildFile; productRef = 0D396EF7E5560602E230D24D /* OpenCodeDomain */; };
@@ -98,10 +101,12 @@
 		4B6A1B236A48CD201C014739 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4C466BAF460750530CE6C4B7 /* ProjectsLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsLibrary.swift; sourceTree = "<group>"; };
 		538A41BA72886565DE0033A5 /* LocalPushProvider.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = LocalPushProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		547D33894F8710622BEEAAF9 /* SelectionLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionLibrary.swift; sourceTree = "<group>"; };
 		557CD3B06333747A5958EEEA /* HostLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostLibraryTests.swift; sourceTree = "<group>"; };
 		609C80F1D24DEA11508634E4 /* OpenCodePushProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodePushProvider.swift; sourceTree = "<group>"; };
 		6885A35810D9F55D83E34804 /* OpenCodeRemoteUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeRemoteUITests.swift; sourceTree = "<group>"; };
 		692EB67452C2727316496982 /* SessionsLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsLibraryTests.swift; sourceTree = "<group>"; };
+		6D65D183486C0DE9CB0FE855 /* ModelAgentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelAgentPickerView.swift; sourceTree = "<group>"; };
 		76BB914BBC8F3B0BD8F43D9F /* SessionsLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsLibrary.swift; sourceTree = "<group>"; };
 		7993BF3D9A63D9D450E4254F /* FolderNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderNavigationTests.swift; sourceTree = "<group>"; };
 		7F554B44B72453E1ACCBA4D5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -113,6 +118,7 @@
 		BAF798B11E6898C192FB8751 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
 		C2F471708ABD498D52D76954 /* OpenCodeRemote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenCodeRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsLibraryTests.swift; sourceTree = "<group>"; };
+		D765A067EB12DEFAE6CA558A /* SelectionLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionLibraryTests.swift; sourceTree = "<group>"; };
 		E1A97F76428C3F7698113221 /* LocalPushConfigurationControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPushConfigurationControllerTests.swift; sourceTree = "<group>"; };
 		E7232895D6FC3972F31C5C58 /* FolderBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderBrowserView.swift; sourceTree = "<group>"; };
 		F9F146FC21EC6901FCCF7028 /* ConversationLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationLibraryTests.swift; sourceTree = "<group>"; };
@@ -171,6 +177,7 @@
 				E1A97F76428C3F7698113221 /* LocalPushConfigurationControllerTests.swift */,
 				479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */,
 				CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */,
+				D765A067EB12DEFAE6CA558A /* SelectionLibraryTests.swift */,
 				4A94EE53AFEC0878CF834794 /* SessionLocalStateStoreTests.swift */,
 				692EB67452C2727316496982 /* SessionsLibraryTests.swift */,
 			);
@@ -188,10 +195,12 @@
 				E7232895D6FC3972F31C5C58 /* FolderBrowserView.swift */,
 				45806627CE3F3195AAF1D97E /* HostLibrary.swift */,
 				1BA2EB179D0D74E5233F1BB6 /* LocalPushConfigurationController.swift */,
+				6D65D183486C0DE9CB0FE855 /* ModelAgentPickerView.swift */,
 				83BF9FAC0843B814B7183B2F /* NewProjectView.swift */,
 				FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */,
 				4C466BAF460750530CE6C4B7 /* ProjectsLibrary.swift */,
 				41CCFF7F3899E21E1A364102 /* QRScannerView.swift */,
+				547D33894F8710622BEEAAF9 /* SelectionLibrary.swift */,
 				108EBC9303F50D544E810CA9 /* SessionLocalStateStore.swift */,
 				76BB914BBC8F3B0BD8F43D9F /* SessionsLibrary.swift */,
 				118BAFECEFA9DD1F3DFC7F9D /* SessionsView.swift */,
@@ -411,10 +420,12 @@
 				D2EEFA03A71BBB43F50F3047 /* FolderBrowserView.swift in Sources */,
 				A73F651900612517D6F962C0 /* HostLibrary.swift in Sources */,
 				54DDBF68BC53CB3F1F93834C /* LocalPushConfigurationController.swift in Sources */,
+				3E0B6F6FCB767690D722FA56 /* ModelAgentPickerView.swift in Sources */,
 				FDDA3D58718234DCE5C3A3C2 /* NewProjectView.swift in Sources */,
 				8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */,
 				B89B7447BDCC8F810822DDDA /* ProjectsLibrary.swift in Sources */,
 				FAFCA844E6C424603A12F3C6 /* QRScannerView.swift in Sources */,
+				A37D8A660177A84B37F3EF61 /* SelectionLibrary.swift in Sources */,
 				C9DE00DCA5E7155F7D115476 /* SessionLocalStateStore.swift in Sources */,
 				D4C58C313DD854087FF95AFA /* SessionsLibrary.swift in Sources */,
 				3EA4D87AAB4A8F89219DBD83 /* SessionsView.swift in Sources */,
@@ -441,6 +452,7 @@
 				FC4F62AF7B6D3284C98EFAFD /* LocalPushConfigurationControllerTests.swift in Sources */,
 				29C14B0551E936B987D1EFC2 /* OpenCodeRemoteTests.swift in Sources */,
 				58BAF77E85BB89F2E0D829B3 /* ProjectsLibraryTests.swift in Sources */,
+				4EA3B4C2FBAB4ED9FBE467D8 /* SelectionLibraryTests.swift in Sources */,
 				55594B3DF9CFB129CE822E88 /* SessionLocalStateStoreTests.swift in Sources */,
 				CA84B25C03D8696EC70C105A /* SessionsLibraryTests.swift in Sources */,
 			);

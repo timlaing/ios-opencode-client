@@ -9,7 +9,8 @@ import OpenCodeTransport
 /// The composer sends prompts by durable admission (stable `msg_` ID,
 /// reconciled by inbox/transcript search on failure), Stop is an ordinary
 /// `interrupt?resume=false`, and the inbox (S09) manages admitted-but-
-/// undelivered work. Live event streaming arrives with W16.
+/// undelivered work. The S10 model/agent picker (W06) opens from this
+/// toolbar. Live event streaming arrives with W16.
 struct ConversationView: View {
     let host: OpenCodeDomain.Host
     let session: Session
@@ -17,6 +18,8 @@ struct ConversationView: View {
 
     @Environment(HostLibrary.self) private var library
     @State private var conversation = ConversationLibrary()
+    @State private var selection = SelectionLibrary()
+    @State private var showingSelection = false
     @State private var showingContext = false
     @State private var showingInbox = false
     /// Preserved across failures — cleared ONLY on durable admission.
@@ -33,6 +36,14 @@ struct ConversationView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
+                    showingSelection = true
+                } label: {
+                    Label("Model and Agent", systemImage: "cpu")
+                }
+                .accessibilityIdentifier("S10.open")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
                     showingInbox = true
                 } label: {
                     Label("Pending Prompts", systemImage: "tray.full")
@@ -46,6 +57,21 @@ struct ConversationView: View {
                     Label("Active Context", systemImage: "square.stack.3d.up")
                 }
                 .accessibilityIdentifier("S08.context")
+            }
+        }
+        .sheet(isPresented: $showingSelection) {
+            // State and environment are injected HERE — `.environment`
+            // on the presenter does not reach into the sheet.
+            NavigationStack {
+                ModelAgentPickerView(
+                    host: host, session: session, selection: selection, sessions: sessions
+                )
+                .navigationTitle("Model & Agent")
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showingSelection = false }
+                    }
+                }
             }
         }
         .sheet(isPresented: $showingContext) {
@@ -75,6 +101,7 @@ struct ConversationView: View {
         }
         .task {
             conversation.attach(hosts: library)
+            selection.attach(hosts: library)
             await openTranscript()
         }
     }
