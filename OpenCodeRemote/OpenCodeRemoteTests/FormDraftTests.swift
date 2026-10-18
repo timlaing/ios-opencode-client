@@ -98,6 +98,43 @@ final class FormDraftTests: XCTestCase {
         XCTAssertTrue(draft.answer().isEmpty)
     }
 
+    // MARK: - Named non-finite defaults
+
+    func testNamedNaNDefaultSeedsAnEmptyBufferNotLiteralNan() {
+        // The wire can NAME a NaN default the client can decode but no
+        // person can enter: seeding the literal "nan" would fail
+        // parseNumber on an untouched field and block submission. Such
+        // a default seeds an EMPTY buffer — unanswered, and honestly
+        // valid while the field is optional.
+        let fields: [FormField] = [
+            .number(FormNumberField(key: "seed", default: .nan)),
+            .integer(FormIntegerField(key: "replicas", default: .nan)),
+        ]
+        let draft = FormDraft(fields: fields)
+        XCTAssertEqual(draft.numbers["seed"], "",
+                       "NaN is never shown as typed text the user must clear")
+        XCTAssertEqual(draft.numbers["replicas"], "")
+        XCTAssertTrue(draft.validate().isEmpty, "an untouched optional field stays valid")
+        XCTAssertNil(draft.answer()["seed"], "a NaN default answers nothing")
+        XCTAssertNil(draft.answer()["replicas"])
+    }
+
+    func testFiniteNonDefaultSeedsStillRoundTrip() {
+        // Finite defaults keep their exact editing text — only NaN is
+        // special-cased; ±infinity round-trips through parseNumber.
+        let fields: [FormField] = [
+            .number(FormNumberField(key: "ratio", default: 2.5)),
+            .integer(FormIntegerField(key: "replicas", default: 3)),
+            .number(FormNumberField(key: "open", default: -.infinity)),
+        ]
+        let draft = FormDraft(fields: fields)
+        XCTAssertEqual(draft.numbers["ratio"], "2.5")
+        XCTAssertEqual(draft.numbers["replicas"], "3")
+        XCTAssertEqual(draft.numbers["open"], "-inf")
+        XCTAssertEqual(draft.answer()["open"], .number(-.infinity),
+                       "an infinite default parses back to the same typed value")
+    }
+
     // MARK: - Condition order guard (a `when` names an EARLIER field)
 
     func testSelfReferencingConditionIsUnsatisfiedAndNeverRecurses() {

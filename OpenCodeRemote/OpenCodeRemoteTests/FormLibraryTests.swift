@@ -307,6 +307,26 @@ final class FormLibraryTests: XCTestCase {
         XCTAssertNil(request.body, "cancellation carries no payload")
     }
 
+    func testAlreadySettledCancelSettlesTheEntry() async throws {
+        // DELETE carries FormAlreadySettledError in the pinned contract:
+        // cancelling a form answered/cancelled elsewhere must settle it
+        // with its own outcome — never a generic failure that leaves the
+        // entry sitting editable in the dock.
+        let responses = Responses([
+            "session.form.list": .success(json(listJSON(ownList))),
+            "session.form.cancel": .failure(.http(status: 409, envelope: nil)),
+        ])
+        let library = library(responses)
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+        let entry = try XCTUnwrap(library.entries.first)
+
+        let outcome = await library.cancel(entry, message: nil, host: host)
+
+        XCTAssertEqual(outcome, .alreadySettled)
+        XCTAssertTrue(library.entries.isEmpty,
+                      "a form settled elsewhere must not linger as pending")
+    }
+
     // MARK: - Detail re-read
 
     func testDetailReadsTheOwnerFormAndMapsGone() async {

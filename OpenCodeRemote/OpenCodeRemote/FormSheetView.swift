@@ -679,8 +679,14 @@ struct FormSheetView: View {
             // Re-pin to the new head (the settled entry has left the
             // dock) and rebuild every per-form state together — the id
             // change re-runs the load task with a fresh, empty draft.
+            // Loading is claimed SYNCHRONOUSLY: with detail cleared the
+            // scene would otherwise resolve to `empty` (a bogus "No
+            // Pending Questions" flash) in the gap before the re-keyed
+            // task gets scheduled.
             presented = forms.entries.first
             detail = nil
+            loadError = nil
+            isLoading = true
             draft = FormDraft(fields: [])
             customText = [:]
             validationErrors = [:]

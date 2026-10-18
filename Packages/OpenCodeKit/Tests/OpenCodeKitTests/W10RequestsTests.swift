@@ -348,6 +348,52 @@ final class W10RequestsTests: XCTestCase {
         XCTAssertEqual(response.data.state, .answered(answer: ["confirm": .boolean(true)]))
     }
 
+    func testJSONValueKeepsNamedNonFiniteStringsAsStringsUnderSharedDecoder() throws {
+        // JSONValue is the faithful mirror for forward-compatible
+        // payloads: a JSON string must survive the shared decoder's
+        // non-finite strategy as .string — becoming .number(.infinity)
+        // would corrupt the mirror AND break the encoder round-trip
+        // (the encoder has no non-finite strategy and must never see
+        // a non-finite number). JSON numbers/bools are unaffected:
+        // Foundation never decodes them as String.
+        let doc = #"{"a":"Infinity","b":"-Infinity","c":"NaN","n":3,"s":"3","t":true,"z":null}"#
+        let value = try OpenCodeAPI.decoder.decode(JSONValue.self, from: Data(doc.utf8))
+        guard case .object(let object) = value else {
+            return XCTFail("the document decodes as an object")
+        }
+        guard case .string(let a) = object["a"] else {
+            return XCTFail("\"Infinity\" stays a string")
+        }
+        XCTAssertEqual(a, "Infinity")
+        guard case .string(let b) = object["b"] else {
+            return XCTFail("\"-Infinity\" stays a string")
+        }
+        XCTAssertEqual(b, "-Infinity")
+        guard case .string(let c) = object["c"] else {
+            return XCTFail("\"NaN\" stays a string")
+        }
+        XCTAssertEqual(c, "NaN")
+        guard case .number(let n) = object["n"] else {
+            return XCTFail("a JSON number stays a number")
+        }
+        XCTAssertEqual(n, 3)
+        guard case .string(let s) = object["s"] else {
+            return XCTFail("a numeric string stays a string")
+        }
+        XCTAssertEqual(s, "3")
+        guard case .bool(true) = object["t"] else {
+            return XCTFail("a JSON bool stays a bool")
+        }
+        guard case .some(.null) = object["z"] else {
+            return XCTFail("a JSON null stays null")
+        }
+        // The faithful mirror re-encodes without a throw under the
+        // shared encoder (no non-finite strategy).
+        let encoded = try OpenCodeAPI.encoder.encode(value)
+        let roundTrip = try OpenCodeAPI.decoder.decode(JSONValue.self, from: encoded)
+        XCTAssertEqual(roundTrip, value, "decode → encode → decode is lossless")
+    }
+
     // MARK: - Identity rules
 
     func testSessionIDIsAPlainStringWithNoPrefixEnforced() throws {

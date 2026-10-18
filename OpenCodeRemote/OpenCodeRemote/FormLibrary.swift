@@ -245,8 +245,9 @@ final class FormLibrary {
     }
 
     /// Explicit cancellation (S12): DELETE with the user's optional
-    /// message. 204 and 404 both settle the dock entry — cancelling a
-    /// form that is already gone is done, not an error to retry.
+    /// message. 204, 409 (settled elsewhere), and 404 all settle the
+    /// dock entry — none of them is an error to retry; only the
+    /// distinct outcome tells the sheet which settled state to show.
     func cancel(
         _ entry: Entry,
         message: String?,
@@ -266,6 +267,13 @@ final class FormLibrary {
             remove(entry.id)
             reopenWatchAfterAnswer()
             return .accepted
+        } catch FormService.ServiceError.alreadySettled {
+            // The form was answered/cancelled elsewhere — the host's
+            // state is authoritative and the dock entry is done, not
+            // left editable under a generic failure.
+            remove(entry.id)
+            reopenWatchAfterAnswer()
+            return .alreadySettled
         } catch FormService.ServiceError.notFound {
             remove(entry.id)
             reopenWatchAfterAnswer()

@@ -107,7 +107,9 @@ public struct FormService: Sendable {
 
     /// `DELETE …/form/{formID}?message=…` → 204 — explicit
     /// cancellation only. 404 → `notFound` (already gone is settled,
-    /// never a failure the user must retry).
+    /// never a failure the user must retry); 409 → `alreadySettled`
+    /// (answered/cancelled elsewhere — also settled, with the host's
+    /// state authoritative).
     public func cancel(
         at host: URL,
         credential: BasicCredential?,
@@ -124,6 +126,11 @@ public struct FormService: Sendable {
             ))
         } catch TransportError.http(let status, _) where status == 404 {
             throw ServiceError.notFound(formID: formID)
+        } catch TransportError.http(let status, _) where status == 409 {
+            // DELETE carries FormAlreadySettledError in the pinned
+            // contract: the form was answered/cancelled elsewhere —
+            // the caller must settle it, not surface a generic failure.
+            throw ServiceError.alreadySettled(formID: formID)
         }
     }
 }

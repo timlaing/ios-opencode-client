@@ -61,9 +61,18 @@ struct FormDraft: Equatable {
             case .string(let f):
                 texts[f.key] = f.default ?? ""
             case .number(let f):
-                numbers[f.key] = f.default.map(Self.editingText) ?? ""
+                // A host may name a non-finite default the client can
+                // DECODE but no person can enter: seeding the literal
+                // "nan" would fail parseNumber on an untouched field
+                // and block submission. Such a default seeds an empty
+                // buffer — unanswered and honestly validated.
+                numbers[f.key] = f.default.flatMap {
+                    $0.isNaN ? nil : Self.editingText($0)
+                } ?? ""
             case .integer(let f):
-                numbers[f.key] = f.default.map(Self.editingText) ?? ""
+                numbers[f.key] = f.default.flatMap {
+                    $0.isNaN ? nil : Self.editingText($0)
+                } ?? ""
             case .boolean(let f):
                 // A host default seeds the value; a required boolean
                 // without one must be CHOSEN explicitly; an optional

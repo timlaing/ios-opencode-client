@@ -16,10 +16,17 @@ public enum JSONValue: Codable, Equatable, Sendable {
             self = .null
         } else if let value = try? container.decode(Bool.self) {
             self = .bool(value)
+        } else if let value = try? container.decode(String.self) {
+            // String BEFORE Double: with the shared decoder's named
+            // non-finite strategy, `decode(Double.self)` now SUCCEEDS
+            // for the exact strings "Infinity"/"-Infinity"/"NaN" — a
+            // JSON string would otherwise become .number(.infinity),
+            // breaking fidelity (and any re-encode, which has no
+            // non-finite encoding strategy). JSON numbers/bools are
+            // never decoded as String, so ordering is safe.
+            self = .string(value)
         } else if let value = try? container.decode(Double.self) {
             self = .number(value)
-        } else if let value = try? container.decode(String.self) {
-            self = .string(value)
         } else if let value = try? container.decode([JSONValue].self) {
             self = .array(value)
         } else if let value = try? container.decode([String: JSONValue].self) {
