@@ -244,7 +244,15 @@ final class AttachmentLibrary {
 
     private func enqueue(_ confirmation: PendingConfirmation) {
         confirmationQueue.removeAll { $0.id == confirmation.id }
-        confirmationQueue.append(confirmation)
+        // Pick order, not completion order: reads run off the main actor and
+        // two picks can finish out of sequence — but the questions must
+        // surface in the order the user chose the files (drafts preserves
+        // pick order).
+        let position = drafts.firstIndex { $0.id == confirmation.id } ?? Int.max
+        let insertion = confirmationQueue.firstIndex { queued in
+            (drafts.firstIndex { draft in draft.id == queued.id } ?? Int.max) > position
+        } ?? confirmationQueue.endIndex
+        confirmationQueue.insert(confirmation, at: insertion)
     }
 
     // MARK: - Send integration
@@ -393,7 +401,12 @@ final class AttachmentLibrary {
 
     // MARK: - Sources
 
-    private static func loadBytes(from source: Draft.Source) async throws -> (Data, String) {
+    /// Off the main actor: a picked file can be far larger than the 50 MB
+    /// warning (which is explicitly "not a hard limit"), and this
+    /// synchronous read would otherwise block the UI for its whole
+    /// duration. The result returns to the caller's isolation at the
+    /// `await`.
+    nonisolated private static func loadBytes(from source: Draft.Source) async throws -> (Data, String) {
         switch source {
         case .file(let url):
             let scoped = url.startAccessingSecurityScopedResource()

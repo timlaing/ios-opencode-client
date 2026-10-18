@@ -27,57 +27,80 @@ final class OpenCodePushProvider: NEAppPushProvider {
         category: "OpenCodePushProvider"
     )
 
+    /// Serialises every entry point: NetworkExtension documents no single
+    /// queue for start/stop/handleTimerEvent, and the providerConfiguration
+    /// KVO callback runs on the thread that set the value. Unsynchronised
+    /// dictionary access could crash — or start a second stream for one
+    /// host, breaking one-stream-per-host (spec §7).
+    private let stateQueue = DispatchQueue(label: "uk.co.laingcorp.opencode-client.LocalPushProvider.state")
+
     private var generation = 0
     private var supervisors: [String: HostEventSupervisor] = [:]
     private var ledger: NotificationLedger?
     private var hostStore: HostStore?
     private let credentials = KeychainCredentialStore()
     private var configurationObservation: NSKeyValueObservation?
+    /// Whether the provider is between a successful start and a stop. Read
+    /// and written only on `stateQueue`; guards deferred work (a KVO block
+    /// enqueued before stop may run after it) from restarting observers on
+    /// a stopped provider.
+    private var running = false
 
     // MARK: - NEAppPushProvider lifecycle
 
     override func start(completionHandler: @escaping (Error?) -> Void) {
-        generation += 1
-        logger.info("start (generation \(self.generation))")
-        do {
-            let configuration = try decodeConfiguration()
-            try prepareStores()
-            startObservers(for: configuration, generation: generation)
-            observeConfigurationChanges()
-            // Per-host status stays authoritative: a success callback is not
-            // evidence that every stream is ready (spec §7).
-            completionHandler(nil)
-        } catch {
-            logger.error("start failed: \(String(describing: error))")
-            completionHandler(error)
+        stateQueue.async { [self] in
+            generation += 1
+            logger.info("start (generation \(self.generation))")
+            do {
+                let configuration = try decodeConfiguration()
+                try prepareStores()
+                startObservers(for: configuration, generation: generation)
+                observeConfigurationChanges()
+                running = true
+                // Per-host status stays authoritative: a success callback is not
+                // evidence that every stream is ready (spec §7).
+                completionHandler(nil)
+            } catch {
+                logger.error("start failed: \(String(describing: error))")
+                completionHandler(error)
+            }
         }
     }
 
     override func stop(with reason: NEProviderStopReason, completionHandler: @escaping () -> Void) {
-        logger.info("stop reason \(String(describing: reason))")
-        generation += 1 // stale callbacks from the old generation are ignored
-        configurationObservation = nil
-        let stopping = supervisors.values
-        supervisors = [:]
-        Task { @Sendable in
-            for supervisor in stopping {
-                await supervisor.stop()
+        stateQueue.async { [self] in
+            logger.info("stop reason \(String(describing: reason))")
+            generation += 1 // stale callbacks from the old generation are ignored
+            running = false
+            configurationObservation = nil
+            let stopping = supervisors.values
+            supervisors = [:]
+            Task { @Sendable in
+                for supervisor in stopping {
+                    await supervisor.stop()
+                }
+                completionHandler()
             }
-            completionHandler()
         }
     }
 
     override func handleTimerEvent() {
-        // A host whose observer could not start — most importantly a
-        // Keychain read that failed while the device was locked
-        // (errSecInteractionNotAllowed) — is retried here; startObservers
-        // skips hosts that already have a supervisor, so healthy streams
-        // are untouched.
-        if let configuration = try? decodeConfiguration() {
-            startObservers(for: configuration, generation: generation)
-        }
-        for supervisor in supervisors.values {
-            Task { await supervisor.handleTimerEvent() }
+        stateQueue.async { [self] in
+            // A timer opportunity delivered after stop (the system can race
+            // a pending timer) must not resurrect observers.
+            guard running else { return }
+            // A host whose observer could not start — most importantly a
+            // Keychain read that failed while the device was locked
+            // (errSecInteractionNotAllowed) — is retried here; startObservers
+            // skips hosts that already have a supervisor, so healthy streams
+            // are untouched.
+            if let configuration = try? decodeConfiguration() {
+                startObservers(for: configuration, generation: generation)
+            }
+            for supervisor in supervisors.values {
+                Task { await supervisor.handleTimerEvent() }
+            }
         }
     }
 
@@ -86,11 +109,16 @@ final class OpenCodePushProvider: NEAppPushProvider {
     /// before replacing them.
     private func observeConfigurationChanges() {
         configurationObservation = observe(\.providerConfiguration, options: [.new]) { [weak self] _, _ in
-            self?.applyConfigurationChange()
+            // KVO fires on the thread that set providerConfiguration — join
+            // the same serial queue before touching shared state.
+            self?.stateQueue.async { self?.applyConfigurationChange() }
         }
     }
 
     private func applyConfigurationChange() {
+        // A configuration change deferred behind stop (KVO fired on another
+        // thread while stop ran) must not restart observers.
+        guard running else { return }
         generation += 1
         let generation = generation
         do {
