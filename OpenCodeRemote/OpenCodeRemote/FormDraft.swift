@@ -32,6 +32,14 @@ struct FormDraft: Equatable {
 
     private(set) var fields: [FormField]
     private var fieldByKey: [String: FormField]
+    /// Host render order per key — a `when` may only reference an
+    /// EARLIER field (docs/api-contract.md W10), and the order check is
+    /// what bounds condition evaluation: recursion always steps to a
+    /// strictly lower index, so a self- or forward-referencing
+    /// condition terminates as unsatisfied instead of recursing until
+    /// the stack overflows (the agent authors forms, so a malformed
+    /// schema reaches the sheet).
+    private var indexByKey: [String: Int] = [:]
 
     /// string fields: raw text (also the buffer for typed values).
     var texts: [String: String] = [:]
@@ -46,8 +54,9 @@ struct FormDraft: Equatable {
     init(fields: [FormField]) {
         self.fields = fields
         self.fieldByKey = [:]
-        for field in fields {
+        for (index, field) in fields.enumerated() {
             fieldByKey[field.key] = field
+            indexByKey[field.key] = index
             switch field {
             case .string(let f):
                 texts[f.key] = f.default ?? ""
@@ -79,10 +88,17 @@ struct FormDraft: Equatable {
 
     /// Whether `field` should render and take an answer: not hidden,
     /// and every `when` entry satisfied (an AND) by the CURRENT draft.
+    /// A condition referencing a missing, SELF, or LATER field is
+    /// unsatisfied — outside the contract's earlier-fields rule, and
+    /// the one evaluation order that cannot recurse without bound.
     /// External fields render (as a link) but are never answerable.
     func isActive(_ field: FormField) -> Bool {
         if field.isHidden { return false }
-        return field.conditions.allSatisfy { conditionHolds($0) }
+        let ownIndex = indexByKey[field.key] ?? Int.max
+        return field.conditions.allSatisfy { when in
+            guard let refIndex = indexByKey[when.key], refIndex < ownIndex else { return false }
+            return conditionHolds(when)
+        }
     }
 
     /// A `when` entry evaluated against the CURRENT draft. A condition
@@ -111,9 +127,7 @@ struct FormDraft: Equatable {
             let text = texts[f.key] ?? ""
             return text.isEmpty ? nil : .string(text)
         case .number, .integer:
-            let raw = numbers[key] ?? ""
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, let value = Double(trimmed), !value.isNaN else { return nil }
+            guard let value = Self.parseNumber(numbers[key] ?? "") else { return nil }
             return .number(value)
         case .boolean:
             switch bools[key] ?? .unset {
@@ -224,7 +238,7 @@ struct FormDraft: Equatable {
             if required { errors[key] = FieldError(message: "This field is required.") }
             return
         }
-        guard let value = Double(trimmed), !value.isNaN else {
+        guard let value = Self.parseNumber(trimmed) else {
             errors[key] = FieldError(message: "Enter a valid number.")
             return
         }
@@ -237,6 +251,28 @@ struct FormDraft: Equatable {
         } else if let maximum, value > maximum {
             errors[key] = FieldError(message: "Use at most \(Self.editingText(maximum)).")
         }
+    }
+
+    // MARK: - Parsing
+
+    /// Parses numeric input: trims, then accepts BOTH the region's
+    /// decimal separator (the decimal pad shows `,` in de/fr/es/nl —
+    /// `Double("3,5")` alone would reject every fractional value
+    /// there) and the wire's `.`, which is what the host's defaults
+    /// always use. Empty and NaN stay invalid; ±infinity parses — the
+    /// wire's named non-finite bounds are real values the host
+    /// enforces.
+    static func parseNumber(
+        _ raw: String,
+        decimalSeparator: String = Locale.current.decimalSeparator ?? "."
+    ) -> Double? {
+        var text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+        if decimalSeparator != "." {
+            text = text.replacingOccurrences(of: decimalSeparator, with: ".")
+        }
+        guard let value = Double(text), !value.isNaN else { return nil }
+        return value
     }
 
     // MARK: - Editing actions
@@ -310,16 +346,25 @@ struct FormDraft: Equatable {
     private static func boundsText(minimum: Double?, maximum: Double?) -> [String] {
         switch (minimum, maximum) {
         case (let min?, let max?) where min == max:
-            return ["Must be \(editingText(min))"]
+            return ["Must be \(displayNumber(min))"]
         case (let min?, let max?):
-            return ["Between \(editingText(min)) and \(editingText(max))"]
+            return ["Between \(displayNumber(min)) and \(displayNumber(max))"]
         case (let min?, nil):
-            return ["At least \(editingText(min))"]
+            return ["At least \(displayNumber(min))"]
         case (nil, let max?):
-            return ["At most \(editingText(max))"]
+            return ["At most \(displayNumber(max))"]
         case (nil, nil):
             return []
         }
+    }
+
+    /// A bound as SHOWN to the user: the wire's named non-finite
+    /// bounds print as the mathematical symbol, never a raw `inf`
+    /// (the editing buffer keeps `editingText`'s parseable form).
+    private static func displayNumber(_ value: Double) -> String {
+        if value == .infinity { return "∞" }
+        if value == -.infinity { return "-∞" }
+        return editingText(value)
     }
 
     /// The editing buffer for a typed default, and the text shown for

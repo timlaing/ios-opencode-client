@@ -262,6 +262,81 @@ final class W10RequestsTests: XCTestCase {
                        "the location wrapper rides alongside data, not inside it")
     }
 
+    /// The wire has no JSON literal for ±infinity/NaN, so such a bound
+    /// arrives as its exact name ("Infinity"/"-Infinity"/"NaN"). One
+    /// field carrying a named non-finite bound must never fail the
+    /// decode of its ENTIRE list payload — every pending question
+    /// shares that list (docs/api-contract.md W10 non-finite bounds).
+    func testNamedNonFiniteBoundsNeverFailTheWholeListDecode() throws {
+        let form = """
+        {"id":"frm_open","sessionID":"ses_demo_003","title":"Any number","fields":[
+          {"key":"ratio","type":"number","minimum":"-Infinity","maximum":"Infinity"},
+          {"key":"seed","type":"integer","default":"NaN"}
+        ]}
+        """
+        let response = try OpenCodeAPI.decoder.decode(
+            FormListResponse.self, from: Data("{\"data\":[\(form)]}".utf8)
+        )
+        XCTAssertEqual(response.data.map(\.id), ["frm_open"])
+
+        guard case .number(let ratio) = response.data[0].fields[0] else {
+            return XCTFail("the open-ended number decodes as a number field")
+        }
+        XCTAssertEqual(try XCTUnwrap(ratio.minimum), -Double.infinity)
+        XCTAssertEqual(try XCTUnwrap(ratio.maximum), Double.infinity)
+
+        guard case .integer(let seed) = response.data[0].fields[1] else {
+            return XCTFail("the seeded integer decodes as an integer field")
+        }
+        let defaultValue = try XCTUnwrap(seed.default, "the named NaN default stays present")
+        XCTAssertTrue(defaultValue.isNaN, "the wire's named NaN stays a typed NaN value")
+    }
+
+    func testWholeListDecodesWhenOneFieldCarriesNamedNonFiniteBounds() throws {
+        // JSON has no ±infinity/NaN literals, so a host that states an
+        // open bound names it — ONE such field must not fail the decode
+        // of the ENTIRE list, where every pending form rides a single
+        // payload (docs/api-contract.md W10 non-finite bounds).
+        let wide = """
+        {"id":"frm_wide","sessionID":"ses_demo_003","title":"Wide","fields":[
+          {"key":"ratio","type":"number","minimum":"-Infinity","maximum":"Infinity","default":"NaN"},
+          {"key":"count","type":"integer","maximum":"Infinity"}
+        ]}
+        """
+        let response = try OpenCodeAPI.decoder.decode(
+            FormListResponse.self, from: Data("{\"data\":[\(fixtureForm),\(wide)]}".utf8)
+        )
+        XCTAssertEqual(response.data.map(\.id), ["frm_demo", "frm_wide"])
+
+        guard case .number(let ratio) = response.data[1].fields[0] else {
+            return XCTFail("the open-ended field decodes as a number field")
+        }
+        XCTAssertEqual(try XCTUnwrap(ratio.minimum), -Double.infinity)
+        XCTAssertEqual(try XCTUnwrap(ratio.maximum), Double.infinity)
+        // NaN never equals itself — assert the case, not equality.
+        let seed = try XCTUnwrap(ratio.default)
+        XCTAssertTrue(seed.isNaN, "the wire's named NaN default stays a typed number")
+
+        guard case .integer(let count) = response.data[1].fields[1] else {
+            return XCTFail("the integer field decodes")
+        }
+        XCTAssertEqual(try XCTUnwrap(count.maximum), Double.infinity)
+    }
+
+    func testOnlyTheThreeNamedStringsConvertAsNonFiniteBounds() throws {
+        // The strategy is name-gated: anything else offered where a
+        // number belongs is still rejected — never silently coerced.
+        let junk = """
+        {"data":[{"id":"frm_junk","sessionID":"ses_demo_003","title":"Junk","fields":[
+          {"key":"ratio","type":"number","minimum":"wide"}
+        ]}]}
+        """
+        XCTAssertThrowsError(
+            try OpenCodeAPI.decoder.decode(FormListResponse.self, from: Data(junk.utf8)),
+            "a non-name string is never accepted as a bound"
+        )
+    }
+
     func testDetailResponseWrapsOneFormWithItsState() throws {
         let json = """
         {"data":{"id":"frm_demo","sessionID":"ses_demo_003","title":"Choose",

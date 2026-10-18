@@ -136,6 +136,16 @@ public enum OpenCodeAPI {
     public static let decoder: JSONDecoder = {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .useDefaultKeys
+        // The wire's named non-finite numbers ("Infinity", "-Infinity",
+        // "NaN") appear wherever the contract allows a number — e.g.
+        // Form number/integer bounds. Without this, ONE such bound
+        // would fail the decode of its entire payload (a whole form
+        // list), not just the field.
+        decoder.nonConformingFloatDecodingStrategy = .convertFromString(
+            positiveInfinity: "Infinity",
+            negativeInfinity: "-Infinity",
+            nan: "NaN"
+        )
         return decoder
     }()
 

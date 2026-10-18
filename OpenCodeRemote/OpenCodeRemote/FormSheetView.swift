@@ -44,6 +44,13 @@ struct FormSheetView: View {
     @State private var customText: [String: String] = [:]
     /// Frozen terminal presentation — once set, nothing reloads over it.
     @State private var settledNote: SettledNote?
+    /// The form this sheet is PINNED to — adopted from the dock head
+    /// once, then advanced only by `advanceAfterSettle()`. The watch
+    /// and refreshes may insert or reorder dock entries while the
+    /// sheet is open; they must never re-target an edit in progress
+    /// (a `.task` keyed to a shifting queue head would replace the
+    /// draft, and the submit guard would silently no-op).
+    @State private var presented: FormLibrary.Entry?
 
     /// The terminal presentation: exact title + body, sourced from the
     /// host's authoritative state whenever it was readable, and honest
@@ -108,10 +115,12 @@ struct FormSheetView: View {
                 }
             }
         }
-        // Reload whenever the dock's head changes (settling advances to
-        // the next question in place) — but never over a frozen
-        // terminal presentation.
-        .task(id: forms.entries.first?.id) {
+        // Reload whenever the PINNED question changes (settling advances
+        // to the next question in place) — but never over a frozen
+        // terminal presentation. Keyed to `presented`, not the dock
+        // head: entries inserted or reordered by the watch while the
+        // sheet is open must not re-target an edit in progress.
+        .task(id: presented?.id) {
             await loadDetail()
         }
         .onChange(of: draft) { _, _ in
@@ -131,7 +140,7 @@ struct FormSheetView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                if let entry = forms.entries.first, entry.isLinked {
+                if let entry = presented, entry.isLinked {
                     // Linked entry: the actual owner session ID stays
                     // visible — this question belongs to that session.
                     Label("Child session \(entry.ownerSessionID)",
@@ -402,9 +411,11 @@ struct FormSheetView: View {
             case .external(let f):
                 // The system browser answers this — the client never
                 // claims native handling (docs/navigation-screens.md
-                // S09 rule carried into S12).
+                // S09 rule carried into S12), and only the web does:
+                // a non-http(s) scheme (javascript:, file:, a custom
+                // app scheme) never reaches openURL.
                 Button {
-                    if let url = URL(string: f.url) { openURL(url) }
+                    if let url = Self.browserURL(f.url) { openURL(url) }
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: "safari")
@@ -432,7 +443,7 @@ struct FormSheetView: View {
                     .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(.plain)
-                .disabled(URL(string: f.url) == nil)
+                .disabled(Self.browserURL(f.url) == nil)
                 .accessibilityIdentifier("S12.form.external.\(f.key)")
 
             case .unknown(let type, _):
@@ -532,14 +543,24 @@ struct FormSheetView: View {
         // A frozen terminal presentation never reloads underneath the
         // user, and a cancelled reload publishes nothing.
         guard settledNote == nil else { return }
-        guard let entry = forms.entries.first else { return }
+        // Adopt the dock head ONCE; from then on only
+        // `advanceAfterSettle()` re-targets the sheet. If the queue was
+        // empty on arrival there is nothing to ask — finish loading so
+        // the scene resolves to `empty` instead of spinning.
+        if presented == nil { presented = forms.entries.first }
+        guard let entry = presented else {
+            isLoading = false
+            return
+        }
         isLoading = true
         loadError = nil
         let outcome = await forms.detail(
             host: host, sessionID: entry.ownerSessionID, formID: entry.id
         )
+        // The PINNED id must match — the dock may have reordered around
+        // an edit this load never belonged to.
         guard !Task.isCancelled, settledNote == nil,
-              forms.entries.first?.id == entry.id else { return }
+              presented?.id == entry.id else { return }
         switch outcome {
         case .loaded(let fresh):
             detail = fresh
@@ -565,7 +586,17 @@ struct FormSheetView: View {
     // MARK: - Actions
 
     private func submit(entryID: String) {
-        guard !submitting, let entry = forms.entries.first, entry.id == entryID else { return }
+        guard !submitting else { return }
+        // The pinned question is the one being edited — if it is gone
+        // (or the caller names another), say so honestly instead of
+        // silently swallowing the tap.
+        guard let entry = presented, entry.id == entryID else {
+            settledNote = SettledNote(
+                title: "No Longer Pending",
+                body: "This question is no longer pending — your answer was not submitted."
+            )
+            return
+        }
         // Local validation first — the host stays authoritative for
         // everything the client cannot check.
         let errors = draft.validate()
@@ -606,7 +637,14 @@ struct FormSheetView: View {
     }
 
     private func cancel() {
-        guard !submitting, let entry = forms.entries.first else { return }
+        guard !submitting else { return }
+        guard let entry = presented else {
+            settledNote = SettledNote(
+                title: "No Longer Pending",
+                body: "This question is no longer pending."
+            )
+            return
+        }
         submitting = true
         submitError = nil
         Task {
@@ -638,6 +676,10 @@ struct FormSheetView: View {
         if forms.entries.isEmpty {
             dismiss()
         } else {
+            // Re-pin to the new head (the settled entry has left the
+            // dock) and rebuild every per-form state together — the id
+            // change re-runs the load task with a fresh, empty draft.
+            presented = forms.entries.first
             detail = nil
             draft = FormDraft(fields: [])
             customText = [:]
@@ -667,6 +709,20 @@ struct FormSheetView: View {
         case .gone, .unavailable:
             break
         }
+    }
+
+    /// A URL the sheet will actually open: parseable AND web-only.
+    /// `URL(string:)` happily accepts `javascript:`, `file:`, or a
+    /// custom app scheme, and the system would hand those straight to
+    /// `openURL` — external fields must reach the browser over
+    /// http(s) or not at all (button action AND its disabled state,
+    /// so the two can never disagree).
+    private static func browserURL(_ raw: String) -> URL? {
+        guard let url = URL(string: raw),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https"
+        else { return nil }
+        return url
     }
 
     private static func answeredNote(submitted: Bool) -> SettledNote {

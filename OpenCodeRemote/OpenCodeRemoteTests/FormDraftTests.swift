@@ -98,6 +98,58 @@ final class FormDraftTests: XCTestCase {
         XCTAssertTrue(draft.answer().isEmpty)
     }
 
+    // MARK: - Condition order guard (a `when` names an EARLIER field)
+
+    func testSelfReferencingConditionIsUnsatisfiedAndNeverRecurses() {
+        let fields: [FormField] = [
+            .string(FormStringField(key: "loop", when: [
+                FormWhen(key: "loop", op: "eq", value: .string("x")),
+            ])),
+        ]
+        var draft = FormDraft(fields: fields)
+        // Even answered, a condition on its own key is outside the
+        // earlier-fields rule — unsatisfied, and evaluation never
+        // re-enters itself (the agent authors forms, so a malformed
+        // schema reaches the sheet).
+        draft.texts["loop"] = "x"
+        XCTAssertFalse(draft.isActive(fields[0]))
+        XCTAssertTrue(draft.answer().isEmpty)
+    }
+
+    func testForwardReferencingConditionIsUnsatisfied() {
+        let fields: [FormField] = [
+            .string(FormStringField(key: "detail", when: [
+                FormWhen(key: "mode", op: "eq", value: .string("full")),
+            ])),
+            .string(FormStringField(key: "mode")),
+        ]
+        var draft = FormDraft(fields: fields)
+        draft.texts["mode"] = "full"
+        XCTAssertFalse(draft.isActive(fields[0]),
+                       "a condition on a LATER field is unsatisfied — the host may not order it that way")
+    }
+
+    func testMutuallyReferencingConditionsBothTerminateAsUnsatisfied() {
+        // a when b (forward → unsatisfied immediately), b when a
+        // (earlier, but a's own value depends on the first condition) —
+        // evaluation always steps to a strictly lower index, so the
+        // pair terminates instead of recursing until the stack dies.
+        let fields: [FormField] = [
+            .string(FormStringField(key: "alpha", when: [
+                FormWhen(key: "beta", op: "eq", value: .string("on")),
+            ])),
+            .string(FormStringField(key: "beta", when: [
+                FormWhen(key: "alpha", op: "eq", value: .string("on")),
+            ])),
+        ]
+        var draft = FormDraft(fields: fields)
+        draft.texts["alpha"] = "on"
+        draft.texts["beta"] = "on"
+        XCTAssertFalse(draft.isActive(fields[0]))
+        XCTAssertFalse(draft.isActive(fields[1]))
+        XCTAssertTrue(draft.answer().isEmpty, "neither side of a cycle answers")
+    }
+
     func testExternalAndUnknownFieldsNeverAnswer() {
         let fields: [FormField] = [
             .external(FormExternalField(key: "guide", url: "https://example.com")),
@@ -231,6 +283,25 @@ final class FormDraftTests: XCTestCase {
         XCTAssertEqual(draft.picks["free"], ["zz"], "blank is a no-op and duplicates never multiply")
     }
 
+    // MARK: - Parsing (locale-aware numeric input)
+
+    func testParseNumberAcceptsRegionalAndWireDecimalSeparators() {
+        // The decimal pad shows `,` in de/fr/es/nl — fractional input
+        // must parse there, while the wire's `.` (what host defaults
+        // use) always parses regardless of region.
+        XCTAssertEqual(FormDraft.parseNumber("3,5", decimalSeparator: ","), 3.5)
+        XCTAssertEqual(FormDraft.parseNumber("3.5", decimalSeparator: ","), 3.5,
+                       "the wire's dot parses even where the pad shows a comma")
+        XCTAssertEqual(FormDraft.parseNumber(" 42 ", decimalSeparator: ","), 42,
+                       "surrounding whitespace is trimmed, never parsed as part of the number")
+        XCTAssertNil(FormDraft.parseNumber("", decimalSeparator: ","))
+        XCTAssertNil(FormDraft.parseNumber("abc", decimalSeparator: ","))
+        XCTAssertNil(FormDraft.parseNumber("NaN", decimalSeparator: ","),
+                     "NaN is never a submittable value")
+        XCTAssertEqual(FormDraft.parseNumber("-Infinity", decimalSeparator: ","),
+                       -.infinity, "the wire's named non-finite bounds parse — the host enforces them")
+    }
+
     // MARK: - Presentation
 
     func testConstraintsRenderTheDeclaredSchemaRules() {
@@ -240,5 +311,28 @@ final class FormDraftTests: XCTestCase {
         XCTAssertEqual(FormDraft.constraints(for: fixtureFields[3]), "At most 200 characters")
         XCTAssertEqual(FormDraft.constraints(for: fixtureFields[4]), "Whole number · Between 1 and 5")
         XCTAssertNil(FormDraft.constraints(for: fixtureFields[5]), "an external link has no answer rules")
+    }
+
+    func testUnboundedNumericConstraintsShowInfinitySymbolsNotRawInf() {
+        // The wire's named non-finite bounds are real (the host
+        // enforces them) — shown as the mathematical symbol, never a
+        // raw `inf` in a validation caption (S12: rules are visible).
+        let open = FormField.number(FormNumberField(
+            key: "ratio", minimum: -.infinity, maximum: .infinity
+        ))
+        XCTAssertEqual(FormDraft.constraints(for: open), "Between -∞ and ∞")
+
+        let onlyLower = FormField.number(FormNumberField(key: "atLeast", minimum: -.infinity))
+        XCTAssertEqual(FormDraft.constraints(for: onlyLower), "At least -∞")
+
+        let onlyUpper = FormField.integer(FormIntegerField(key: "atMost", maximum: .infinity))
+        XCTAssertEqual(FormDraft.constraints(for: onlyUpper), "Whole number · At most ∞")
+
+        // A FINITE bound beside an infinite one still reads as the
+        // Between form — both declared bounds are shown as declared.
+        let floorWithOpenTop = FormField.number(FormNumberField(
+            key: "atLeast", minimum: 0, maximum: .infinity
+        ))
+        XCTAssertEqual(FormDraft.constraints(for: floorWithOpenTop), "Between 0 and ∞")
     }
 }
