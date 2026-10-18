@@ -99,14 +99,8 @@ final class ConversationLibrary {
             let page = try await service.messages(
                 at: host.address, credential: credential, sessionID: sessionID
             )
-            // A committed DIFFERENT session invalidates all cross-session
-            // state: projections and a pending submission belong to the
-            // old one. `nil` = nothing committed yet, so the state of the
-            // session being opened is kept.
-            if let loaded = loadedSessionID, loaded != sessionID {
-                projectedPending = [:]
-                pendingSubmission = nil
-            }
+            // Session-switch bookkeeping before the new page lands.
+            discardPreviousSessionState(keeping: sessionID)
             messages = Self.ordered(Self.deduped(page.data))
             nextCursor = page.cursor?.next
             hasMore = page.cursor?.next != nil
@@ -158,14 +152,8 @@ final class ConversationLibrary {
             let page = try await service.messages(
                 at: host.address, credential: credential, sessionID: sessionID
             )
-            // A committed DIFFERENT session invalidates cross-session
-            // state — the same rule as open(). `nil` means no session
-            // committed yet: state from the session being loaded is
-            // legitimate and kept.
-            if let loaded = loadedSessionID, loaded != sessionID {
-                projectedPending = [:]
-                pendingSubmission = nil
-            }
+            // Session-switch bookkeeping before the new page lands.
+            discardPreviousSessionState(keeping: sessionID)
             let fresh = Self.ordered(Self.deduped(page.data))
             let freshIDs = Set(fresh.map(\.id))
             // The newest page only overlaps what it covers. Without ANY
@@ -309,6 +297,20 @@ final class ConversationLibrary {
         await refresh(host: host, sessionID: sessionID)
         if messages.contains(where: { $0.id == messageID }) { return true }
         return false
+    }
+
+    /// A committed SESSION SWITCH discards the OLD session's projection
+    /// and pending-submission state, while keeping everything that
+    /// belongs to the session now being loaded — it may just have been
+    /// admitted (`send` before its `open`) and must survive its first
+    /// refresh. `loadedSessionID == nil` means nothing committed yet:
+    /// all state belongs to the session being loaded and is kept.
+    private func discardPreviousSessionState(keeping sessionID: String) {
+        guard let loaded = loadedSessionID, loaded != sessionID else { return }
+        projectedPending = projectedPending.filter { $0.value.sessionID == sessionID }
+        if let pending = pendingSubmission, pending.sessionID != sessionID {
+            pendingSubmission = nil
+        }
     }
 
     /// Projects an admitted user item into the transcript once; a later

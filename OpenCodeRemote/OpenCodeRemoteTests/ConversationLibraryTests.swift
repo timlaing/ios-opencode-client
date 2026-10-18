@@ -681,6 +681,40 @@ final class ConversationLibraryTests: XCTestCase {
         XCTAssertTrue(library.messages.isEmpty, "a projection never rides into another session's transcript")
     }
 
+    func testSendIntoNotYetLoadedSessionKeepsItsProjectionThroughRefresh() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.prompt":
+                return Fixtures.response(#"{"data":\#(Fixtures.inboxUser(id: "msg_y", text: "to B", created: 1000))}"#)
+            case "session.message.list":
+                // Both sessions' pages are empty — B's prompt is still
+                // pending delivery in the inbox only.
+                return Fixtures.response(Fixtures.page([]))
+            case "session.inbox.list":
+                let item = Fixtures.inboxUser(id: "msg_y", text: "to B", created: 1000)
+                return Fixtures.response(#"{"data":[\#(item)]}"#)
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        // Session A is the loaded transcript.
+        await library.open(host: one, sessionID: "ses_a")
+        XCTAssertTrue(library.messages.isEmpty)
+
+        // Admit into session B (not yet loaded): the projection is
+        // tracked for B, and the follow-up refresh's session-switch
+        // bookkeeping must discard only A's state — not B's fresh
+        // projection.
+        let admitted = await library.send(host: one, sessionID: "ses_b", text: "to B")
+        XCTAssertTrue(admitted)
+        XCTAssertEqual(
+            library.messages.map(\.id), ["msg_y"],
+            "the admitted prompt remains pending in session B's transcript through its first refresh"
+        )
+    }
+
     // MARK: - Inbox (S09)
 
     func testInboxLifecycleLoadDeliverCancel() async throws {
