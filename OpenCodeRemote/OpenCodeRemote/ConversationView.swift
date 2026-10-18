@@ -318,12 +318,14 @@ struct ConversationView: View {
     /// Refresh-driven approval reconciliation (no live SSE yet): the
     /// sessions inventory contributes child attribution when it knows
     /// the descendants — otherwise only the session's own entries show.
+    /// Loading also RECORDS the watch context (no polling starts): a
+    /// conversation opened onto a pre-existing approval must reopen the
+    /// watch on answer too — the released turn's next request has the
+    /// same admission-late timing as a sent prompt's (review R3).
     private func loadApprovals() async {
-        await approvals.load(
-            host: host,
-            sessionID: session.id,
-            childSessionIDs: sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
-        )
+        let childSessionIDs = sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
+        approvals.recordWatchContext(host: host, sessionID: session.id, childSessionIDs: childSessionIDs)
+        await approvals.load(host: host, sessionID: session.id, childSessionIDs: childSessionIDs)
     }
 
     /// The post-send watch (review R2): polls the dock on the bounded

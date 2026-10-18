@@ -328,12 +328,16 @@ final class ApprovalLibraryTests: XCTestCase {
         ])
         let calls = Counter()
         let newResponse = json(listJSON([(id: "per_new", sessionID: "ses_current")]))
+        // The hook signals when the FIRST call has snapshotted its
+        // (stale) payload — no fixed sleeps to order the two loads.
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
         let library = library(responses, hook: { request in
             guard request.operationID == "session.permission.list" else { return }
             // Hold the FIRST call mid-flight: its payload was already
             // snapshotted as the stale one before the swap.
             if calls.next() == 1 {
                 responses.set("session.permission.list", .success(newResponse))
+                enteredContinuation.yield()
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
         })
@@ -341,8 +345,9 @@ final class ApprovalLibraryTests: XCTestCase {
         let stale = Task { [host] in
             await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
         }
-        // Let the first call snapshot its payload and fall asleep.
-        try? await Task.sleep(nanoseconds: 60_000_000)
+        // Start the newer load only once the stale one has its payload.
+        var iterator = entered.makeAsyncIterator()
+        _ = await iterator.next()
         await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
 
         await stale.value
@@ -444,7 +449,8 @@ final class ApprovalLibraryTests: XCTestCase {
             host: host, sessionID: "ses_current", childSessionIDs: [],
             attempts: 100, intervalNanoseconds: 10_000_000
         )
-        try? await Task.sleep(nanoseconds: 30_000_000) // a tick or two lands
+        // Stop only once a tick has demonstrably landed.
+        await waitUntil { !recorder.requests.isEmpty }
         library.stopPostSendWatch()
         let settled = recorder.requests.filter { $0.operationID == "session.permission.list" }.count
         try? await Task.sleep(nanoseconds: 100_000_000)
@@ -482,5 +488,38 @@ final class ApprovalLibraryTests: XCTestCase {
         library.stopPostSendWatch()
         XCTAssertEqual(library.entries.map(\.id), ["per_second"],
                        "answering reopens the watch — the turn's next request still surfaces")
+    }
+
+    func testAnsweringAPreexistingApprovalReopensTheRecordedWatch() async throws {
+        // Opened onto an approval from an earlier turn (no send in
+        // this view): only the load-recorded context can reopen the
+        // watch on answer (review R3). Recording must NOT poll.
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+            "session.permission.reply": .success(APIResponse(statusCode: 204, payload: .empty)),
+        ])
+        let recorder = Recorder()
+        let library = library(responses, recorder: recorder)
+        library.recordWatchContext(
+            host: host, sessionID: "ses_current", childSessionIDs: [],
+            attempts: 10, intervalNanoseconds: 10_000_000
+        )
+        XCTAssertTrue(recorder.requests.isEmpty, "recording the context polls nothing")
+
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+        let first = try XCTUnwrap(library.entries.first)
+
+        // The released turn's next request — the same admission-late
+        // timing as a sent prompt's, but no send started a watch.
+        responses.set("session.permission.list", .success(json(listJSON([
+            (id: "per_next", sessionID: "ses_current"),
+        ]))))
+        let outcome = await library.submit(first, decision: .once, message: nil, host: host)
+        XCTAssertEqual(outcome, .accepted)
+
+        await waitUntil { library.entries.map(\.id) == ["per_next"] }
+        library.stopPostSendWatch()
+        XCTAssertEqual(library.entries.map(\.id), ["per_next"],
+                       "an answer without a prior send reopens the load-recorded watch")
     }
 }

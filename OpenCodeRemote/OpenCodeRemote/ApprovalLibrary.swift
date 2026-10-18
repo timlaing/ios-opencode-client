@@ -226,6 +226,22 @@ final class ApprovalLibrary {
         watchTask = nil
     }
 
+    /// Records the context an answer re-opens the watch under, WITHOUT
+    /// starting to poll: a conversation opened onto an approval that
+    /// predates any send here still releases its turn on answer, and
+    /// that next request has the same admission-late timing. Called on
+    /// every load so attribution stays current; the parameters carry
+    /// the watch cadence the reopen should reuse (tests shorten it).
+    func recordWatchContext(
+        host: OpenCodeDomain.Host,
+        sessionID: String,
+        childSessionIDs: Set<String>,
+        attempts: Int = ApprovalLibrary.postSendWatchAttempts,
+        intervalNanoseconds: UInt64 = ApprovalLibrary.postSendWatchIntervalNanoseconds
+    ) {
+        watchContext = (host, sessionID, childSessionIDs, attempts, intervalNanoseconds)
+    }
+
     /// Re-opens the watch after S11 answered (or found settled
     /// elsewhere): the released turn continues and may raise the next
     /// request with the same admission-late timing.
