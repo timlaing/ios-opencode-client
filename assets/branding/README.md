@@ -11,7 +11,10 @@ The selected direction takes inspiration from [OpenCode's official brand assets]
 - `banner-2x1.png`: 1536 × 768 crop for wide promotional placements.
 - `onboarding.png` / `onboarding-light.png`: transparent host-connection artwork. The welcome view inverts the same grayscale artwork in dark mode, preserving identical alpha edges and geometry across appearances. Empty areas reveal the native page background; no background colour matching is needed. The previous opaque version is preserved as `masters/onboarding-opaque-original.png`.
 - `connect-background-light.png` / `connect-background-dark.png`: portrait connect-screen backgrounds with quiet central space for native fields. The `ConnectBackground` image asset selects the system appearance automatically.
-- `prompts.json`: exact prompts and built-in image generation provenance.
+- `prompts.json`: exact prompts and built-in image generation provenance for the icons, header, onboarding and tinted assets.
+- `dark-refinement-prompt.txt`: recolour prompt that produced `icon-dark.png` from the final light icon.
+- `onboarding-transparency-prompts.json`: alpha-extraction edit prompts for the transparent onboarding artwork.
+- `connect-background-prompts.json`: prompts for the light and dark connect-screen backgrounds.
 
 App icon files are connected to the existing Xcode asset catalog. Original-resolution generated artwork lives in `masters/`. Earlier terminal-based concepts are retained in `explorations/` and are not used by the catalog.
 

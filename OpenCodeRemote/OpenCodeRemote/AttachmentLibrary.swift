@@ -313,7 +313,23 @@ final class AttachmentLibrary {
                 return
             }
             if drafts[index].name == "Photo" {
-                drafts[index].name = "Photo \(Self.timestampName()).\(mime == "image/png" ? "png" : "jpg")"
+                // Extension follows the REAL bytes: balanced mode always
+                // re-encodes to png/jpeg, but original mode returns the
+                // picked bytes untouched and MimeType.sniff has no HEIC
+                // case — falling back to jpg would name HEIC bytes .jpg.
+                let ext: String
+                switch mime {
+                case "image/png": ext = "png"
+                case "image/jpeg": ext = "jpg"
+                default:
+                    if case .photo(let item) = drafts[index].source,
+                       let picked = item.supportedContentTypes.first?.preferredFilenameExtension {
+                        ext = picked
+                    } else {
+                        ext = "bin"
+                    }
+                }
+                drafts[index].name = "Photo \(Self.timestampName()).\(ext)"
             }
         }
         drafts[index].mimeType = mime

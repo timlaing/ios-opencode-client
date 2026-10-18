@@ -122,10 +122,18 @@ final class HostLibrary {
             entries[index].connection = .checking
         }
         let hosts = entries.map(\.host)
-        for host in hosts {
-            let result = await state(of: host)
-            if let index = entries.firstIndex(where: { $0.id == host.id }) {
-                entries[index].connection = result
+        // Parallel: the shared session allows 60 s per request, so one
+        // unreachable host must not hold every later host at .checking.
+        // Results re-locate their entry by ID, so completion order is
+        // irrelevant and a concurrent add/remove stays safe.
+        await withTaskGroup(of: (HostID, ConnectionState).self) { group in
+            for host in hosts {
+                group.addTask { (host.id, await self.state(of: host)) }
+            }
+            for await (id, result) in group {
+                if let index = entries.firstIndex(where: { $0.id == id }) {
+                    entries[index].connection = result
+                }
             }
         }
     }
