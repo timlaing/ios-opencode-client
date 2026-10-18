@@ -52,7 +52,10 @@ struct SessionsView: View {
             decoratedContent
         }
         .searchable(text: $searchText, prompt: "Search session titles")
-        .task {
+        // Keyed on the paired-host IDs: TabView keeps this view alive, so
+        // a host paired on Servers afterwards must still get its sessions
+        // loaded (plain .task would run only on first appearance).
+        .task(id: library.entries.map(\.id.rawValue)) {
             sessions.attach(hosts: library)
             // The shared ProjectsLibrary may not have loaded yet if the
             // user opens Sessions first — the project filter, row

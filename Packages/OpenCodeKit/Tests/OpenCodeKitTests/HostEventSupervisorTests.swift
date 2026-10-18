@@ -121,6 +121,14 @@ final class HostEventSupervisorTests: XCTestCase {
                 onReconnect: { reconciles.append(1) }
             )
         )
+        // Stop the supervisor and close any stream the test left open: a
+        // supervisor still running after its test reconnects (~1ms fake
+        // backoff) against an exhausted script for the rest of the
+        // process, racing the timing-sensitive tests that follow.
+        addTeardownBlock {
+            await supervisor.stop()
+            transport.finishOpenStreams()
+        }
         return Environment(
             supervisor: supervisor,
             transport: transport,

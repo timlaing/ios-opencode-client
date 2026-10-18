@@ -40,7 +40,12 @@ struct QRScannerView: UIViewControllerRepresentable {
         do {
             try scanner.startScanning()
         } catch {
-            context.coordinator.reportStartFailure()
+            // SwiftUI calls this during a view update; the callback writes
+            // the host view's @State, so it must land on the next turn of
+            // the main queue ("Modifying state during view update" is a
+            // runtime fault with undefined results).
+            let coordinator = context.coordinator
+            DispatchQueue.main.async { coordinator.reportStartFailure() }
         }
     }
 

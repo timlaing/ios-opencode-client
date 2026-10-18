@@ -97,9 +97,12 @@ final class HostLibrary {
     /// semantics).
     func remove(_ id: HostID) throws {
         guard let hostStore else { throw LibraryError.storageUnavailable }
-        try hostStore.deleteHost(id: id)
+        // Credential first, reload always: a Keychain failure then leaves
+        // both the row and the secret in place, and `entries` can never
+        // show a host the store no longer has.
+        defer { reload() }
         try credentials.deleteSecret(for: id.rawValue)
-        reload()
+        try hostStore.deleteHost(id: id)
     }
 
     /// The stored Basic credential for a host, or nil when this device no
