@@ -308,7 +308,12 @@ final class HostEventSupervisorTests: XCTestCase {
         try await waitUntil("third attempt reached") { env.transport.connectCount >= 3 }
 
         let delays = env.sleeper.recorded
-        XCTAssertGreaterThanOrEqual(delays.count, 2, "backoff recorded before each retry")
+        // A timing-dependent wait can leave fewer sleeps recorded than the
+        // assertions index into; an out-of-range trap would crash the whole
+        // XCTest process instead of failing this one test.
+        guard delays.count >= 2 else {
+            return XCTFail("backoff recorded before each retry; got \(delays)")
+        }
         XCTAssertEqual(delays[0], .seconds(1), "first failure: 1s")
         XCTAssertEqual(delays[1], .seconds(2), "second unproven failure: 2s (backoff grows)")
     }

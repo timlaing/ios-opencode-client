@@ -455,7 +455,11 @@ struct ConnectHostView: View {
         case .legacyLink:
             return "That's an old-style pairing link. Generate a new one with opencode pair."
         case .unsupportedScheme:
-            return "Only http and https pairing links are accepted."
+            // Both a non-http(s) scheme AND — in release builds — a genuine
+            // http:// address land here; state the rule that actually applied.
+            return Self.allowsInsecureHTTP
+                ? "Only http and https addresses are accepted."
+                : "Use an https address. Plain http is not accepted in this build."
         case .credentialBearingAddress:
             return "That address carries embedded credentials. Generate a fresh pairing link instead."
         case .invalidCode:

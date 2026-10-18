@@ -581,6 +581,10 @@ struct FileViewerView: View {
                 return
             }
             viewer.adopt(file)
+            // Adopted bytes extend the display lines, so the within-file
+            // search must run again — its hits are otherwise frozen at the
+            // lines the previous slice exposed.
+            textHits = viewer.search(textQuery)
         } catch {
             loadMoreError = Self.message(for: error)
         }
@@ -657,6 +661,9 @@ struct FileViewerView: View {
                 return true
             }
             viewer.adopt(file)
+            // Same as Load More: adopted bytes extend the display lines, so
+            // the within-file search must run again.
+            textHits = viewer.search(textQuery)
             return true
         } catch {
             loadMoreError = Self.message(for: error)

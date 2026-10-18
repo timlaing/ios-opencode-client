@@ -57,8 +57,21 @@ final class SessionsLibrary {
     func load(_ entries: [HostLibrary.Entry]) async {
         let targets = entries.filter { !loadingHosts.contains($0.id) }
         for entry in targets { loadingHosts.insert(entry.id) }
-        for entry in targets { await load(host: entry.host) }
-        for entry in targets { loadingHosts.remove(entry.id) }
+        // Parallel: the shared session allows 60 s per request, so one
+        // unreachable host must not delay every later host's inventory.
+        // Each host's loading flag drops when that host finishes, and all
+        // results are keyed per host ID, so completion order is irrelevant.
+        await withTaskGroup(of: HostID.self) { group in
+            for entry in targets {
+                group.addTask {
+                    await self.load(host: entry.host)
+                    return entry.id
+                }
+            }
+            for await id in group {
+                loadingHosts.remove(id)
+            }
+        }
     }
 
     /// Loads the host-wide inventory (newest page first). Project scoping
