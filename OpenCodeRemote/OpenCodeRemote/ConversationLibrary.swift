@@ -24,6 +24,7 @@ final class ConversationLibrary {
     typealias CredentialProvider = @MainActor (HostID) -> BasicCredential?
 
     private let service: SessionHistoryService
+    private let promptService: PromptService
     private var credentialProvider: CredentialProvider?
 
     /// Transcript in display order: oldest → newest.
@@ -43,11 +44,26 @@ final class ConversationLibrary {
     /// The session whose transcript is loaded — paging reuses it.
     private(set) var loadedSessionID: String?
 
+    // MARK: - W05 sending, stop, inbox
+
+    private(set) var isSending = false
+    /// Red banner: send/stop control failures (draft stays in the field).
+    private(set) var bannerError: String?
+    /// Gray banner: honest stop outcomes (`false` is NOT an error).
+    private(set) var notice: String?
+    /// Pending admitted work (S09), newest state from the server.
+    private(set) var inboxItems: [InboxItem] = []
+    private(set) var inboxError: String?
+    private(set) var isLoadingInbox = false
+
     init(
         service: SessionHistoryService? = nil,
+        promptService: PromptService? = nil,
         credentialProvider: CredentialProvider? = nil
     ) {
-        self.service = service ?? SessionHistoryService(makeTransport: { URLSessionTransport(baseURL: $0) })
+        let makeTransport: @Sendable (URL) -> any OpenCodeTransport = { URLSessionTransport(baseURL: $0) }
+        self.service = service ?? SessionHistoryService(makeTransport: makeTransport)
+        self.promptService = promptService ?? PromptService(makeTransport: makeTransport)
         self.credentialProvider = credentialProvider
     }
 
@@ -169,6 +185,146 @@ final class ConversationLibrary {
         }
     }
 
+    // MARK: - Sending, stop, inbox (W05)
+
+    /// Admits one prompt. The app chooses a STABLE message ID up front:
+    /// every failure path reconciles against the inbox and transcript by
+    /// that ID BEFORE any retry is offered (the app adds no exactly-once
+    /// claim). Returns true only when the prompt is durably admitted —
+    /// directly or by reconciliation — so callers clear the draft exactly
+    /// then and never otherwise.
+    func send(host: OpenCodeDomain.Host, sessionID: String, text: String, delivery: InboxDelivery? = nil) async -> Bool {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !isSending else { return false }
+        guard let credential = credentialProvider?(host.id) else {
+            bannerError = "Re-pair this host to send messages."
+            return false
+        }
+        isSending = true
+        defer { isSending = false }
+        let messageID = Self.stableMessageID()
+        do {
+            let item = try await promptService.prompt(
+                at: host.address, credential: credential, sessionID: sessionID,
+                text: trimmed, messageID: messageID, delivery: delivery
+            )
+            admit(item)
+            bannerError = nil
+            notice = nil
+            // Authoritative read follows admission — nothing is streamed
+            // yet (event.subscribe arrives with W16).
+            await refresh(host: host, sessionID: sessionID)
+            return true
+        } catch {
+            if await reconcileAdmission(host: host, sessionID: sessionID, messageID: messageID, credential: credential) {
+                bannerError = nil
+                return true
+            }
+            if !Self.isSilent(error) {
+                bannerError = Self.sendErrorMessage(for: error)
+            }
+            return false
+        }
+    }
+
+    /// Ordinary Stop (`interrupt?resume=false`). `interrupted == false`
+    /// is an honest "nothing was running" outcome, never an error.
+    func stop(host: OpenCodeDomain.Host, sessionID: String) async {
+        guard let credential = credentialProvider?(host.id) else {
+            bannerError = "Re-pair this host to stop execution."
+            return
+        }
+        do {
+            let interrupted = try await promptService.interrupt(
+                at: host.address, credential: credential, sessionID: sessionID
+            )
+            notice = interrupted ? "Stopped the active turn." : "Nothing was running."
+            bannerError = nil
+        } catch {
+            if !Self.isSilent(error) { bannerError = Self.sendErrorMessage(for: error) }
+        }
+    }
+
+    /// Searched by the STABLE message ID after an uncertain submission —
+    /// inbox first, then the projected transcript — before a retry is
+    /// ever offered (docs/api-contract.md W05).
+    private func reconcileAdmission(
+        host: OpenCodeDomain.Host, sessionID: String, messageID: String, credential: BasicCredential?
+    ) async -> Bool {
+        if let items = try? await promptService.inbox(at: host.address, credential: credential, sessionID: sessionID),
+           let item = items.first(where: { $0.id == messageID }) {
+            admit(item)
+            return true
+        }
+        await refresh(host: host, sessionID: sessionID)
+        if messages.contains(where: { $0.id == messageID }) { return true }
+        return false
+    }
+
+    /// Projects an admitted user item into the transcript once; a later
+    /// refresh dedupes by the shared ID.
+    private func admit(_ item: InboxItem) {
+        guard let projected = item.projectedMessage else { return }
+        guard !messages.contains(where: { $0.id == projected.id }) else { return }
+        messages.append(projected)
+    }
+
+    // MARK: - Inbox (S09)
+
+    func loadInbox(host: OpenCodeDomain.Host, sessionID: String) async {
+        guard !isLoadingInbox else { return }
+        guard let credential = credentialProvider?(host.id) else {
+            inboxError = "Re-pair this host to read pending prompts."
+            return
+        }
+        isLoadingInbox = true
+        defer { isLoadingInbox = false }
+        do {
+            inboxItems = try await promptService.inbox(at: host.address, credential: credential, sessionID: sessionID)
+            inboxError = nil
+        } catch {
+            if !Self.isSilent(error) { inboxError = Self.message(for: error) }
+        }
+    }
+
+    func setDelivery(host: OpenCodeDomain.Host, sessionID: String, inboxID: String, delivery: InboxDelivery) async {
+        guard let credential = credentialProvider?(host.id) else {
+            inboxError = "Re-pair this host to change pending prompts."
+            return
+        }
+        do {
+            try await promptService.updateDelivery(
+                at: host.address, credential: credential, sessionID: sessionID, inboxID: inboxID, delivery: delivery
+            )
+            if let index = inboxItems.firstIndex(where: { $0.id == inboxID }) {
+                inboxItems[index].delivery = delivery
+            }
+        } catch {
+            if !Self.isSilent(error) { inboxError = Self.message(for: error) }
+        }
+    }
+
+    func cancelInbox(host: OpenCodeDomain.Host, sessionID: String, inboxID: String) async {
+        guard let credential = credentialProvider?(host.id) else {
+            inboxError = "Re-pair this host to cancel pending prompts."
+            return
+        }
+        do {
+            try await promptService.cancel(
+                at: host.address, credential: credential, sessionID: sessionID, inboxID: inboxID
+            )
+            // The 204 is authority; re-read when possible, else fall back
+            // to the local drop (the item is gone or was already gone).
+            if let fresh = try? await promptService.inbox(at: host.address, credential: credential, sessionID: sessionID) {
+                inboxItems = fresh
+            } else {
+                inboxItems.removeAll { $0.id == inboxID }
+            }
+        } catch {
+            if !Self.isSilent(error) { inboxError = Self.message(for: error) }
+        }
+    }
+
     // MARK: - Transcript helpers
 
     /// Display order: oldest → newest (server order is newest first).
@@ -198,6 +354,24 @@ final class ConversationLibrary {
         default:
             return "Messages could not be loaded from this host."
         }
+    }
+
+    /// Send/stop failure wording — always honest about the draft.
+    private static func sendErrorMessage(for error: Error) -> String {
+        switch error {
+        case TransportError.http(let status, _):
+            return "The host did not accept the message (HTTP \(status)). Your draft is kept."
+        case TransportError.connectionFailed:
+            return "Connection lost — your draft is kept. Retrying first re-checks the pending list."
+        default:
+            return "The message could not be sent. Your draft is kept."
+        }
+    }
+
+    /// The app's stable per-prompt ID (`msg_` pattern): the handle every
+    /// failure path reconciles admission against.
+    private static func stableMessageID() -> String {
+        "msg_" + UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
     }
 
     /// Cancellation is routine (view dismissed, request superseded) and

@@ -46,6 +46,11 @@ final class ConversationLibraryTests: XCTestCase {
 
         static let contextJSON = #"{"data":[\#(user("msg_ctx", text: "context", created: 50))]}"#
 
+        /// A `Session.Inbox.User` as session.prompt admits it.
+        static func inboxUser(id: String, text: String, created: Int64, delivery: String = "steer") -> String {
+            #"{"id":"\#(id)","sessionID":"ses_a","time":{"created":\#(created)},"type":"user","delivery":"\#(delivery)","payload":{"text":"\#(text)"}}"#
+        }
+
         static func query(_ request: APIRequest) -> [String: String] {
             Dictionary(uniqueKeysWithValues: request.query.map { ($0.key, $0.value) })
         }
@@ -92,8 +97,10 @@ final class ConversationLibraryTests: XCTestCase {
         handler: @escaping @Sendable (APIRequest) throws -> APIResponse,
         credentials: [String: BasicCredential?] = ["host_one": BasicCredential(secret: "t")]
     ) -> ConversationLibrary {
-        ConversationLibrary(
-            service: SessionHistoryService(makeTransport: { _ in StubTransport(recorder: recorder, handler: handler) }),
+        let stub: @Sendable () -> StubTransport = { StubTransport(recorder: recorder, handler: handler) }
+        return ConversationLibrary(
+            service: SessionHistoryService(makeTransport: { _ in stub() }),
+            promptService: PromptService(makeTransport: { _ in stub() }),
             credentialProvider: { id in credentials[id.rawValue] ?? nil }
         )
     }
@@ -376,5 +383,170 @@ final class ConversationLibraryTests: XCTestCase {
 
         XCTAssertNotNil(library.contextError)
         XCTAssertTrue(library.activeContext.isEmpty)
+    }
+
+    // MARK: - Sending (W05)
+
+    func testSendAdmitsProjectsMessageAndRefreshes() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.prompt":
+                return Fixtures.response(#"{"data":\#(Fixtures.inboxUser(id: "msg_stable", text: "hello", created: 1000))}"#)
+            case "session.message.list":
+                // Post-admission authoritative read: projected message is
+                // now server-side; merge must not duplicate it.
+                return Fixtures.response(Fixtures.page([
+                    Fixtures.user("msg_stable", text: "hello", created: 1000),
+                ]))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        let admitted = await library.send(host: one, sessionID: "ses_a", text: "  hello  ")
+
+        XCTAssertTrue(admitted)
+        XCTAssertNil(library.bannerError)
+        XCTAssertEqual(library.messages.map(\.id), ["msg_stable"], "admitted item projects once; refresh dedupes by ID")
+
+        let promptRequest = try XCTUnwrap(recorder.requests.first { $0.operationID == "session.prompt" })
+        let payload = promptRequest.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        XCTAssertEqual(
+            (payload?["id"] as? String)?.hasPrefix("msg_"), true,
+            "a stable reconcilable msg_ ID rides every prompt"
+        )
+        XCTAssertEqual(payload?["text"] as? String, "hello", "whitespace trimmed")
+        XCTAssertTrue(
+            recorder.requests.contains { $0.operationID == "session.message.list" },
+            "admission is followed by an authoritative read"
+        )
+    }
+
+    func testSendConflictReconcilesThroughInboxByStableID() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.prompt":
+                // Already admitted (its ID exists in inbox or transcript).
+                throw TransportError.http(status: 409, envelope: nil)
+            case "session.inbox.list":
+                // The reconciliation answer uses the SAME stable ID the
+                // app sent — recovered from the recorded prompt body.
+                let payload = recorder.requests.first?.body
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                let stableID = (payload?["id"] as? String) ?? "msg_unknown"
+                return Fixtures.response(
+                    #"{"data":[\#(Fixtures.inboxUser(id: stableID, text: "hello", created: 1000))]}"#
+                )
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        let admitted = await library.send(host: one, sessionID: "ses_a", text: "hello")
+
+        XCTAssertTrue(admitted, "409 is reconciled by stable ID, never blindly retried")
+        XCTAssertNil(library.bannerError)
+        XCTAssertEqual(library.messages.count, 1, "the reconciled admission projects exactly once")
+    }
+
+    func testSendFailureNotReconcilableSurfacesErrorAndKeepsDraft() async throws {
+        let library = conversation(recorder: Recorder()) { request in
+            switch request.operationID {
+            case "session.prompt":
+                throw TransportError.connectionFailed("offline")
+            case "session.inbox.list":
+                return Fixtures.response(#"{"data":[]}"#)
+            case "session.message.list":
+                return Fixtures.response(Fixtures.page([]))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        let admitted = await library.send(host: one, sessionID: "ses_a", text: "hello")
+
+        XCTAssertFalse(admitted, "only durable admission may clear the draft")
+        XCTAssertNotNil(library.bannerError, "an unreconciled failure is surfaced honestly")
+        XCTAssertTrue(library.messages.isEmpty, "nothing is fabricated into the transcript")
+    }
+
+    func testSendWithoutCredentialFailsClosed() async throws {
+        let library = conversation(recorder: Recorder(), handler: { _ in Fixtures.response(#"{"data":[]}"#) }, credentials: [:])
+
+        let admitted = await library.send(host: one, sessionID: "ses_a", text: "hello")
+
+        XCTAssertFalse(admitted)
+        XCTAssertNotNil(library.bannerError)
+    }
+
+    // MARK: - Stop (W05)
+
+    func testStopOutcomesAreHonest() async throws {
+        func library(interrupted: Bool) -> ConversationLibrary {
+            conversation(recorder: Recorder()) { request in
+                guard request.operationID == "session.interrupt" else {
+                    throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+                }
+                return Fixtures.response(#"{"interrupted":\#(interrupted)}"#)
+            }
+        }
+
+        let running = library(interrupted: true)
+        await running.stop(host: one, sessionID: "ses_a")
+        XCTAssertEqual(running.notice, "Stopped the active turn.")
+        XCTAssertNil(running.bannerError, "a successful stop is not an error")
+
+        let idle = library(interrupted: false)
+        await idle.stop(host: one, sessionID: "ses_a")
+        XCTAssertEqual(idle.notice, "Nothing was running.", "`interrupted:false` is an outcome, not a failure")
+        XCTAssertNil(idle.bannerError)
+    }
+
+    // MARK: - Inbox (S09)
+
+    func testInboxLifecycleLoadDeliverCancel() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.inbox.list":
+                let listCount = recorder.requests.filter { $0.operationID == "session.inbox.list" }.count
+                if listCount == 1 {
+                    let a = Fixtures.inboxUser(id: "msg_a", text: "first", created: 1000)
+                    let b = Fixtures.inboxUser(id: "msg_b", text: "second", created: 2000, delivery: "queue")
+                    return Fixtures.response(#"{"data":[\#(a),\#(b)]}"#)
+                }
+                // Subsequent reads reflect the server's state after the
+                // 204 mutations (msg_a steered→queued, msg_b cancelled).
+                return Fixtures.response(
+                    #"{"data":[\#(Fixtures.inboxUser(id: "msg_a", text: "first", created: 1000, delivery: "queue"))]}"#
+                )
+            case "session.inbox.update", "session.inbox.cancel":
+                return Fixtures.response("{}", status: 204)
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.loadInbox(host: one, sessionID: "ses_a")
+        XCTAssertNil(library.inboxError)
+        XCTAssertEqual(library.inboxItems.map(\.id), ["msg_a", "msg_b"])
+        XCTAssertEqual(library.inboxItems.first?.delivery, .steer)
+
+        await library.setDelivery(host: one, sessionID: "ses_a", inboxID: "msg_a", delivery: .queue)
+        XCTAssertNil(library.inboxError)
+        XCTAssertEqual(library.inboxItems.first?.delivery, .queue, "204 confirms the delivery change locally")
+
+        await library.cancelInbox(host: one, sessionID: "ses_a", inboxID: "msg_b")
+        XCTAssertNil(library.inboxError)
+        XCTAssertEqual(
+            library.inboxItems.map(\.id), ["msg_a"],
+            "cancel verifies against a fresh authoritative read"
+        )
+        XCTAssertEqual(
+            recorder.requests.map(\.operationID),
+            ["session.inbox.list", "session.inbox.update", "session.inbox.cancel", "session.inbox.list"]
+        )
     }
 }

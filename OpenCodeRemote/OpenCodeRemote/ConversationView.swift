@@ -2,11 +2,14 @@ import SwiftUI
 import OpenCodeDomain
 import OpenCodeTransport
 
-/// S08 conversation (W04, read scope): the paged transcript with honest
-/// per-variant rendering — user bubbles, assistant content blocks
-/// (reasoning, text, tool rows by state), and compact transition rows for
-/// bookkeeping variants (switches, compaction, idle, unknown).
-/// Sending/stopping/inbox live in W05.
+/// S08 conversation (W04 read scope + W05 writing): the paged transcript
+/// with honest per-variant rendering — user bubbles, assistant content
+/// blocks (reasoning, text, tool rows by state), and compact transition
+/// rows for bookkeeping variants (switches, compaction, idle, unknown).
+/// The composer sends prompts by durable admission (stable `msg_` ID,
+/// reconciled by inbox/transcript search on failure), Stop is an ordinary
+/// `interrupt?resume=false`, and the inbox (S09) manages admitted-but-
+/// undelivered work. Live event streaming arrives with W16.
 struct ConversationView: View {
     let host: OpenCodeDomain.Host
     let session: Session
@@ -15,40 +18,27 @@ struct ConversationView: View {
     @Environment(HostLibrary.self) private var library
     @State private var conversation = ConversationLibrary()
     @State private var showingContext = false
+    @State private var showingInbox = false
+    /// Preserved across failures — cleared ONLY on durable admission.
+    @State private var draft = ""
 
     var body: some View {
-        Group {
-            if conversation.messages.isEmpty, conversation.isLoading {
-                ProgressView("Loading Conversation…")
-            } else if conversation.messages.isEmpty, conversation.error != nil {
-                // Not scrollable — pull-to-refresh is dead here, so the
-                // state MUST carry its own retry action.
-                ContentUnavailableView {
-                    Label("Conversation Unavailable", systemImage: "exclamationmark.triangle")
-                } description: {
-                    Text(conversation.error ?? "")
-                } actions: {
-                    Button("Try Again") {
-                        Task { await openTranscript() }
-                    }
-                }
-            } else if conversation.messages.isEmpty {
-                ContentUnavailableView {
-                    Label("No Messages Yet", systemImage: "bubble.left.and.text.bubble.right")
-                } description: {
-                    Text("This session has no messages yet. W05 adds sending the first prompt.")
-                } actions: {
-                    Button("Refresh") {
-                        Task { await openTranscript() }
-                    }
-                }
-            } else {
-                transcript
-            }
+        VStack(spacing: 0) {
+            transcriptArea
+            banners
+            composer
         }
         .navigationTitle(session.title ?? "Untitled Session")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingInbox = true
+                } label: {
+                    Label("Pending Prompts", systemImage: "tray.full")
+                }
+                .accessibilityIdentifier("S08.inbox")
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     showingContext = true
@@ -69,6 +59,17 @@ struct ConversationView: View {
                     }
             }
         }
+        .sheet(isPresented: $showingInbox) {
+            NavigationStack {
+                InboxListView(conversation: conversation, host: host, sessionID: session.id)
+                    .navigationTitle("Pending Prompts")
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showingInbox = false }
+                        }
+                    }
+            }
+        }
         .refreshable {
             await conversation.refresh(host: host, sessionID: session.id)
         }
@@ -76,6 +77,42 @@ struct ConversationView: View {
             conversation.attach(hosts: library)
             await openTranscript()
         }
+    }
+
+    /// Empty/error states or the transcript itself — extracted so the
+    /// composer stays mounted in EVERY state: the first prompt must be
+    /// sendable into an empty session.
+    private var transcriptArea: some View {
+        Group {
+            if conversation.messages.isEmpty, conversation.isLoading {
+                ProgressView("Loading Conversation…")
+            } else if conversation.messages.isEmpty, conversation.error != nil {
+                // Not scrollable — pull-to-refresh is dead here, so the
+                // state MUST carry its own retry action.
+                ContentUnavailableView {
+                    Label("Conversation Unavailable", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(conversation.error ?? "")
+                } actions: {
+                    Button("Try Again") {
+                        Task { await openTranscript() }
+                    }
+                }
+            } else if conversation.messages.isEmpty {
+                ContentUnavailableView {
+                    Label("No Messages Yet", systemImage: "bubble.left.and.text.bubble.right")
+                } description: {
+                    Text("This session has no messages yet — send the first prompt below.")
+                } actions: {
+                    Button("Refresh") {
+                        Task { await openTranscript() }
+                    }
+                }
+            } else {
+                transcript
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     /// Opens the transcript and acknowledges unread ONLY when it actually
@@ -86,6 +123,66 @@ struct ConversationView: View {
         if conversation.error == nil, conversation.loadedSessionID == session.id {
             await sessions?.markViewed(host: host, session: session)
         }
+    }
+
+    private var banners: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let error = conversation.bannerError {
+                Label(error, systemImage: "exclamationmark.triangle")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("S08.banner.error")
+            }
+            if let notice = conversation.notice {
+                Label(notice, systemImage: "info.circle")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("S08.banner.notice")
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal)
+    }
+
+    private var composer: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("Message…", text: $draft, axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(1...4)
+                .accessibilityIdentifier("S08.composer.field")
+            Button {
+                Task {
+                    let text = draft
+                    // The draft is cleared ONLY when admission is durable
+                    // (directly or reconciled) — a failure preserves it.
+                    if await conversation.send(host: host, sessionID: session.id, text: text) {
+                        draft = ""
+                    }
+                }
+            } label: {
+                if conversation.isSending {
+                    ProgressView()
+                } else {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.title)
+                }
+            }
+            .disabled(
+                draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || conversation.isSending
+            )
+            .accessibilityIdentifier("S08.composer.send")
+            Button {
+                Task { await conversation.stop(host: host, sessionID: session.id) }
+            } label: {
+                Label("Stop", systemImage: "stop.circle")
+                    .labelStyle(.iconOnly)
+                    .font(.title)
+            }
+            .disabled(conversation.isSending)
+            .accessibilityIdentifier("S08.stop")
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
     }
 
     private var transcript: some View {
@@ -321,6 +418,102 @@ struct ContextPanelView: View {
         }
         .task {
             await conversation.loadContext(host: host, sessionID: session.id)
+        }
+    }
+}
+
+/// S09 connected-session inbox (W05): admitted-but-undelivered work
+/// (`session.inbox.list`). Delivery changes (`steer`/`queue`) and cancel
+/// run through their native operations; an unavailable item that cancels
+/// as a server-side no-op is simply verified gone on the next read.
+struct InboxListView: View {
+    let conversation: ConversationLibrary
+    let host: OpenCodeDomain.Host
+    let sessionID: String
+
+    var body: some View {
+        List {
+            if conversation.isLoadingInbox {
+                Section { ProgressView("Loading Pending Prompts…") }
+            }
+            if let error = conversation.inboxError {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.footnote)
+                        .accessibilityIdentifier("S09.error")
+                }
+            }
+            if conversation.inboxItems.isEmpty, !conversation.isLoadingInbox, conversation.inboxError == nil {
+                Section {
+                    ContentUnavailableView(
+                        "Nothing Pending",
+                        systemImage: "tray",
+                        description: Text("Admitted prompts that have not been delivered to the transcript appear here.")
+                    )
+                }
+            } else {
+                ForEach(conversation.inboxItems) { item in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(title(for: item))
+                            .font(.subheadline.weight(.medium))
+                            .lineLimit(3)
+                        HStack(spacing: 12) {
+                            Menu {
+                                Button("Deliver: Steer") {
+                                    Task {
+                                        await conversation.setDelivery(
+                                            host: host, sessionID: sessionID, inboxID: item.id, delivery: .steer
+                                        )
+                                    }
+                                }
+                                Button("Deliver: Queue") {
+                                    Task {
+                                        await conversation.setDelivery(
+                                            host: host, sessionID: sessionID, inboxID: item.id, delivery: .queue
+                                        )
+                                    }
+                                }
+                            } label: {
+                                Label("Delivery: \(item.delivery.rawValue.capitalized)", systemImage: "arrow.triangle.branch")
+                                    .font(.caption)
+                            }
+                            .accessibilityIdentifier("S09.delivery.\(item.id)")
+
+                            Button(role: .destructive) {
+                                Task {
+                                    await conversation.cancelInbox(host: host, sessionID: sessionID, inboxID: item.id)
+                                }
+                            } label: {
+                                Label("Cancel", systemImage: "trash")
+                                    .labelStyle(.titleAndIcon)
+                                    .font(.caption)
+                            }
+                            .accessibilityIdentifier("S09.cancel.\(item.id)")
+                        }
+                    }
+                    .padding(.vertical, 2)
+                    .accessibilityIdentifier("S09.item.\(item.id)")
+                }
+            }
+        }
+        .task {
+            await conversation.loadInbox(host: host, sessionID: sessionID)
+        }
+    }
+
+    private func title(for item: InboxItem) -> String {
+        switch item.kind {
+        case .user(let text, _, _):
+            return text
+        case .synthetic(let text, _):
+            return text
+        case .compaction:
+            // Unknown variants decode into the raw-payload case but keep
+            // their own type name — never mislabelled as compaction.
+            return item.rawType == "compaction" ? "Context compaction" : "Pending \(item.rawType)"
+        case .move(_, _, let directory):
+            return "Move to \(directory ?? "another location")"
         }
     }
 }
