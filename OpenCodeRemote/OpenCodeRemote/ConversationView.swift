@@ -33,6 +33,12 @@ struct ConversationView: View {
     @State private var showingCamera = false
     @State private var showingFileImporter = false
     @State private var photoSelection: [PhotosPickerItem] = []
+    /// The confirmation currently ON SCREEN. The library's queue is the
+    /// source of truth; this local copy makes each question its own
+    /// presentation — SwiftUI ignores presented-data changes while an
+    /// alert is up, so the next queued question may only be presented
+    /// after the previous one has fully dismissed.
+    @State private var presentedConfirmation: AttachmentLibrary.PendingConfirmation?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -134,21 +140,27 @@ struct ConversationView: View {
             }
         }
         .alert(
-            attachments.pendingConfirmation?.name ?? "Attachment",
+            presentedConfirmation?.name ?? "Attachment",
             isPresented: Binding(
-                get: { attachments.pendingConfirmation != nil },
-                // Presentation changes carry NO answer: both alert
-                // buttons respond explicitly, and a setter-side decline
-                // could race SwiftUI's own false-write and remove the
-                // draft the user just accepted.
-                set: { _ in }
+                get: { presentedConfirmation != nil },
+                // Dismissal carries NO answer: both alert buttons
+                // respond explicitly and clear this local state, so a
+                // setter-side decline can neither race the accept button
+                // nor pop the library's queue.
+                set: { if !$0 { presentedConfirmation = nil } }
             ),
-            presenting: attachments.pendingConfirmation
+            presenting: presentedConfirmation
         ) { confirmation in
-            Button("Attach Anyway") { attachments.answerConfirmation(true, host: host) }
-                .accessibilityIdentifier("S09.confirm.accept")
-            Button("Cancel", role: .cancel) { attachments.answerConfirmation(false, host: host) }
-                .accessibilityIdentifier("S09.confirm.cancel")
+            Button("Attach Anyway") {
+                presentedConfirmation = nil
+                attachments.answerConfirmation(true, host: host)
+            }
+            .accessibilityIdentifier("S09.confirm.accept")
+            Button("Cancel", role: .cancel) {
+                presentedConfirmation = nil
+                attachments.answerConfirmation(false, host: host)
+            }
+            .accessibilityIdentifier("S09.confirm.cancel")
         } message: { confirmation in
             switch confirmation.kind {
             case .oversized(let byteCount):
@@ -156,6 +168,12 @@ struct ConversationView: View {
             case .duplicate:
                 Text("\(confirmation.name) is already attached with the same size.")
             }
+        }
+        .onChange(of: attachments.pendingConfirmation) { _, _ in
+            presentNextConfirmationIfIdle()
+        }
+        .onAppear {
+            presentNextConfirmationIfIdle()
         }
         .refreshable {
             await conversation.refresh(host: host, sessionID: session.id)
@@ -361,6 +379,19 @@ struct ConversationView: View {
             Image(systemName: "checkmark.circle").foregroundStyle(.green)
         case .failed:
             Image(systemName: "exclamationmark.triangle").foregroundStyle(.red)
+        }
+    }
+
+    /// Presents the queue's head as its OWN alert, only when nothing is
+    /// on screen: answering clears this local copy, the dismissal
+    /// settles, and the next queued question surfaces as a fresh
+    /// presentation (SwiftUI ignores data swaps on a live alert).
+    private func presentNextConfirmationIfIdle() {
+        guard presentedConfirmation == nil, attachments.pendingConfirmation != nil else { return }
+        Task { @MainActor in
+            guard presentedConfirmation == nil,
+                  let pending = attachments.pendingConfirmation else { return }
+            presentedConfirmation = pending
         }
     }
 
