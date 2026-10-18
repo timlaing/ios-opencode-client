@@ -47,12 +47,36 @@ final class SelectionLibraryTests: XCTestCase {
         }
     }
 
+    /// A one-shot async gate: `wait()` suspends until `signal()`, so a
+    /// test can hold one request in flight and interleave other calls.
+    private actor Latch {
+        private var continuation: CheckedContinuation<Void, Never>?
+        private var hasArrived = false
+        private var hasResumed = false
+
+        func wait() async {
+            hasArrived = true
+            if hasResumed { return }
+            await withCheckedContinuation { continuation = $0 }
+        }
+
+        func signal() {
+            hasResumed = true
+            continuation?.resume()
+            continuation = nil
+        }
+
+        var isArrived: Bool { hasArrived }
+    }
+
     private struct StubTransport: OpenCodeTransport {
         var recorder: Recorder
         var handler: @Sendable (APIRequest) throws -> APIResponse
+        var hook: (@Sendable (APIRequest) async -> Void)?
 
         func perform(_ request: APIRequest) async throws -> APIResponse {
             recorder.record(request)
+            await hook?(request)
             return try handler(request)
         }
 
@@ -85,9 +109,12 @@ final class SelectionLibraryTests: XCTestCase {
     private func makeLibrary(
         recorder: Recorder,
         handler: @escaping @Sendable (APIRequest) throws -> APIResponse,
+        hook: (@Sendable (APIRequest) async -> Void)? = nil,
         credentials: [String: BasicCredential?] = ["host_one": BasicCredential(secret: "t")]
     ) -> SelectionLibrary {
-        let stub: @Sendable () -> StubTransport = { StubTransport(recorder: recorder, handler: handler) }
+        let stub: @Sendable () -> StubTransport = {
+            StubTransport(recorder: recorder, handler: handler, hook: hook)
+        }
         return SelectionLibrary(
             service: ModelAgentService(makeTransport: { _ in stub() }),
             credentialProvider: { id in credentials[id.rawValue] ?? nil }
@@ -332,6 +359,60 @@ final class SelectionLibraryTests: XCTestCase {
         await library.load(host: two, session: sharedIDB)
         XCTAssertEqual(library.selectedRef?.id, "old-b",
                        "session identity is the (host, session) pair")
+    }
+
+    func testSwitchCompletingAfterMovingToAnotherSessionUpdatesOnlyItsOwnSession() async throws {
+        let latch = Latch()
+        let handler: @Sendable (APIRequest) throws -> APIResponse = { request in
+            switch request.operationID {
+            case "model.list":
+                return Fixtures.response(Fixtures.located("[\(Fixtures.modelJSON)]"))
+            case "model.default":
+                return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
+            case "agent.list":
+                return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "session.switchModel":
+                return Fixtures.empty()
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        // The model switch for session A stays in flight until the test
+        // releases it — long enough for the sheet to move to session B.
+        let library = makeLibrary(recorder: Recorder(), handler: handler, hook: { request in
+            if request.operationID == "session.switchModel" {
+                await latch.wait()
+            }
+        })
+        let sessionB = Session(
+            id: "ses_b", parentID: nil, projectID: nil, title: "Other",
+            agent: "reviewer", model: Session.ModelRef(id: "other-model", providerID: "x")
+        )
+
+        await library.load(host: one, session: seededSession)
+        XCTAssertEqual(library.selectedRef?.id, "old-model", "precondition")
+        let model = try XCTUnwrap(library.models.first)
+
+        // Start A's switch, wait until it is genuinely in flight, then
+        // move the sheet to session B before releasing it.
+        let pending = Task { await library.selectModel(host: one, sessionID: "ses_a", model: model) }
+        while !(await latch.isArrived) { await Task.yield() }
+        await library.load(host: one, session: sessionB)
+        XCTAssertEqual(library.selectedRef?.id, "other-model", "precondition: the sheet shows B")
+
+        await latch.signal()
+        let accepted = await pending.value
+        XCTAssertTrue(accepted, "the host confirmed A's switch")
+
+        // A's confirmed model must not paint into B's visible selection…
+        XCTAssertEqual(library.selectedRef?.id, "other-model")
+        XCTAssertEqual(library.selectedAgentID, "reviewer", "B keeps its own agent")
+
+        // …and returning to A restores A's confirmed MODEL and A's own
+        // AGENT — B's agent never leaked into A's cached selection.
+        await library.load(host: one, session: seededSession)
+        XCTAssertEqual(library.selectedRef?.id, "demo-code")
+        XCTAssertEqual(library.selectedAgentID, "plan")
     }
 
     func testOfflineInventoryFailuresCollapseToASingleMessage() async throws {

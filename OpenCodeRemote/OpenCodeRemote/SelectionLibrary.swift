@@ -42,6 +42,12 @@ final class SelectionLibrary {
     }
 
     private var confirmedBySession: [String: ConfirmedSelection] = [:]
+    /// The (host, session) pair whose transcript the sheet currently
+    /// shows. A switch that completes AFTER the user moved to another
+    /// session updates that session's remembered selection but must not
+    /// paint its result into the wrong (currently visible) transcript.
+    private var activeHostID: HostID?
+    private var activeSessionID: String?
 
     init(service: ModelAgentService? = nil, credentialProvider: CredentialProvider? = nil) {
         self.service = service ?? ModelAgentService(makeTransport: { URLSessionTransport(baseURL: $0) })
@@ -70,6 +76,8 @@ final class SelectionLibrary {
             selectedAgentID = session.agent
             confirmedBySession[key] = ConfirmedSelection(agent: session.agent, ref: session.model)
         }
+        activeHostID = host.id
+        activeSessionID = session.id
         guard let credential = credentialProvider?(host.id) else {
             error = "Re-pair this host to choose a model or agent."
             return
@@ -119,9 +127,11 @@ final class SelectionLibrary {
         let ref = model.selectionRef()
         do {
             try await service.switchModel(at: host.address, credential: credential, sessionID: sessionID, to: ref)
-            selectedRef = ref
+            updateConfirmed(hostID: host.id, sessionID: sessionID) { $0.ref = ref }
+            if isActive(hostID: host.id, sessionID: sessionID) {
+                selectedRef = ref
+            }
             error = nil
-            rememberConfirmed(hostID: host.id, sessionID: sessionID)
             sessions?.noteSelection(host: host, sessionID: sessionID, agent: nil, model: ref)
             return true
         } catch {
@@ -146,9 +156,11 @@ final class SelectionLibrary {
         defer { isSwitching = false }
         do {
             try await service.switchAgent(at: host.address, credential: credential, sessionID: sessionID, agent: agent.id)
-            selectedAgentID = agent.id
+            updateConfirmed(hostID: host.id, sessionID: sessionID) { $0.agent = agent.id }
+            if isActive(hostID: host.id, sessionID: sessionID) {
+                selectedAgentID = agent.id
+            }
             error = nil
-            rememberConfirmed(hostID: host.id, sessionID: sessionID)
             sessions?.noteSelection(host: host, sessionID: sessionID, agent: agent.id, model: nil)
             return true
         } catch {
@@ -165,10 +177,23 @@ final class SelectionLibrary {
         "\(hostID.rawValue)/\(sessionID)"
     }
 
-    private func rememberConfirmed(hostID: HostID, sessionID: String) {
-        confirmedBySession[Self.key(hostID: hostID, sessionID: sessionID)] = ConfirmedSelection(
-            agent: selectedAgentID, ref: selectedRef
-        )
+    /// Updates ONLY the field a switch confirmed for its target session,
+    /// preserving that session's other remembered field — never reading
+    /// the currently visible selection, which may already be a different
+    /// session if the switch completed late.
+    private func updateConfirmed(
+        hostID: HostID,
+        sessionID: String,
+        _ mutate: (inout ConfirmedSelection) -> Void
+    ) {
+        let key = Self.key(hostID: hostID, sessionID: sessionID)
+        var selection = confirmedBySession[key] ?? ConfirmedSelection(agent: nil, ref: nil)
+        mutate(&selection)
+        confirmedBySession[key] = selection
+    }
+
+    private func isActive(hostID: HostID, sessionID: String) -> Bool {
+        activeHostID == hostID && activeSessionID == sessionID
     }
 
     // MARK: - Error handling (mirrors ConversationLibrary)
