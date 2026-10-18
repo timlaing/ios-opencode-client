@@ -123,9 +123,13 @@ struct FormSheetView: View {
         .task(id: presented?.id) {
             await loadDetail()
         }
-        .onChange(of: draft) { _, _ in
+        .onChange(of: draft.buffers) { _, _ in
             // Editing invalidates stale local validation feedback; the
             // host's message (submitError) stays until the next attempt.
+            // Keyed to the buffers, NOT the whole draft: a NaN schema
+            // value makes draft != draft under Equatable, which would
+            // re-fire this on every render and clear fresh errors the
+            // moment submit sets them.
             if !validationErrors.isEmpty { validationErrors = [:] }
         }
     }

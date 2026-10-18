@@ -52,6 +52,23 @@ struct FormDraft: Equatable {
     /// multiselect fields: the selected option VALUES (independent).
     var picks: [String: [String]] = [:]
 
+    /// The user-editable state ONLY — no schema values, so a NaN
+    /// default/bound cannot make two identical drafts compare unequal
+    /// (NaN != NaN under Equatable, which would re-fire the sheet's
+    /// onChange on every render and clear fresh validation errors the
+    /// moment submit sets them). Observers of "the user edited
+    /// something" must watch this, never the whole draft.
+    struct Buffers: Equatable {
+        var texts: [String: String]
+        var numbers: [String: String]
+        var bools: [String: Toggle]
+        var picks: [String: [String]]
+    }
+
+    var buffers: Buffers {
+        Buffers(texts: texts, numbers: numbers, bools: bools, picks: picks)
+    }
+
     init(fields: [FormField]) {
         self.fields = fields
         self.fieldByKey = [:]
@@ -253,9 +270,16 @@ struct FormDraft: Equatable {
                     if f.required == true { errors[f.key] = FieldError(message: "This field is required.") }
                     continue
                 }
-                if let min = f.minLength, text.count < min {
+                // Host length rules count UTF-16 code units (JS
+                // `String.length`), not grapheme clusters — "👍" is one
+                // Character but two units, so Swift `count` would both
+                // falsely block a host-valid minLength and miss a host
+                // maxLength 400. The pattern check already runs in
+                // UTF-16 (NSRegularExpression ranges).
+                let length = text.utf16.count
+                if let min = f.minLength, length < min {
                     errors[f.key] = FieldError(message: "Use at least \(min) characters.")
-                } else if let max = f.maxLength, text.count > max {
+                } else if let max = f.maxLength, length > max {
                     errors[f.key] = FieldError(message: "Use at most \(max) characters.")
                 } else if let pattern = f.pattern, let regex = try? NSRegularExpression(pattern: pattern) {
                     // An uncompilable pattern is left to the host —

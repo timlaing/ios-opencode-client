@@ -348,6 +348,56 @@ final class FormDraftTests: XCTestCase {
                      + "an otherwise-valid submission impossible")
     }
 
+    func testStringLengthsCountUTF16UnitsLikeTheHost() {
+        // The host counts UTF-16 CODE UNITS (TypeScript String.length),
+        // not grapheme clusters: "👍" is one Character but TWO units.
+        // Counting Characters would let a 4-unit answer slip past a
+        // maxLength of 3 (a guaranteed host 400) — and block a
+        // host-valid answer on minLength.
+        let fields: [FormField] = [
+            .string(FormStringField(key: "caption", maxLength: 3)),
+        ]
+        var draft = FormDraft(fields: fields)
+        draft.texts["caption"] = "👍👍"   // two Characters, FOUR units
+        XCTAssertNotNil(draft.validate()["caption"],
+                        "4 UTF-16 units exceed maxLength 3 — the host would 400 it")
+        draft.texts["caption"] = "a👍"     // two Characters, THREE units
+        XCTAssertNil(draft.validate()["caption"],
+                     "3 UTF-16 units fit maxLength 3 — never a false local block")
+        draft.texts["caption"] = "abc"     // three ASCII Characters, three units
+        XCTAssertNil(draft.validate()["caption"])
+
+        let minFields: [FormField] = [
+            .string(FormStringField(key: "tagline", minLength: 3)),
+        ]
+        var minDraft = FormDraft(fields: minFields)
+        minDraft.texts["tagline"] = "👍a"  // two Characters, THREE units
+        XCTAssertNil(minDraft.validate()["tagline"],
+                     "the host accepts 3 units for minLength 3 — no false local block")
+    }
+
+    func testBuffersExcludeSchemaValuesSoNaNFormsCompareStably() {
+        // FormDraft's synthesised Equatable includes the SCHEMA, so a
+        // NaN default makes draft == draft false — an onChange keyed on
+        // the whole draft re-fires on every render and clears fresh
+        // validation errors the moment submit sets them. The Buffers
+        // projection carries only user-editable state: stable under a
+        // NaN schema, and still reflecting every real edit.
+        let fields: [FormField] = [
+            .number(FormNumberField(key: "seed", default: .nan)),
+            .string(FormStringField(key: "note")),
+        ]
+        let first = FormDraft(fields: fields)
+        var second = FormDraft(fields: fields)
+        XCTAssertNotEqual(first, second,
+                          "the NaN default makes whole-draft equality unstable by construction")
+        XCTAssertEqual(first.buffers, second.buffers,
+                       "Buffers carry no schema values, so the observer sees no change")
+        second.texts["note"] = "typed"
+        XCTAssertNotEqual(first.buffers, second.buffers,
+                          "a real edit still changes the observed value")
+    }
+
     func testValidationRejectsGarbageAndNonIntegralNumbers() {
         let fields: [FormField] = [
             .number(FormNumberField(key: "ratio")),
@@ -469,5 +519,54 @@ final class FormDraftTests: XCTestCase {
             key: "atLeast", minimum: 0, maximum: .infinity
         ))
         XCTAssertEqual(FormDraft.constraints(for: floorWithOpenTop), "Between 0 and ∞")
+    }
+
+    // MARK: - Buffers (observer-stable equality)
+
+    func testBuffersReflectOnlyTheEditableStateAcrossEveryFieldKind() {
+        // `buffers` is what the sheet observes for "did the user edit
+        // anything?" (validation-error clearing). It must (a) carry NO
+        // schema `Double` values — so a NaN default/bound can never leak
+        // into the comparison — and (b) be stable for a pristine draft
+        // and sensitive to a real edit in every buffer kind.
+        let fields: [FormField] = [
+            .string(FormStringField(key: "note")),
+            .number(FormNumberField(key: "ratio", default: .nan)),
+            .boolean(FormBooleanField(key: "enabled")),
+            .multiselect(FormMultiselectField(key: "checks", options: [
+                FormOption(value: "a", label: "A"),
+            ])),
+        ]
+        let pristine = FormDraft(fields: fields)
+        // A pristine copy of the SAME draft compares equal to the
+        // observer: no edit, no observed change (no phantom clearing).
+        XCTAssertEqual(pristine.buffers,
+                       FormDraft(fields: fields).buffers,
+                       "an untouched draft looks untouched to the observer")
+        // The schema's NaN default is excluded from the projection —
+        // buffers hold only `Double`-free user-editable state.
+        XCTAssertEqual(pristine.buffers.numbers["ratio"], "",
+                       "a NaN default seeds an empty editing buffer, not a Double")
+        XCTAssertNil(pristine.buffers.texts["ratio"],
+                     "numbers never surface in the string-text buffer")
+
+        // Every editable kind reports a real edit to the observer.
+        var edited = pristine
+        edited.texts["note"] = "x"
+        XCTAssertNotEqual(pristine.buffers, edited.buffers, "text edit is observed")
+        edited.numbers["ratio"] = "1.5"
+        XCTAssertNotEqual(pristine.buffers, edited.buffers, "number edit is observed")
+        edited.bools["enabled"] = .on
+        XCTAssertNotEqual(pristine.buffers, edited.buffers, "boolean edit is observed")
+        edited.picks["checks"] = ["a"]
+        XCTAssertNotEqual(pristine.buffers, edited.buffers, "multiselect edit is observed")
+
+        // Returning each buffer to its seeded value restores equality.
+        edited.texts["note"] = pristine.buffers.texts["note"]
+        edited.numbers["ratio"] = pristine.buffers.numbers["ratio"]
+        edited.bools["enabled"] = pristine.buffers.bools["enabled"]
+        edited.picks["checks"] = pristine.buffers.picks["checks"]
+        XCTAssertEqual(pristine.buffers, edited.buffers,
+                       "reverting to the seed compares equal again")
     }
 }
