@@ -278,9 +278,9 @@ struct FormDraft: Equatable {
                 // UTF-16 (NSRegularExpression ranges).
                 let length = text.utf16.count
                 if let min = f.minLength, length < min {
-                    errors[f.key] = FieldError(message: "Use at least \(min) characters.")
+                    errors[f.key] = FieldError(message: "Use at least \(min) symbols.")
                 } else if let max = f.maxLength, length > max {
-                    errors[f.key] = FieldError(message: "Use at most \(max) characters.")
+                    errors[f.key] = FieldError(message: "Use at most \(max) symbols.")
                 } else if let pattern = f.pattern, let regex = try? NSRegularExpression(pattern: pattern) {
                     // An uncompilable pattern is left to the host —
                     // never claimed as locally validated.
@@ -441,9 +441,9 @@ struct FormDraft: Equatable {
         switch field {
         case .string(let f):
             switch (f.minLength, f.maxLength) {
-            case (let min?, let max?): parts.append("\(min)–\(max) characters")
-            case (let min?, nil): parts.append("At least \(min) characters")
-            case (nil, let max?): parts.append("At most \(max) characters")
+            case (let min?, let max?): parts.append("\(min)–\(max) symbols")
+            case (let min?, nil): parts.append("At least \(min) symbols")
+            case (nil, let max?): parts.append("At most \(max) symbols")
             case (nil, nil): break
             }
             if let options = f.options, !options.isEmpty, f.custom != true {
