@@ -232,6 +232,66 @@ final class FormDraftTests: XCTestCase {
         XCTAssertEqual(answer["replicas"], .number(1), "the typed default rides as a number")
     }
 
+    // MARK: - Clearing and linear visibility (R3)
+
+    func testInactiveValuesAreClearedNotResurrectedByAFlipBack() {
+        // The safety case: a required confirmation checked while its
+        // condition holds must NOT ride back in when the condition
+        // flips off and on again — the person re-affirms for THIS
+        // visit (docs/api-contract.md W10).
+        var draft = FormDraft(fields: fixtureFields)
+        draft.setText("environment", "production")
+        draft.setBoolean("confirm", .on)
+        XCTAssertEqual(draft.answer()["confirm"], .boolean(true))
+
+        // The condition's input flips away: the confirmation is
+        // inactive AND its value is removed, not parked.
+        draft.setText("environment", "staging")
+        XCTAssertFalse(draft.isActive(fixtureFields[2]))
+        XCTAssertNotEqual(draft.bools["confirm"], .on,
+                          "the stale affirmation is cleared, never parked")
+
+        // Flipping back must NOT resurrect it: the person re-chooses.
+        draft.setText("environment", "production")
+        XCTAssertTrue(draft.isActive(fixtureFields[2]))
+        XCTAssertNil(draft.answer()["confirm"], "a re-shown field starts unanswered")
+        XCTAssertNotNil(draft.validate()["confirm"],
+                        "the required confirmation blocks submission until re-affirmed")
+    }
+
+    func testChainedConditionsResolveInOneLinearForwardPass() {
+        // The shape that made per-field recursive visibility
+        // exponential: field i cites the two before it. Forty fields
+        // cost ~10^8 recursive steps per answer() call under the old
+        // evaluator — the sheet would freeze on every keystroke. The
+        // forward pass is one left-to-right sweep, so this test
+        // completing at all is the regression signal; the counts
+        // below check correctness, not just speed.
+        var fields: [FormField] = [
+            .boolean(FormBooleanField(key: "f0", default: true)),
+            .boolean(FormBooleanField(key: "f1", default: true)),
+        ]
+        for index in 2..<40 {
+            fields.append(.boolean(FormBooleanField(key: "f\(index)", when: [
+                FormWhen(key: "f\(index - 1)", op: "eq", value: .boolean(true)),
+                FormWhen(key: "f\(index - 2)", op: "eq", value: .boolean(true)),
+            ], default: true)))
+        }
+        var draft = FormDraft(fields: fields)
+        XCTAssertEqual(draft.answer().count, 40, "every default-true field is active")
+
+        // Break one link: everything behind it is inactive.
+        draft.setBoolean("f10", .off)
+        XCTAssertFalse(draft.isActive(fields[11]))
+        XCTAssertFalse(draft.isActive(fields[39]))
+        XCTAssertEqual(draft.answer().count, 11, "f0...f10 answer; the tail is inactive")
+
+        // Restoring the link reactivates from SEEDED values — the
+        // cleared tail never resurrects a stale typed answer.
+        draft.setBoolean("f10", .on)
+        XCTAssertEqual(draft.answer().count, 40, "the chain reactivates from the seeds")
+    }
+
     // MARK: - Validation
 
     func testValidationCoversPresenceLengthsAndBounds() {

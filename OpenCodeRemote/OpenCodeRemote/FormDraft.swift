@@ -10,7 +10,9 @@ import OpenCodeTransport
 /// - A field is ACTIVE when it is not hidden and every `when` entry is
 ///   satisfied by the answers gathered so far (an AND over the list).
 /// - Inactive fields are NOT rendered and their values are REMOVED
-///   from the draft — never submitted with stale values.
+///   from the draft — `clearInactive()` resets them to their seeded
+///   state after every edit, so nothing is ever submitted stale AND
+///   nothing rides back in when a condition flips off and on again.
 /// - `eq` over a multiselect answer means INCLUSION; a condition whose
 ///   referenced field has no answer yet is unsatisfied.
 /// - External fields open the system browser and are never answered;
@@ -33,12 +35,11 @@ struct FormDraft: Equatable {
     private(set) var fields: [FormField]
     private var fieldByKey: [String: FormField]
     /// Host render order per key — a `when` may only reference an
-    /// EARLIER field (docs/api-contract.md W10), and the order check is
-    /// what bounds condition evaluation: recursion always steps to a
-    /// strictly lower index, so a self- or forward-referencing
-    /// condition terminates as unsatisfied instead of recursing until
-    /// the stack overflows (the agent authors forms, so a malformed
-    /// schema reaches the sheet).
+    /// EARLIER field (docs/api-contract.md W10). The forward pass in
+    /// `activeFlags()` relies on this: a self- or forward-referencing
+    /// condition finds no settled flag for the referenced field and is
+    /// unsatisfied (the agent authors forms, so a malformed schema
+    /// reaches the sheet).
     private var indexByKey: [String: Int] = [:]
 
     /// string fields: raw text (also the buffer for typed values).
@@ -57,39 +58,49 @@ struct FormDraft: Equatable {
         for (index, field) in fields.enumerated() {
             fieldByKey[field.key] = field
             indexByKey[field.key] = index
-            switch field {
-            case .string(let f):
-                texts[f.key] = f.default ?? ""
-            case .number(let f):
-                // A host may name a non-finite default the client can
-                // DECODE but no person can enter: seeding the literal
-                // "nan" would fail parseNumber on an untouched field
-                // and block submission. Such a default seeds an empty
-                // buffer — unanswered and honestly validated.
-                numbers[f.key] = f.default.flatMap {
-                    $0.isNaN ? nil : Self.editingText($0)
-                } ?? ""
-            case .integer(let f):
-                numbers[f.key] = f.default.flatMap {
-                    $0.isNaN ? nil : Self.editingText($0)
-                } ?? ""
-            case .boolean(let f):
-                // A host default seeds the value; a required boolean
-                // without one must be CHOSEN explicitly; an optional
-                // toggle starts at (and answers as) its visible OFF —
-                // the screen and the submitted value never disagree.
-                if let value = f.default {
-                    bools[f.key] = value ? .on : .off
-                } else if f.required == true {
-                    bools[f.key] = .unset
-                } else {
-                    bools[f.key] = .off
-                }
-            case .multiselect(let f):
-                picks[f.key] = f.default ?? []
-            case .external, .unknown:
-                continue
+            seed(field)
+        }
+    }
+
+    /// Seeds one field's buffer to its HOST state: the declared
+    /// default where given, else the empty/unset state (a required
+    /// boolean starts `.unset` — the host rejects a required key with
+    /// no value — while an optional toggle starts at its visible OFF).
+    /// `init` and `clearInactive()` share this, so a cleared field
+    /// returns to EXACTLY its initial state.
+    private mutating func seed(_ field: FormField) {
+        switch field {
+        case .string(let f):
+            texts[f.key] = f.default ?? ""
+        case .number(let f):
+            // A host may name a non-finite default the client can
+            // DECODE but no person can enter: seeding the literal
+            // "nan" would fail parseNumber on an untouched field
+            // and block submission. Such a default seeds an empty
+            // buffer — unanswered and honestly validated.
+            numbers[f.key] = f.default.flatMap {
+                $0.isNaN ? nil : Self.editingText($0)
+            } ?? ""
+        case .integer(let f):
+            numbers[f.key] = f.default.flatMap {
+                $0.isNaN ? nil : Self.editingText($0)
+            } ?? ""
+        case .boolean(let f):
+            // A host default seeds the value; a required boolean
+            // without one must be CHOSEN explicitly; an optional
+            // toggle starts at (and answers as) its visible OFF —
+            // the screen and the submitted value never disagree.
+            if let value = f.default {
+                bools[f.key] = value ? .on : .off
+            } else if f.required == true {
+                bools[f.key] = .unset
+            } else {
+                bools[f.key] = .off
             }
+        case .multiselect(let f):
+            picks[f.key] = f.default ?? []
+        case .external, .unknown:
+            break
         }
     }
 
@@ -97,24 +108,46 @@ struct FormDraft: Equatable {
 
     /// Whether `field` should render and take an answer: not hidden,
     /// and every `when` entry satisfied (an AND) by the CURRENT draft.
-    /// A condition referencing a missing, SELF, or LATER field is
-    /// unsatisfied — outside the contract's earlier-fields rule, and
-    /// the one evaluation order that cannot recurse without bound.
     /// External fields render (as a link) but are never answerable.
     func isActive(_ field: FormField) -> Bool {
-        if field.isHidden { return false }
-        let ownIndex = indexByKey[field.key] ?? Int.max
-        return field.conditions.allSatisfy { when in
-            guard let refIndex = indexByKey[when.key], refIndex < ownIndex else { return false }
-            return conditionHolds(when)
-        }
+        activeFlags()[field.key] ?? false
     }
 
-    /// A `when` entry evaluated against the CURRENT draft. A condition
+    /// The active flag for EVERY field, computed in ONE forward pass
+    /// over the host's render order. A `when` may only reference an
+    /// EARLIER field, so by the time field i is evaluated every flag
+    /// and answer it can reference is settled — the whole form costs
+    /// one pass (fields × conditions), and `answer()`/`validate()`
+    /// share a single pass instead of re-walking per field. Per-field
+    /// recursion instead re-walks each referenced field's own
+    /// conditions on every visit — Fibonacci-many steps for the
+    /// every-field-cites-the-two-before shape a form authoring agent
+    /// can produce (~10^8 at 40 fields, on every render and
+    /// keystroke). A condition referencing a missing, SELF, or LATER
+    /// field is unsatisfied — outside the contract's earlier-fields
+    /// rule, and what the index comparison enforces.
+    private func activeFlags() -> [String: Bool] {
+        var flags: [String: Bool] = [:]
+        for (index, field) in fields.enumerated() {
+            guard !field.isHidden else {
+                flags[field.key] = false
+                continue
+            }
+            flags[field.key] = field.conditions.allSatisfy { when in
+                guard let refIndex = indexByKey[when.key], refIndex < index,
+                      flags[when.key] == true,
+                      let current = currentValue(forKey: when.key, activeFields: flags)
+                else { return false }
+                return Self.holds(when, against: current)
+            }
+        }
+        return flags
+    }
+
+    /// A `when` entry evaluated against a current answer. A condition
     /// referencing a field with no answer is unsatisfied (even `neq`);
     /// over a multiselect answer `eq` means inclusion.
-    private func conditionHolds(_ when: FormWhen) -> Bool {
-        guard let current = currentValue(for: when.key) else { return false }
+    private static func holds(_ when: FormWhen, against current: FormValue) -> Bool {
         let equal: Bool
         if case .strings(let selected) = current {
             guard case .string(let token) = when.value else { return false }
@@ -125,12 +158,11 @@ struct FormDraft: Equatable {
         return when.isEqual ? equal : !equal
     }
 
-    /// The draft's current typed answer for `key`, or nil when the
-    /// field holds no answer yet (empty text, unset required boolean,
-    /// empty selection). Conditions and answer assembly both read this
-    /// — inactive fields answer nothing.
-    func currentValue(for key: String) -> FormValue? {
-        guard let field = fieldByKey[key], isActive(field) else { return nil }
+    /// The draft's current typed answer for `key` under a KNOWN flag
+    /// map, or nil when the field is inactive or holds no answer yet
+    /// (empty text, unset required boolean, empty selection).
+    private func currentValue(forKey key: String, activeFields flags: [String: Bool]) -> FormValue? {
+        guard flags[key] == true, let field = fieldByKey[key] else { return nil }
         switch field {
         case .string(let f):
             let text = texts[f.key] ?? ""
@@ -152,17 +184,42 @@ struct FormDraft: Equatable {
         }
     }
 
+    /// The draft's current typed answer for `key`, or nil when the
+    /// field is inactive or holds no answer yet.
+    func currentValue(for key: String) -> FormValue? {
+        currentValue(forKey: key, activeFields: activeFlags())
+    }
+
+    /// Inactive fields are REMOVED from the draft, not merely omitted
+    /// from `answer()`: a value typed while the field was visible must
+    /// never ride back in when a condition flips off and on again (a
+    /// stale safety confirmation would otherwise submit as affirmed
+    /// without the person re-choosing it). Each inactive field resets
+    /// to exactly its seeded state — `init` and this share `seed(_:)`.
+    /// Every edit action below calls this; one forward pass suffices
+    /// because conditions only read ACTIVE fields' values, so
+    /// clearing inactive buffers cannot change any flag.
+    mutating func clearInactive() {
+        let flags = activeFlags()
+        guard flags.values.contains(false) else { return }
+        for field in fields where flags[field.key] != true {
+            seed(field)
+        }
+    }
+
     // MARK: - Answer assembly
 
     /// The reply's answer: ONLY active fields with a present value,
     /// typed per the contract (numbers as numbers, booleans as
     /// booleans, selections as string arrays). Inactive fields are
     /// omitted — never sent with stale values (docs/api-contract.md
-    /// W10).
+    /// W10) — and `clearInactive()` additionally wipes their buffers,
+    /// so nothing rides back in on a later flip.
     func answer() -> [String: FormValue] {
+        let flags = activeFlags()
         var answer: [String: FormValue] = [:]
-        for field in fields where isActive(field) {
-            if let value = currentValue(for: field.key) {
+        for field in fields where flags[field.key] == true {
+            if let value = currentValue(forKey: field.key, activeFields: flags) {
                 answer[field.key] = value
             }
         }
@@ -179,8 +236,9 @@ struct FormDraft: Equatable {
     /// surfaced beside the field, never masked by a false local pass
     /// or a false local block (S12).
     func validate() -> [String: FieldError] {
+        let flags = activeFlags()
         var errors: [String: FieldError] = [:]
-        for field in fields where isActive(field) {
+        for field in fields where flags[field.key] == true {
             switch field {
             case .string(let f):
                 let text = texts[f.key] ?? ""
@@ -286,6 +344,32 @@ struct FormDraft: Equatable {
 
     // MARK: - Editing actions
 
+    /// Every buffer write in the sheet goes through these mutating
+    /// actions — never a direct dictionary write — and each one ends
+    /// in `clearInactive()`, so the "inactive fields hold no value"
+    /// contract cannot be bypassed by a call site. Only ACTIVE fields
+    /// render inputs, so the edited field is never the one cleared.
+
+    /// Replaces a string field's buffer (typed text, or the value of
+    /// a chosen option).
+    mutating func setText(_ key: String, _ value: String) {
+        texts[key] = value
+        clearInactive()
+    }
+
+    /// Replaces a numeric field's editing buffer (raw text — parsed
+    /// at answer/validation time).
+    mutating func setNumber(_ key: String, _ raw: String) {
+        numbers[key] = raw
+        clearInactive()
+    }
+
+    /// Replaces a boolean field's tri-state.
+    mutating func setBoolean(_ key: String, _ value: Toggle) {
+        bools[key] = value
+        clearInactive()
+    }
+
     /// Selects/deselects a multiselect option — unique by
     /// construction, order preserved as chosen.
     mutating func toggle(_ key: String, _ value: String) {
@@ -296,6 +380,7 @@ struct FormDraft: Equatable {
             selected.append(value)
         }
         picks[key] = selected
+        clearInactive()
     }
 
     /// Adds a typed value to a `custom` multiselect (blank is a no-op,
@@ -307,6 +392,7 @@ struct FormDraft: Equatable {
         guard !selected.contains(value) else { return }
         selected.append(value)
         picks[key] = selected
+        clearInactive()
     }
 
     // MARK: - Presentation helpers

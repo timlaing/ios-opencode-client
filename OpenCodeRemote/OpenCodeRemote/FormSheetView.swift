@@ -312,7 +312,7 @@ struct FormSheetView: View {
                         HStack(spacing: 6) {
                             ForEach(f.options ?? [], id: \.value) { option in
                                 Button(option.label) {
-                                    draft.texts[f.key] = option.value
+                                    draft.setText(f.key, option.value)
                                 }
                                 .buttonStyle(.bordered)
                                 .font(.caption)
@@ -502,21 +502,21 @@ struct FormSheetView: View {
     private func textBinding(_ key: String) -> Binding<String> {
         Binding(
             get: { draft.texts[key] ?? "" },
-            set: { draft.texts[key] = $0 }
+            set: { draft.setText(key, $0) }
         )
     }
 
     private func numberBinding(_ key: String) -> Binding<String> {
         Binding(
             get: { draft.numbers[key] ?? "" },
-            set: { draft.numbers[key] = $0 }
+            set: { draft.setNumber(key, $0) }
         )
     }
 
     private func toggleBinding(_ key: String) -> Binding<FormDraft.Toggle> {
         Binding(
             get: { draft.bools[key] ?? .unset },
-            set: { draft.bools[key] = $0 }
+            set: { draft.setBoolean(key, $0) }
         )
     }
 
@@ -526,7 +526,7 @@ struct FormSheetView: View {
     private func boolBinding(_ key: String) -> Binding<Bool> {
         Binding(
             get: { draft.bools[key] == .on },
-            set: { draft.bools[key] = $0 ? .on : .off }
+            set: { draft.setBoolean(key, $0 ? .on : .off) }
         )
     }
 
