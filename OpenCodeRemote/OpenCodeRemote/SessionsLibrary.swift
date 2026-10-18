@@ -61,13 +61,17 @@ final class SessionsLibrary {
         for entry in targets { loadingHosts.remove(entry.id) }
     }
 
-    func load(host: OpenCodeDomain.Host, project: String? = nil) async {
+    /// Loads the host-wide inventory (newest page first). Project scoping
+    /// is applied client-side in `rows()` — replacing this cache with a
+    /// project-scoped page would corrupt the cursor chain and survive
+    /// until the next unscoped refresh.
+    func load(host: OpenCodeDomain.Host) async {
         guard let credentialProvider, let credential = credentialProvider(host.id) else {
             errorsByHost[host.id] = "Re-pair this host to list its sessions."
             return
         }
         do {
-            let page = try await service.sessions(at: host.address, credential: credential, project: project)
+            let page = try await service.sessions(at: host.address, credential: credential)
             sessionsByHost[host.id] = page.data
             hasMoreByHost[host.id] = page.cursor?.next != nil
             nextCursors[host.id] = page.cursor?.next
@@ -116,9 +120,17 @@ final class SessionsLibrary {
                 let page = try await service.sessions(
                     at: entry.host.address, credential: credential, search: needle
                 )
+                // Overlapping searches: only the CURRENT term may write —
+                // a slower earlier request must not overwrite newer
+                // results, and a cancelled task must not surface errors.
+                guard activeSearch == needle, !Task.isCancelled else { return }
                 searchResultsByHost[entry.id] = page.data
                 errorsByHost[entry.id] = nil
             } catch {
+                guard activeSearch == needle, !Task.isCancelled else { return }
+                // A failed host shows no stale results from the previous
+                // term — its error is surfaced instead.
+                searchResultsByHost[entry.id] = nil
                 errorsByHost[entry.id] = Self.message(for: error)
             }
         }
@@ -227,8 +239,21 @@ final class SessionsLibrary {
             throw TransportError.connectionFailed("missing credential")
         }
         try await service.remove(at: host.address, credential: credential, sessionID: sessionID)
-        sessionsByHost[host.id]?.removeAll { $0.id == sessionID }
-        searchResultsByHost[host.id]?.removeAll { $0.id == sessionID }
+        // The server deletes child sessions with the parent (W03); drop
+        // every locally-known descendant so no stale row survives to a
+        // failed session.get. Traversal covers inventory + search results.
+        var removed: Set<String> = [sessionID]
+        var frontier: Set<String> = [sessionID]
+        let known = (sessionsByHost[host.id] ?? []) + (searchResultsByHost[host.id] ?? [])
+        while !frontier.isEmpty {
+            let children = Set(known
+                .filter { ($0.parentID.map(frontier.contains) ?? false) && !removed.contains($0.id) }
+                .map(\.id))
+            frontier = children
+            removed.formUnion(children)
+        }
+        sessionsByHost[host.id]?.removeAll { removed.contains($0.id) }
+        searchResultsByHost[host.id]?.removeAll { removed.contains($0.id) }
     }
 
     /// Marks a session read using a server-observed epoch — the session's

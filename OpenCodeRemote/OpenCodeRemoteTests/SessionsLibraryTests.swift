@@ -196,6 +196,28 @@ final class SessionsLibraryTests: XCTestCase {
         XCTAssertTrue(library.searchResultsByHost.isEmpty)
     }
 
+    func testFailedHostSearchClearsPreviousTermResults() async throws {
+        let one = host("host_one", name: "Mock A")
+        let failNext = Flag(false)
+        let library = library { request in
+            if request.query.contains(where: { $0.key == "search" }) {
+                if failNext.value { throw TransportError.http(status: 500, envelope: nil) }
+                return Fixtures.response(Fixtures.page([Fixtures.session("ses_match", title: "Deployment target")]))
+            }
+            return Fixtures.response(Fixtures.page([Fixtures.session("ses_a")]))
+        }
+        await library.load([entry(one)])
+        await library.search("deployment", entries: [entry(one)])
+        XCTAssertEqual(library.searchResultsByHost[one.id]?.count, 1)
+
+        failNext.value = true
+        await library.search("gone", entries: [entry(one)])
+
+        XCTAssertEqual(library.activeSearch, "gone")
+        XCTAssertNil(library.searchResultsByHost[one.id], "a failed host keeps no stale results from the previous term")
+        XCTAssertNotNil(library.errorsByHost[one.id], "the failure is surfaced instead")
+    }
+
     // MARK: - Rows, scopes, markers
 
     func testRowsApplyProjectScopeHiddenFilterAndMarkers() async throws {
@@ -386,6 +408,35 @@ final class SessionsLibraryTests: XCTestCase {
         reject.value = false
         try await library.remove(host: one, sessionID: "ses_a")
         XCTAssertEqual(library.sessionsByHost[one.id]?.map(\.id), ["ses_new"])
+    }
+
+    func testRemoveDropsDescendantsWithTheParent() async throws {
+        let one = host("host_one", name: "Mock A")
+        let library = library { request in
+            switch request.operationID {
+            case "session.list":
+                return Fixtures.response(Fixtures.page([
+                    Fixtures.session("ses_p", title: "Parent"),
+                    Fixtures.session("ses_c", title: "Child", parentID: "ses_p"),
+                    Fixtures.session("ses_g", title: "Grandchild", parentID: "ses_c"),
+                    Fixtures.session("ses_other", title: "Unrelated"),
+                ]))
+            case "session.active":
+                return Fixtures.response(#"{"data":{}}"#)
+            case "session.remove":
+                return Fixtures.empty()
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load([entry(one)])
+
+        try await library.remove(host: one, sessionID: "ses_p")
+
+        XCTAssertEqual(
+            library.sessionsByHost[one.id]?.map(\.id), ["ses_other"],
+            "the server deletes children with the parent — nested descendants drop too"
+        )
     }
 
     // MARK: - Local state

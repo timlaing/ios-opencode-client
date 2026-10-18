@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 import OpenCodeDomain
 
 /// A host-scoped session identity for app-local preferences. Server session
@@ -39,12 +40,14 @@ struct SessionLocalState: Codable, Equatable, Sendable {
 /// Persists `SessionLocalState` in `UserDefaults`. Followed session IDs
 /// are the app-side source consumed by `LocalPushConfigurationController.followedSessions`
 /// when the S17 eligibility owner runs reconciliation (W17, pending the
-/// push entitlement).
+/// push entitlement). Observable so pin/follow/hide toggles re-render the
+/// rows that read this state.
 @MainActor
+@Observable
 final class SessionLocalStateStore {
-    static let defaultsKey = "session.localstate.v1"
+    @ObservationIgnored static let defaultsKey = "session.localstate.v1"
 
-    private let defaults: UserDefaults
+    @ObservationIgnored private let defaults: UserDefaults
     private(set) var state: SessionLocalState
 
     init(defaults: UserDefaults = .standard) {

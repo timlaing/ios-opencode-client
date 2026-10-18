@@ -74,11 +74,21 @@ struct SessionsView: View {
         .searchable(text: $searchText, prompt: "Search session titles")
         .task {
             sessions.attach(hosts: library)
+            // The shared ProjectsLibrary may not have loaded yet if the
+            // user opens Sessions first — the project filter, row
+            // subtitles and New Session recents depend on it.
+            projects.attach(hosts: library)
+            if projects.projectsByHost.isEmpty {
+                await projects.load(library.entries)
+            }
             await sessions.load(library.entries)
         }
         .refreshable {
             if let hostFilter, let entry = library.entries.first(where: { $0.id == hostFilter }) {
-                await sessions.load(host: entry.host, project: projectFilter)
+                // Always the host-wide inventory: project scoping is
+                // applied client-side in rows(), so a scoped page never
+                // replaces the cache or its cursors.
+                await sessions.load(host: entry.host)
             } else {
                 await sessions.load(library.entries)
             }
@@ -91,7 +101,15 @@ struct SessionsView: View {
                 await sessions.search(value, entries: visibleEntries)
             }
         }
-        .onChange(of: hostFilter) { _, _ in projectFilter = nil }
+        .onChange(of: hostFilter) { _, _ in
+            projectFilter = nil
+            // Re-run the active search against the new scope — hosts
+            // outside the previous scope have no results yet.
+            if let term = sessions.activeSearch {
+                searchTask?.cancel()
+                searchTask = Task { await sessions.search(term, entries: visibleEntries) }
+            }
+        }
         .sheet(isPresented: $showingNewSession) {
             NewSessionSheet(
                 sessions: sessions,
@@ -188,7 +206,10 @@ struct SessionsView: View {
                     }
                 }
                 Section(showHidden ? "Hidden on This Device" : "Sessions") {
-                    ForEach(unpinnedRows) { row in sessionRow(row) }
+                    // In the hidden view ALL hidden rows render (a row can
+                    // be both pinned and hidden, and must stay reachable
+                    // for "Unhide on This Device").
+                    ForEach(showHidden ? rows : unpinnedRows) { row in sessionRow(row) }
                 }
                 if sessions.activeSearch == nil, hasMorePages {
                     Section {
