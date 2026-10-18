@@ -24,6 +24,10 @@ struct ConversationView: View {
     @State private var showingSelection = false
     @State private var showingContext = false
     @State private var showingInbox = false
+    /// W09 approvals (S11): pending-permission dock above the
+    /// composer; the detail sheet opens from it.
+    @State private var approvals = ApprovalLibrary()
+    @State private var showingApproval = false
     /// Preserved across failures — cleared ONLY on durable admission.
     @State private var draft = ""
     /// W08 attachments (S09): prepared per the web inline/staging rule;
@@ -44,6 +48,7 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             transcriptArea
             banners
+            approvalDock
             composer
         }
         .navigationTitle(session.title ?? "Untitled Session")
@@ -111,6 +116,11 @@ struct ConversationView: View {
                         }
                     }
             }
+        }
+        .sheet(isPresented: $showingApproval) {
+            // State is injected inside the sheet closure — the
+            // presenter's environment does not reach sheets.
+            ApprovalSheetView(host: host, session: session, approvals: approvals)
         }
         .sheet(isPresented: $showingTray) {
             // State is injected inside the sheet closure — the
@@ -186,12 +196,15 @@ struct ConversationView: View {
         }
         .refreshable {
             await conversation.refresh(host: host, sessionID: session.id)
+            await loadApprovals()
         }
         .task {
             conversation.attach(hosts: library)
             selection.attach(hosts: library)
             attachments.attach(hosts: library)
+            approvals.attach(hosts: library)
             await openTranscript()
+            await loadApprovals()
         }
     }
 
@@ -258,6 +271,54 @@ struct ConversationView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal)
+    }
+
+    /// S11 dock (W09): pending approvals above the composer, with a
+    /// count when several exist and the owner session ID on linked
+    /// child entries. Opens the detail sheet — never answers anything
+    /// by itself.
+    @ViewBuilder private var approvalDock: some View {
+        if approvals.hasPending {
+            Button {
+                showingApproval = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(approvals.pendingCount > 1
+                            ? "\(approvals.pendingCount) approvals waiting"
+                            : "Approval needed")
+                            .font(.subheadline.weight(.semibold))
+                        if let first = approvals.entries.first, first.isLinked {
+                            Text("Child session \(first.request.sessionID)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal)
+            .accessibilityIdentifier("S11.dock")
+        }
+    }
+
+    /// Refresh-driven approval reconciliation (no live SSE yet): the
+    /// sessions inventory contributes child attribution when it knows
+    /// the descendants — otherwise only the session's own entries show.
+    private func loadApprovals() async {
+        await approvals.load(
+            host: host,
+            sessionID: session.id,
+            childSessionIDs: sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
+        )
     }
 
     private var composer: some View {

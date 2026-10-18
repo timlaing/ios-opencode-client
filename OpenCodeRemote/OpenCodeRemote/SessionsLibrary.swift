@@ -242,18 +242,28 @@ final class SessionsLibrary {
         // The server deletes child sessions with the parent (W03); drop
         // every locally-known descendant so no stale row survives to a
         // failed session.get. Traversal covers inventory + search results.
-        var removed: Set<String> = [sessionID]
-        var frontier: Set<String> = [sessionID]
-        let known = (sessionsByHost[host.id] ?? []) + (searchResultsByHost[host.id] ?? [])
-        while !frontier.isEmpty {
-            let children = Set(known
-                .filter { ($0.parentID.map(frontier.contains) ?? false) && !removed.contains($0.id) }
-                .map(\.id))
-            frontier = children
-            removed.formUnion(children)
-        }
+        var removed = descendantSessionIDs(of: sessionID, on: host.id)
+        removed.insert(sessionID)
         sessionsByHost[host.id]?.removeAll { removed.contains($0.id) }
         searchResultsByHost[host.id]?.removeAll { removed.contains($0.id) }
+    }
+
+    /// Every known DESCENDANT of `sessionID` on this host (inventory +
+    /// search results): attribution for linked child-session approvals
+    /// (S11). Empty when the inventory has never seen children —
+    /// attribution unavailable means no linked entries, never guessed.
+    func descendantSessionIDs(of sessionID: String, on hostID: HostID) -> Set<String> {
+        let known = (sessionsByHost[hostID] ?? []) + (searchResultsByHost[hostID] ?? [])
+        var descendants: Set<String> = []
+        var frontier: Set<String> = [sessionID]
+        while !frontier.isEmpty {
+            let children = Set(known
+                .filter { ($0.parentID.map(frontier.contains) ?? false) && !descendants.contains($0.id) }
+                .map(\.id))
+            frontier = children
+            descendants.formUnion(children)
+        }
+        return descendants
     }
 
     /// Marks a session read using a server-observed epoch — the session's
