@@ -349,4 +349,138 @@ final class ApprovalLibraryTests: XCTestCase {
         XCTAssertEqual(library.entries.map(\.id), ["per_new"],
                        "a superseded load finishing late writes nothing")
     }
+
+    // MARK: - Retained-attribution scope (review R2, minor)
+
+    func testFailedLocationWideRefreshDropsFormerDescendants() async {
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+            "permission.request.list": .success(json(locatedJSON([
+                (id: "per_child", sessionID: "ses_child"),
+            ]))),
+        ])
+        let library = library(responses)
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: ["ses_child"])
+        XCTAssertEqual(library.entries.map(\.id), ["per_own", "per_child"])
+
+        // The location-wide refresh fails AND the attribution changed:
+        // the former descendant's approval may no longer belong to
+        // this conversation's dock at all.
+        responses.set("permission.request.list", .failure(.http(status: 500, envelope: nil)))
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: ["ses_grandchild"])
+
+        XCTAssertEqual(library.entries.map(\.id), ["per_own"],
+                       "entries kept through a failed sweep are filtered to CURRENT descendants")
+        XCTAssertEqual(library.refreshError, "The host returned an error (HTTP 500).")
+    }
+
+    // MARK: - Post-send watch (review R2, major)
+
+    /// Waits (bounded) for a condition the watch makes true.
+    private func waitUntil(
+        _ condition: @MainActor () -> Bool,
+        timeoutNanoseconds: UInt64 = 1_000_000_000
+    ) async {
+        let deadline = ContinuousClock.now.advanced(by: .nanoseconds(Int64(timeoutNanoseconds)))
+        while !condition(), ContinuousClock.now < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    func testWatchSurfacesARequestCreatedAfterTheOneOffRefresh() async {
+        // The host creates the permission request only when the agent
+        // reaches the guarded tool — AFTER `send` returned on
+        // admission, so the one-off refresh saw an empty list.
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON([]))),
+        ])
+        let library = library(responses)
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+        XCTAssertTrue(library.entries.isEmpty, "the one-off refresh is too early")
+
+        // The request exists from the next poll on.
+        responses.set("session.permission.list", .success(json(listJSON(okList))))
+        library.startPostSendWatch(
+            host: host, sessionID: "ses_current", childSessionIDs: [],
+            attempts: 50, intervalNanoseconds: 20_000_000
+        )
+        await waitUntil { library.hasPending }
+        library.stopPostSendWatch()
+
+        XCTAssertEqual(library.entries.map(\.id), ["per_own"],
+                       "the watch surfaces the request the one-off refresh could not see")
+    }
+
+    func testWatchEndsOnceTheRequestIsOnTheDock() async {
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+        ])
+        let recorder = Recorder()
+        let library = library(responses, recorder: recorder)
+        library.startPostSendWatch(
+            host: host, sessionID: "ses_current", childSessionIDs: [],
+            attempts: 100, intervalNanoseconds: 10_000_000
+        )
+        await waitUntil { library.hasPending }
+
+        // The dock has it — the watch must stop polling, however long
+        // the (unused) window would have run.
+        let settled = recorder.requests.filter { $0.operationID == "session.permission.list" }.count
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        library.stopPostSendWatch()
+        let after = recorder.requests.filter { $0.operationID == "session.permission.list" }.count
+
+        XCTAssertEqual(after, settled,
+                       "the watch stops polling once the request is on the dock")
+    }
+
+    func testStoppingTheWatchEndsItsPolling() async {
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON([]))),
+        ])
+        let recorder = Recorder()
+        let library = library(responses, recorder: recorder)
+        library.startPostSendWatch(
+            host: host, sessionID: "ses_current", childSessionIDs: [],
+            attempts: 100, intervalNanoseconds: 10_000_000
+        )
+        try? await Task.sleep(nanoseconds: 30_000_000) // a tick or two lands
+        library.stopPostSendWatch()
+        let settled = recorder.requests.filter { $0.operationID == "session.permission.list" }.count
+        try? await Task.sleep(nanoseconds: 100_000_000)
+        let after = recorder.requests.filter { $0.operationID == "session.permission.list" }.count
+
+        XCTAssertGreaterThanOrEqual(settled, 1, "the watch polled before it was stopped")
+        XCTAssertEqual(after, settled, "a dismissed view's watch polls no further")
+    }
+
+    func testAnsweringAnApprovalReopensTheWatch() async throws {
+        // The turn continues after an answer and may raise the NEXT
+        // request with the same admission-late timing — the reopened
+        // watch must find it.
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+            "session.permission.reply": .success(APIResponse(statusCode: 204, payload: .empty)),
+        ])
+        let library = library(responses)
+        library.startPostSendWatch(
+            host: host, sessionID: "ses_current", childSessionIDs: [],
+            attempts: 10, intervalNanoseconds: 10_000_000
+        )
+        await waitUntil { library.hasPending }
+        let first = try XCTUnwrap(library.entries.first)
+
+        // The released turn's next request — a fresh ID, so the
+        // settled set must not filter it.
+        responses.set("session.permission.list", .success(json(listJSON([
+            (id: "per_second", sessionID: "ses_current"),
+        ]))))
+        let outcome = await library.submit(first, decision: .once, message: nil, host: host)
+        XCTAssertEqual(outcome, .accepted)
+
+        await waitUntil { library.entries.map(\.id) == ["per_second"] }
+        library.stopPostSendWatch()
+        XCTAssertEqual(library.entries.map(\.id), ["per_second"],
+                       "answering reopens the watch — the turn's next request still surfaces")
+    }
 }

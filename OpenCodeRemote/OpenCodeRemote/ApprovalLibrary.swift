@@ -7,7 +7,9 @@ import OpenCodeTransport
 /// composer (docs/navigation-screens.md S08/S11,
 /// docs/api-contract.md W09). Refresh-driven — the app has no live SSE
 /// yet (W16): reloaded when the conversation opens, on pull-to-refresh,
-/// and after every submission.
+/// and after every submission. Because `send` returns on durable
+/// ADMISSION — before the host creates the permission request — the
+/// post-send refresh is a BOUNDED WATCH, not a one-off (review R2).
 ///
 /// The session-scoped list is authoritative for the session's OWN
 /// requests; the location-wide list contributes linked child-session
@@ -56,9 +58,23 @@ final class ApprovalLibrary {
     /// Monotonic load token — results from a superseded load are
     /// discarded, so overlapping refreshes cannot finish out of order.
     private var loadGeneration = 0
+    /// The running (or last) post-send watch, with the exact context
+    /// it polls under — reused when an answer through S11 re-opens the
+    /// window (the released turn may ask again).
+    private var watchTask: Task<Void, Never>?
+    private var watchContext: (
+        host: OpenCodeDomain.Host, sessionID: String,
+        childSessionIDs: Set<String>, attempts: Int, intervalNanoseconds: UInt64
+    )?
 
     var hasPending: Bool { !entries.isEmpty }
     var pendingCount: Int { entries.count }
+
+    /// Post-send watch cadence: a bounded ~2-minute window per
+    /// admission/answer. Best-effort until the live event stream (W16)
+    /// replaces polling.
+    static let postSendWatchAttempts = 30
+    static let postSendWatchIntervalNanoseconds: UInt64 = 4_000_000_000
 
     init(
         service: PermissionService? = nil,
@@ -107,8 +123,12 @@ final class ApprovalLibrary {
                     merged += linked.map { Entry(request: $0, isLinked: true) }
                 } catch {
                     // Linked entries are still pending on the host —
-                    // keep the ones already attributed on screen.
-                    merged += entries.filter(\.isLinked)
+                    // keep the ones already attributed on screen, but
+                    // ONLY for the CURRENT descendants: an owner that
+                    // left the subtree must not linger in this dock.
+                    merged += entries.filter {
+                        $0.isLinked && childSessionIDs.contains($0.request.sessionID)
+                    }
                     if !Self.isSilent(error) { linkedError = Self.message(for: error) }
                 }
             }
@@ -148,13 +168,76 @@ final class ApprovalLibrary {
                 message: message
             )
             remove(entry.id)
+            // The answered turn resumes and may ask again — the same
+            // admission-late race applies, so the watch re-opens.
+            reopenWatchAfterAnswer()
             return .accepted
         } catch PermissionService.ServiceError.notPending {
             remove(entry.id)
+            reopenWatchAfterAnswer()
             return .answeredElsewhere
         } catch {
             return .failed(Self.message(for: error))
         }
+    }
+
+    // MARK: - Post-send watch (review R2)
+
+    /// Starts (or restarts) the bounded post-send dock watch. The
+    /// host creates a permission request only when the agent REACHES
+    /// the guarded tool — after `send` has already returned on durable
+    /// admission — and the empty/error transcript states offer no
+    /// pull-to-refresh, so one refresh after send routinely ran too
+    /// early. Until the live event stream (W16) arrives, the dock
+    /// polls on this cadence instead: each tick reconciles through
+    /// `load` (same generation and settled-ID guards), and the watch
+    /// ends early once a request is pending (the dock has it) or the
+    /// attempts run out. Cancellation — a newer watch superseding it,
+    /// the view going away — is routine and silent.
+    func startPostSendWatch(
+        host: OpenCodeDomain.Host,
+        sessionID: String,
+        childSessionIDs: Set<String>,
+        attempts: Int = ApprovalLibrary.postSendWatchAttempts,
+        intervalNanoseconds: UInt64 = ApprovalLibrary.postSendWatchIntervalNanoseconds
+    ) {
+        watchTask?.cancel()
+        watchContext = (host, sessionID, childSessionIDs, attempts, intervalNanoseconds)
+        watchTask = Task { [weak self] in
+            for _ in 0..<max(1, attempts) {
+                do {
+                    try await Task.sleep(nanoseconds: intervalNanoseconds)
+                } catch {
+                    return // cancelled — a newer watch or the view went away
+                }
+                guard let self, !Task.isCancelled else { return }
+                await load(host: host, sessionID: sessionID, childSessionIDs: childSessionIDs)
+                // The pending request is on screen — the sheet takes
+                // over, and an answer re-opens the watch.
+                if hasPending { return }
+            }
+        }
+    }
+
+    /// Ends the watch (view dismissed). The stored context survives so
+    /// a later answer can still re-open it.
+    func stopPostSendWatch() {
+        watchTask?.cancel()
+        watchTask = nil
+    }
+
+    /// Re-opens the watch after S11 answered (or found settled
+    /// elsewhere): the released turn continues and may raise the next
+    /// request with the same admission-late timing.
+    private func reopenWatchAfterAnswer() {
+        guard let context = watchContext else { return }
+        startPostSendWatch(
+            host: context.host,
+            sessionID: context.sessionID,
+            childSessionIDs: context.childSessionIDs,
+            attempts: context.attempts,
+            intervalNanoseconds: context.intervalNanoseconds
+        )
     }
 
     private func remove(_ id: String) {

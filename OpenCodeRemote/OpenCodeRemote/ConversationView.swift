@@ -206,6 +206,11 @@ struct ConversationView: View {
             await openTranscript()
             await loadApprovals()
         }
+        .onDisappear {
+            // A dismissed conversation stops watching — its dock and
+            // attribution are gone; nothing polls on its behalf.
+            approvals.stopPostSendWatch()
+        }
     }
 
     /// Empty/error states or the transcript itself — extracted so the
@@ -321,6 +326,18 @@ struct ConversationView: View {
         )
     }
 
+    /// The post-send watch (review R2): polls the dock on the bounded
+    /// cadence until the request appears, the window closes, or the
+    /// view goes away — the same attribution as a refresh, re-read
+    /// once at watch start.
+    private func startApprovalWatch() {
+        approvals.startPostSendWatch(
+            host: host,
+            sessionID: session.id,
+            childSessionIDs: sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
+        )
+    }
+
     private var composer: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !attachments.drafts.isEmpty {
@@ -378,11 +395,16 @@ struct ConversationView: View {
                         ) {
                             if draft == text { draft = "" }
                             attachments.consume(sentIDs)
-                            // A sent prompt is the usual cause of a new
-                            // permission request — refresh the dock now
-                            // instead of waiting for a pull (which some
-                            // transcript states do not offer).
+                            // `send` returns on durable ADMISSION — the
+                            // host creates the permission request only
+                            // when the agent reaches the guarded tool,
+                            // AFTER this returns (and the empty/error
+                            // transcript states offer no pull). Refresh
+                            // now for the fast case, then WATCH for the
+                            // request that does not exist yet (review
+                            // R2; live events replace this with W16).
                             await loadApprovals()
+                            startApprovalWatch()
                         }
                     }
                 } label: {
