@@ -550,16 +550,23 @@ final class FormDraftTests: XCTestCase {
         XCTAssertNil(pristine.buffers.texts["ratio"],
                      "numbers never surface in the string-text buffer")
 
-        // Every editable kind reports a real edit to the observer.
+        // Every editable kind reports a real edit to the observer. Each
+        // assertion compares against the state IMMEDIATELY before its own
+        // edit, so it fails when that one kind is missing from the
+        // projection — an earlier edit must not mask a later omission.
         var edited = pristine
+        var before = edited.buffers
         edited.texts["note"] = "x"
-        XCTAssertNotEqual(pristine.buffers, edited.buffers, "text edit is observed")
+        XCTAssertNotEqual(before, edited.buffers, "text edit is observed")
+        before = edited.buffers
         edited.numbers["ratio"] = "1.5"
-        XCTAssertNotEqual(pristine.buffers, edited.buffers, "number edit is observed")
+        XCTAssertNotEqual(before, edited.buffers, "number edit is observed")
+        before = edited.buffers
         edited.bools["enabled"] = .on
-        XCTAssertNotEqual(pristine.buffers, edited.buffers, "boolean edit is observed")
+        XCTAssertNotEqual(before, edited.buffers, "boolean edit is observed")
+        before = edited.buffers
         edited.picks["checks"] = ["a"]
-        XCTAssertNotEqual(pristine.buffers, edited.buffers, "multiselect edit is observed")
+        XCTAssertNotEqual(before, edited.buffers, "multiselect edit is observed")
 
         // Returning each buffer to its seeded value restores equality.
         edited.texts["note"] = pristine.buffers.texts["note"]
