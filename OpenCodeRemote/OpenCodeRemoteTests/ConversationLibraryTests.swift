@@ -599,6 +599,57 @@ final class ConversationLibraryTests: XCTestCase {
         )
     }
 
+    func testSessionSwitchResetsPendingIDAndProjections() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            func promptID() -> String {
+                let payload = recorder.requests.last { $0.operationID == "session.prompt" }?.body
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                return (payload?["id"] as? String) ?? "msg_unknown"
+            }
+            switch request.operationID {
+            case "session.prompt":
+                // Attempt 1 loses the response; attempt 2 is admitted.
+                let promptCount = recorder.requests.filter { $0.operationID == "session.prompt" }.count
+                if promptCount == 1 {
+                    throw TransportError.connectionFailed("dropped after admission")
+                }
+                return Fixtures.response(#"{"data":\#(Fixtures.inboxUser(id: promptID(), text: "hello", created: 1000))}"#)
+            case "session.inbox.list":
+                // Attempt-1 reconciliation cannot verify (read fails);
+                // later reads admit only the CURRENT prompt's ID.
+                let promptCount = recorder.requests.filter { $0.operationID == "session.prompt" }.count
+                if promptCount == 1 { throw TransportError.connectionFailed("inbox unreachable") }
+                return Fixtures.response(#"{"data":[\#(Fixtures.inboxUser(id: promptID(), text: "hello", created: 1000))]}"#)
+            case "session.message.list":
+                return Fixtures.response(Fixtures.page([]))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        // Session A: an unreconciled failed send leaves a pending ID.
+        let failed = await library.send(host: one, sessionID: "ses_a", text: "hello")
+        XCTAssertFalse(failed)
+
+        // Switch to session B: the pending ID of A must not leak.
+        await library.open(host: one, sessionID: "ses_b")
+        XCTAssertTrue(library.messages.isEmpty)
+
+        let sent = await library.send(host: one, sessionID: "ses_b", text: "hello")
+        XCTAssertTrue(sent)
+
+        let promptIDs = recorder.requests.filter { $0.operationID == "session.prompt" }
+            .compactMap { $0.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["id"] as? String }
+        XCTAssertEqual(promptIDs.count, 2)
+        XCTAssertNotEqual(promptIDs[0], promptIDs[1], "a different session never reuses another session's stable ID")
+        XCTAssertEqual(library.messages.map(\.id), [promptIDs[1]])
+
+        // Reopening session A must not carry session B's projection in.
+        await library.open(host: one, sessionID: "ses_a")
+        XCTAssertTrue(library.messages.isEmpty, "projections never cross sessions")
+    }
+
     // MARK: - Inbox (S09)
 
     func testInboxLifecycleLoadDeliverCancel() async throws {

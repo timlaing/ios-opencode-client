@@ -56,9 +56,11 @@ final class ConversationLibrary {
     private(set) var inboxError: String?
     private(set) var isLoadingInbox = false
     /// Stable ID of the last UNCONFIRMED submission, keyed to its exact
-    /// text — reused on retry so the server sees the duplicate (409) and
-    /// reconciliation finds it, never a fresh ID that double-admits.
-    private var pendingSubmission: (messageID: String, text: String)?
+    /// text AND its host+session context — reused only for a retry of
+    /// the same draft in the same place, so the server sees the
+    /// duplicate (409) and reconciliation finds it. A different
+    /// session/host always earns a fresh ID.
+    private var pendingSubmission: (hostID: HostID, sessionID: String, messageID: String, text: String)?
     /// Admitted-but-not-yet-delivered projections, kept through refreshes
     /// until the transcript itself contains them or the inbox no longer
     /// lists them (cancelled elsewhere).
@@ -95,6 +97,12 @@ final class ConversationLibrary {
             let page = try await service.messages(
                 at: host.address, credential: credential, sessionID: sessionID
             )
+            // A DIFFERENT session invalidates all cross-session state:
+            // projections and a pending submission belong to the old one.
+            if loadedSessionID != sessionID {
+                projectedPending = [:]
+                pendingSubmission = nil
+            }
             messages = Self.ordered(Self.deduped(page.data))
             nextCursor = page.cursor?.next
             hasMore = page.cursor?.next != nil
@@ -219,16 +227,18 @@ final class ConversationLibrary {
         }
         isSending = true
         defer { isSending = false }
-        // The same draft retries under the SAME stable ID — a duplicate
-        // then gets 409 and is reconciled; only a different text earns a
+        // The same draft retries under the SAME stable ID in the SAME
+        // host+session — a duplicate then gets 409 and is reconciled.
+        // Any other context (different text, session, or host) earns a
         // fresh ID.
         let messageID: String
-        if let pending = pendingSubmission, pending.text == trimmed {
+        if let pending = pendingSubmission,
+           pending.hostID == host.id, pending.sessionID == sessionID, pending.text == trimmed {
             messageID = pending.messageID
         } else {
             messageID = Self.stableMessageID()
         }
-        pendingSubmission = (messageID, trimmed)
+        pendingSubmission = (host.id, sessionID, messageID, trimmed)
         do {
             let item = try await promptService.prompt(
                 at: host.address, credential: credential, sessionID: sessionID,
@@ -301,14 +311,18 @@ final class ConversationLibrary {
     }
 
     /// Re-attaches admitted-but-undelivered projections after a page
-    /// merge, retiring the ones the transcript now owns.
+    /// merge, retiring the ones the transcript now owns. Each projection
+    /// is INSERTED at its server-sort position — the projection's
+    /// timestamp comes from server time at admission, but a clock skew
+    /// must not strand it out of order until delivery.
     private func carryProjected() {
         let delivered = projectedPending.keys.filter { id in messages.contains { $0.id == id } }
         delivered.forEach { projectedPending.removeValue(forKey: $0) }
-        let stillMissing = projectedPending.values
-            .filter { projection in !messages.contains { $0.id == projection.id } }
-            .sorted { $0.time.created < $1.time.created }
-        messages.append(contentsOf: stillMissing)
+        for projection in projectedPending.values.sorted(by: { $0.time.created < $1.time.created }) {
+            guard !messages.contains(where: { $0.id == projection.id }) else { continue }
+            let index = messages.firstIndex { Self.sortKey($0) > Self.sortKey(projection) } ?? messages.endIndex
+            messages.insert(projection, at: index)
+        }
     }
 
     /// Drops projections the server no longer admits (cancelled from the
