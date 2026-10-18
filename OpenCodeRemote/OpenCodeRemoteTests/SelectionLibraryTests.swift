@@ -393,10 +393,23 @@ final class SelectionLibraryTests: XCTestCase {
         XCTAssertEqual(library.selectedRef?.id, "old-model", "precondition")
         let model = try XCTUnwrap(library.models.first)
 
-        // Start A's switch, wait until it is genuinely in flight, then
-        // move the sheet to session B before releasing it.
+        // Start A's switch and wait (bounded) until it is genuinely in
+        // flight, then move the sheet to session B before releasing it.
+        // The wait is timed: if selectModel never reaches the hook the
+        // test must fail — not spin forever — and the latch is released
+        // so the pending task can finish instead of leaking.
         let pending = Task { await library.selectModel(host: one, sessionID: "ses_a", model: model) }
-        while !(await latch.isArrived) { await Task.yield() }
+        var arrived = false
+        for _ in 0..<100 {
+            if await latch.isArrived { arrived = true; break }
+            try await Task.sleep(nanoseconds: 20_000_000) // 20ms → ~2s worst case
+        }
+        if !arrived {
+            await latch.signal()
+            _ = await pending.value
+            XCTFail("the model switch never reached the transport hook")
+            return
+        }
         await library.load(host: one, session: sessionB)
         XCTAssertEqual(library.selectedRef?.id, "other-model", "precondition: the sheet shows B")
 
