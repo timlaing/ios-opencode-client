@@ -28,6 +28,10 @@ enum PhotoPreparation {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                   kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  // Bake the EXIF orientation into the pixels: encode
+                  // writes no orientation tag, so without the transform
+                  // portrait captures would reach the host rotated.
+                  kCGImageSourceCreateThumbnailWithTransform: true,
                   kCGImageSourceThumbnailMaxPixelSize: 2048,
               ] as CFDictionary)
         else {
@@ -44,7 +48,17 @@ enum PhotoPreparation {
         mode: AttachmentLibrary.PhotoCopy,
         includeLocation: Bool
     ) throws -> (bytes: Data, mimeType: String) {
-        guard let cgImage = image.cgImage else { throw PipelineError.unreadable }
+        // `cgImage` pixels are stored UNROTATED — the orientation lives
+        // only in `imageOrientation`, which encoding would drop. Drawing
+        // the image bakes the orientation into the pixels first.
+        guard image.size.width > 0, image.size.height > 0 else { throw PipelineError.unreadable }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: image.size, format: format)
+        let oriented = renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+        guard let cgImage = oriented.cgImage else { throw PipelineError.unreadable }
         if mode == .original {
             return try encode(image: cgImage, sourceProperties: [:], includeLocation: false)
         }

@@ -85,7 +85,14 @@ final class AttachmentLibrary {
     /// The implementation-defaults warning point — a confirmation the
     /// user answers, never a hard limit (adjustable when settings land).
     var warningThresholdBytes: Int = AttachmentRouter.warningThresholdBytes
-    var pendingConfirmation: PendingConfirmation?
+
+    /// Confirmations wait their turn: a multi-select can queue several
+    /// oversized/duplicate questions and each must be answered — a
+    /// second one may never overwrite the first (its draft would strand
+    /// in preparing and gate Send forever). The head is what the UI
+    /// presents; answering pops it and the next surfaces on its own.
+    private var confirmationQueue: [PendingConfirmation] = []
+    var pendingConfirmation: PendingConfirmation? { confirmationQueue.first }
 
     private(set) var drafts: [Draft] = []
     var credentialProvider: CredentialProvider?
@@ -163,7 +170,7 @@ final class AttachmentLibrary {
         drafts[index].task?.cancel()
         drafts[index].routeToken = nil
         drafts.remove(at: index)
-        if pendingConfirmation?.id == draftID { pendingConfirmation = nil }
+        confirmationQueue.removeAll { $0.id == draftID }
     }
 
     /// Cancelling an in-flight upload leaves an honest failed draft — the
@@ -200,16 +207,22 @@ final class AttachmentLibrary {
         loadThenPrepare(draftID: draftID, host: host)
     }
 
-    /// Answers the pending oversized/duplicate question: accepting routes
-    /// the held bytes, declining removes the draft entirely.
+    /// Answers the HEAD confirmation: accepting routes the held bytes,
+    /// declining removes the draft entirely. The next queued question —
+    /// if any — becomes the pending one immediately.
     func answerConfirmation(_ accepted: Bool, host: OpenCodeDomain.Host) {
-        guard let confirmation = pendingConfirmation else { return }
-        pendingConfirmation = nil
+        guard !confirmationQueue.isEmpty else { return }
+        let confirmation = confirmationQueue.removeFirst()
         if accepted {
             route(confirmation.id, host: host)
         } else {
             remove(confirmation.id)
         }
+    }
+
+    private func enqueue(_ confirmation: PendingConfirmation) {
+        confirmationQueue.removeAll { $0.id == confirmation.id }
+        confirmationQueue.append(confirmation)
     }
 
     // MARK: - Send integration
@@ -281,15 +294,15 @@ final class AttachmentLibrary {
         if drafts.contains(where: {
             $0.id != draftID && $0.name == drafts[index].name && $0.byteCount == prepared.count
         }) {
-            pendingConfirmation = PendingConfirmation(
+            enqueue(PendingConfirmation(
                 id: draftID, name: drafts[index].name, kind: .duplicate
-            )
+            ))
             return
         }
         if prepared.count > warningThresholdBytes {
-            pendingConfirmation = PendingConfirmation(
+            enqueue(PendingConfirmation(
                 id: draftID, name: drafts[index].name, kind: .oversized(byteCount: prepared.count)
-            )
+            ))
             return
         }
         route(draftID, host: host)
@@ -302,6 +315,10 @@ final class AttachmentLibrary {
         guard let index = drafts.firstIndex(where: { $0.id == draftID }),
               let bytes = drafts[index].bytes else { return }
         let mime = drafts[index].mimeType
+        // Captured BEFORE the task starts: the tray can shrink (remove/
+        // consume) during any await, so an index read after suspension
+        // could name another draft or run out of bounds.
+        let filename = drafts[index].name
         if AttachmentRouter.shouldInline(mimeType: mime, byteCount: bytes.count) {
             drafts[index].state = .ready(
                 staged: false, uri: AttachmentRouter.dataURI(mimeType: mime, bytes: bytes)
@@ -330,7 +347,7 @@ final class AttachmentLibrary {
                 }
                 let uri = try await stager.stage(
                     at: host.address, credential: credential,
-                    tmpDirectory: tmp, filename: drafts[index].name, bytes: bytes
+                    tmpDirectory: tmp, filename: filename, bytes: bytes
                 )
                 guard let live = drafts.firstIndex(where: { $0.id == draftID }),
                       drafts[live].routeToken == token else { return } // cancelled/superseded

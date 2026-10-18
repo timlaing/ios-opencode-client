@@ -335,6 +335,64 @@ final class AttachmentLibraryTests: XCTestCase {
         XCTAssertNil(library.pendingConfirmation)
     }
 
+    func testConfirmationsQueueAndNeverStrandADraft() async throws {
+        let library = makeLibrary()
+        library.warningThresholdBytes = 10
+        let first = try writeTempFile(bytes: Data("first oversized pick".utf8), name: "one.bin")
+        let second = try writeTempFile(bytes: Data("second oversized pick".utf8), name: "two.bin")
+
+        library.addFiles([first, second], host: host)
+        try await Task.sleep(nanoseconds: 150_000_000)
+
+        let head = try XCTUnwrap(library.pendingConfirmation)
+        XCTAssertEqual(head.name, "one.bin", "the first question surfaces first")
+        XCTAssertEqual(library.drafts.count, 2, "neither draft is lost while the queue waits")
+
+        library.answerConfirmation(true, host: host)
+        let next = try XCTUnwrap(library.pendingConfirmation)
+        XCTAssertEqual(next.name, "two.bin",
+                       "answering one surfaces the next — a second question never overwrites the first")
+
+        library.answerConfirmation(true, host: host)
+        XCTAssertNil(library.pendingConfirmation)
+        for _ in 0..<100 {
+            if !library.hasPending { break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertFalse(library.hasPending, "every queued draft routed — none stranded in preparing")
+        XCTAssertEqual(library.drafts.map(\.name), ["one.bin", "two.bin"])
+    }
+
+    func testTrayChangesMidUploadNeverRenameTheStagingDraft() async throws {
+        let gate = Latch()
+        let library = makeLibrary(hook: { request in
+            if request.operationID == "experimental.fs.write" {
+                await gate.wait()
+            }
+        })
+        let image = try writeTempFile(bytes: smallPNG, name: "diagram.png")
+        let document = try writeTempFile(bytes: Data("staged doc".utf8), name: "report.txt")
+
+        library.addFiles([image, document], host: host)
+        // The image inlines instantly (index 0); the document is staging
+        // under an index that removing the first draft shifts.
+        try await Task.sleep(nanoseconds: 100_000_000)
+        guard case .ready = library.drafts[0].state else {
+            return XCTFail("the inline draft settles first")
+        }
+        library.remove(library.drafts[0].id)
+        XCTAssertEqual(library.drafts.map(\.name), ["report.txt"])
+
+        await gate.signal()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        guard case .ready(let staged, let uri) = library.drafts[0].state else {
+            return XCTFail("the staged draft completes under its own identity")
+        }
+        XCTAssertTrue(staged)
+        XCTAssertTrue(uri.hasSuffix("/report.txt"), "the upload kept ITS filename after the tray shrank")
+    }
+
     // MARK: - Send integration
 
     func testReadyAttachmentsConsumeAndPendingGate() async throws {
@@ -382,9 +440,11 @@ final class AttachmentLibraryTests: XCTestCase {
 /// without upscaling and re-encodes; Original is byte-for-byte.
 final class PhotoPreparationTests: XCTestCase {
     private func renderedPNG(width: Int, height: Int) throws -> Data {
-        // Opaque, like a photograph — the balanced copy should pick JPEG.
+        // Opaque at scale 1, like a photograph — pixels are the points,
+        // and the balanced copy should pick JPEG.
         let format = UIGraphicsImageRendererFormat()
         format.opaque = true
+        format.scale = 1
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height), format: format)
         let image = renderer.image { context in
             UIColor.red.setFill()
@@ -415,6 +475,20 @@ final class PhotoPreparationTests: XCTestCase {
 
         XCTAssertEqual(result.bytes, original, "Original mode is byte-for-byte as picked")
         XCTAssertEqual(result.mimeType, "image/png", "sniffed from the real bytes")
+    }
+
+    func testCopiesBakeTheOrientationIntoThePixels() throws {
+        // A landscape sensor buffer tagged .right — a portrait shot.
+        let landscape = try renderedPNG(width: 400, height: 200)
+        let source = try XCTUnwrap(UIImage(data: landscape))
+        let portrait = UIImage(cgImage: try XCTUnwrap(source.cgImage), scale: 1, orientation: .right)
+
+        let result = try PhotoPreparation.prepare(image: portrait, mode: .balanced, includeLocation: false)
+
+        let copy = try XCTUnwrap(UIImage(data: result.bytes))
+        XCTAssertEqual(copy.imageOrientation, .up, "the copy carries no orientation tag to misread")
+        XCTAssertEqual(Int(copy.size.width), 200, "the .right orientation is baked into the pixels")
+        XCTAssertEqual(Int(copy.size.height), 400)
     }
 
     func testMimeTypeSniffing() {

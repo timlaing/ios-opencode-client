@@ -137,7 +137,11 @@ struct ConversationView: View {
             attachments.pendingConfirmation?.name ?? "Attachment",
             isPresented: Binding(
                 get: { attachments.pendingConfirmation != nil },
-                set: { if !$0 { attachments.answerConfirmation(false, host: host) } }
+                // Presentation changes carry NO answer: both alert
+                // buttons respond explicitly, and a setter-side decline
+                // could race SwiftUI's own false-write and remove the
+                // draft the user just accepted.
+                set: { _ in }
             ),
             presenting: attachments.pendingConfirmation
         ) { confirmation in
