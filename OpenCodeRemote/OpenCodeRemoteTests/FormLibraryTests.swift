@@ -451,7 +451,11 @@ final class FormLibraryTests: XCTestCase {
         _ = await iterator.next()
         library.stopPostSendWatch()
 
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        // Outlast the hook's 250 ms hold: waiting less would only
+        // exercise the cancellation path (Task.sleep throws, the poll
+        // returns early), letting an implementation that neither
+        // cancels nor generation-guards publish after the assertion.
+        try? await Task.sleep(nanoseconds: 400_000_000)
         XCTAssertTrue(library.entries.isEmpty,
                       "a stopped watch's in-flight poll must not publish")
     }
