@@ -65,11 +65,18 @@ struct FolderBrowserView: View {
         NavigationStack {
             Group {
                 if let message {
-                    ContentUnavailableView(
-                        "Folder Unavailable",
-                        systemImage: "exclamationmark.folder",
-                        description: Text(message)
-                    )
+                    ContentUnavailableView {
+                        Label("Folder Unavailable", systemImage: "exclamationmark.folder")
+                    } description: {
+                        Text(message)
+                    } actions: {
+                        // The listing failed (offline flap, transient 5xx) —
+                        // retrying in place beats dismissing the whole picker.
+                        Button("Try Again") {
+                            Task { await reload() }
+                        }
+                        .accessibilityIdentifier("S13.tryAgain")
+                    }
                 } else {
                     entryList
                 }

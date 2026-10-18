@@ -77,11 +77,19 @@ struct FileViewerView: View {
         NavigationStack {
             Group {
                 if let message {
-                    ContentUnavailableView(
-                        "File Unavailable",
-                        systemImage: "exclamationmark.doc",
-                        description: Text(message)
-                    )
+                    ContentUnavailableView {
+                        Label("File Unavailable", systemImage: "exclamationmark.doc")
+                    } description: {
+                        Text(message)
+                    } actions: {
+                        // Either the listing or the preview read failed —
+                        // reload() clears the message and re-lists the
+                        // directory, returning to the file list.
+                        Button("Back to Files") {
+                            Task { await reload() }
+                        }
+                        .accessibilityIdentifier("S13.backToFiles")
+                    }
                 } else if let openFile {
                     filePreview(openFile)
                 } else {
@@ -95,6 +103,17 @@ struct FileViewerView: View {
                     Button("Done") { dismiss() }
                 }
                 if openFile != nil {
+                    // Back from the preview to the entry list — the browser
+                    // navigation stack is untouched, so Up still returns to
+                    // the parent folder.
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            openFile = nil
+                        } label: {
+                            Label("Back", systemImage: "chevron.left")
+                        }
+                        .accessibilityIdentifier("S13.back")
+                    }
                     ToolbarItem(placement: .primaryAction) {
                         Button {
                             onAttachToDraft(openFilePath)
@@ -507,8 +526,19 @@ struct FileViewerView: View {
         guard openKind != .binary else { return }
         isLoading = true
         defer { isLoading = false }
+        let range = viewer.initialRange()
         do {
-            viewer.adopt(try await read(entry, range: viewer.initialRange()))
+            let file: ProjectService.ReadFile
+            do {
+                file = try await read(entry, range: range)
+            } catch TransportError.http(let status, _) where (status == 416 && range != nil) {
+                // The host rejected the computed range outright (file size
+                // changed since the listing, or an empty-file edge): retry
+                // ONCE with no Range header — a whole-file read cannot be
+                // 416 — instead of declaring the file unreadable.
+                file = try await read(entry, range: nil)
+            }
+            viewer.adopt(file)
         } catch {
             openFile = nil
             message = Self.message(for: error)

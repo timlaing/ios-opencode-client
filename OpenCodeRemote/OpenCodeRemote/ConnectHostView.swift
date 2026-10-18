@@ -167,9 +167,21 @@ struct ConnectHostView: View {
         }
     }
 
+    /// Mock HTTP is a development-only transport profile (docs/navigation-
+    /// screens.md): DEBUG builds may pair with the reference mock on plain
+    /// http; release builds refuse cleartext before a pairing code or
+    /// credential can travel on it.
+    private static var allowsInsecureHTTP: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
+    }
+
     /// Parses the input and opens the review state on its first destination.
     private func startReview(of input: String) throws {
-        let parsed = try PairingParser.parse(input)
+        let parsed = try PairingParser.parse(input, allowsInsecureHTTP: Self.allowsInsecureHTTP)
         review = Review(payload: parsed, selectedDestination: parsed.destinations[0])
         redeemedToken = nil
         connectionFailure = nil
@@ -339,7 +351,10 @@ struct ConnectHostView: View {
         connectionFailure = nil
         defer { phase = .idle }
         do {
-            let address = try PairingParser.manualAddress(serverURL)
+            let address = try PairingParser.manualAddress(
+                serverURL,
+                allowsInsecureHTTP: Self.allowsInsecureHTTP
+            )
             let paired = try await pairing.verifyPassword(
                 at: address,
                 username: username,

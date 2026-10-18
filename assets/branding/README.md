@@ -1,6 +1,6 @@
-# Opencode Client graphics
+# OpenCode Client graphics
 
-The selected direction takes inspiration from [OpenCode's official brand assets](https://opencode.ai/brand): strong rectangular geometry, square corners, and charcoal/stone tones. The offset client tile distinguishes this app's mark. Opencode Client is an independent client, not an official OpenCode product.
+The selected direction takes inspiration from [OpenCode's official brand assets](https://opencode.ai/brand): strong rectangular geometry, square corners, and charcoal/stone tones. The offset client tile distinguishes this app's mark. OpenCode Client is an independent client, not an official OpenCode product.
 
 ## Deliverables
 
@@ -21,18 +21,18 @@ These are raster assets generated with the built-in image generation tool. Inspe
 
 Use native SF Symbols for interface controls rather than rasterising them. This preserves Dynamic Type, weight, accessibility contrast, and appearance adaptation. Symbol availability must be checked against the deployment target when implementing views.
 
-| Purpose | SF Symbol |
-| --- | --- |
-| Projects / files | `folder` / `doc.text` |
+| Purpose                | SF Symbol                                            |
+| ---------------------- | ---------------------------------------------------- |
+| Projects / files       | `folder` / `doc.text`                                |
 | Sessions / new session | `bubble.left.and.bubble.right` / `square.and.pencil` |
-| Hosts / connect | `server.rack` / `link` |
-| Scan pairing code | `qrcode.viewfinder` |
-| Changes / branch | `arrow.triangle.branch` |
-| Approvals | `checkmark.shield` |
-| Attach / send / stop | `paperclip` / `arrow.up` / `stop.fill` |
-| Notifications | `bell` |
-| Settings | `gearshape` |
-| Terminal / tools | `terminal` / `wrench.and.screwdriver` |
+| Hosts / connect        | `server.rack` / `link`                               |
+| Scan pairing code      | `qrcode.viewfinder`                                  |
+| Changes / branch       | `arrow.triangle.branch`                              |
+| Approvals              | `checkmark.shield`                                   |
+| Attach / send / stop   | `paperclip` / `arrow.up` / `stop.fill`               |
+| Notifications          | `bell`                                               |
+| Settings               | `gearshape`                                          |
+| Terminal / tools       | `terminal` / `wrench.and.screwdriver`                |
 
 Give each control a text or accessibility label. Do not encode connection or approval state through colour alone.
 

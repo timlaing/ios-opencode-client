@@ -9,6 +9,13 @@ import Foundation
 /// otherwise from the transport's credential — the pairing redemption request
 /// deliberately carries neither: the code itself is the credential.
 public struct URLSessionTransport: OpenCodeTransport {
+    /// One ephemeral session for the process (no cookie storage, no URL
+    /// cache), rather than a fresh connection pool per transport value:
+    /// hosts, watchers, and reloads construct transports constantly, and
+    /// per-value sessions discard keep-alive connections every time.
+    /// Tests inject their own `session` (e.g. a `StubURLProtocol` one).
+    private static let sharedSession = URLSession(configuration: .ephemeral)
+
     private let baseURL: URL
     private let credential: BasicCredential?
     private let session: URLSession
@@ -16,7 +23,7 @@ public struct URLSessionTransport: OpenCodeTransport {
     public init(baseURL: URL, credential: BasicCredential? = nil, session: URLSession? = nil) {
         self.baseURL = baseURL
         self.credential = credential
-        self.session = session ?? URLSession(configuration: .ephemeral)
+        self.session = session ?? Self.sharedSession
     }
 
     public func perform(_ request: APIRequest) async throws -> APIResponse {

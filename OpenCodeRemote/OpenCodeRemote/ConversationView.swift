@@ -596,9 +596,14 @@ struct ConversationView: View {
 
     /// The selected model's input capabilities — drives the honest
     /// "can't read directly" labels; nil while the selection is unknown.
+    /// The user's claimed selection wins over the session's recorded model
+    /// (the record only lands after the host acknowledges a switch), and
+    /// model IDs are not unique across providers — match the full ref.
     private var inputCapabilities: Set<String>? {
-        guard let modelRef = session.model,
-              let model = selection.models.first(where: { $0.id == modelRef.id })
+        guard let modelRef = selection.selectedRef ?? session.model,
+              let model = selection.models.first(where: {
+                  $0.id == modelRef.id && $0.providerID == modelRef.providerID
+              })
         else { return nil }
         return Set(model.capabilities.input)
     }
@@ -927,11 +932,13 @@ struct InboxListView: View {
         case .synthetic(let text, _):
             return text
         case .compaction:
-            // Unknown variants decode into the raw-payload case but keep
-            // their own type name — never mislabelled as compaction.
-            return item.rawType == "compaction" ? "Context compaction" : "Pending \(item.rawType)"
+            return "Context compaction"
         case .move(_, _, let directory):
             return "Move to \(directory ?? "another location")"
+        case .unknown(let type, _):
+            // A wire type this baseline doesn't model: shown as pending, never
+            // claimed as a known kind (SessionMessage's `.unknown` rule).
+            return "Pending \(type)"
         }
     }
 }

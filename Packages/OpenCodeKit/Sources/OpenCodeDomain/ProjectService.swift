@@ -160,9 +160,12 @@ public struct ProjectService: Sendable {
         }
         return ReadFile(
             bytes: data,
-            etag: response.headers["ETag"],
+            etag: response.header("ETag"),
             isPartial: response.statusCode == 206,
-            totalByteCount: Self.totalByteCount(fromContentRange: response.headers["Content-Range"])
+            // Case-insensitive: a host that answers `content-range` must
+            // still yield the file's total, or every ranged read would
+            // look complete.
+            totalByteCount: Self.totalByteCount(fromContentRange: response.header("Content-Range"))
         )
     }
 

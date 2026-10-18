@@ -62,8 +62,22 @@ final class W05RequestsTests: XCTestCase {
         )
         XCTAssertEqual(item.rawType, "teleport", "an unknown pending item stays visible (cancellable)")
         XCTAssertNil(item.projectedMessage, "only user items project into the transcript")
-        guard case .compaction(let payload) = item.kind else { return XCTFail("retained as raw payload") }
-        XCTAssertEqual(payload["beams"], .number(2))
+        guard case .unknown(let type, let payload) = item.kind else {
+            return XCTFail("never claimed as a known kind")
+        }
+        XCTAssertEqual(type, "teleport")
+        XCTAssertEqual(payload?["beams"], .number(2))
+    }
+
+    func testUnknownInboxVariantWithoutPayloadKeepsType() throws {
+        let item = try decode(
+            #"{"id":"msg_y","sessionID":"ses_a","time":{"created":5},"type":"pulse","delivery":"queue"}"#
+        )
+        guard case .unknown(let type, let payload) = item.kind else {
+            return XCTFail("never claimed as a known kind")
+        }
+        XCTAssertEqual(type, "pulse")
+        XCTAssertNil(payload)
     }
 
     func testInboxItemRoundTripsThroughEncode() throws {

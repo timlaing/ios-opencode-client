@@ -26,13 +26,18 @@ struct ApprovalSheetView: View {
     /// Set only by a stale 404 — an accepted reply advances/ dismisses
     /// through the shrunken queue instead of a settled status.
     @State private var answeredElsewhere = false
+    /// The entry this sheet is answering, pinned while on screen. Adopted
+    /// from the queue head once it exists and advanced only by an accepted
+    /// reply: a refresh that reshuffles the queue must never redirect a
+    /// tap on "Allow" from the request on screen to a different one.
+    @State private var presented: ApprovalLibrary.Entry?
 
     var body: some View {
         NavigationStack {
             Group {
                 if answeredElsewhere {
                     settledStatus
-                } else if let entry = approvals.entries.first {
+                } else if let entry = presented {
                     detail(for: entry)
                 } else if approvals.refreshError == nil {
                     ProgressView("Checking Pending Approvals…")
@@ -59,6 +64,13 @@ struct ApprovalSheetView: View {
             }
         }
         .onAppear { resetReplyState() }
+        // Adopt the queue head only while nothing is pinned (first load).
+        // Once pinned, the entry advances solely through an accepted
+        // reply — a refresh that reshuffles the dock can never retarget
+        // the buttons at a request the user never saw.
+        .onChange(of: approvals.entries) { _, entries in
+            if presented == nil { presented = entries.first }
+        }
     }
 
     // MARK: - Detail
@@ -200,7 +212,9 @@ struct ApprovalSheetView: View {
     // MARK: - Actions
 
     private func answer(_ decision: PermissionDecision) {
-        guard !submitting, let entry = approvals.entries.first else { return }
+        // The PINNED entry is answered — never the dock's live head, which
+        // a refresh could have replaced since this screen was rendered.
+        guard !submitting, let entry = presented else { return }
         submitting = true
         submitError = nil
         Task {
@@ -213,11 +227,12 @@ struct ApprovalSheetView: View {
             submitting = false
             switch outcome {
             case .accepted:
-                // The queue advanced: fresh local state for the next
-                // entry (its explanation is not this one's), or back to
-                // the chat when nothing is pending anymore.
+                // The queue advanced: fresh local state, then adopt the
+                // new head in place (its explanation is not this one's),
+                // or back to the chat when nothing is pending anymore.
                 resetReplyState()
-                if approvals.entries.isEmpty { dismiss() }
+                presented = approvals.entries.first
+                if presented == nil { dismiss() }
             case .answeredElsewhere:
                 answeredElsewhere = true
             case .failed(let reason):

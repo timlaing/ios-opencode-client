@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// S01 — Welcome and guided setup (docs/navigation-screens.md).
-/// Shown in the Projects tab while no host is configured.
+/// Shown in the Servers tab while no host is configured.
 struct WelcomeView: View {
     @Environment(\.colorScheme) private var colorScheme
     var onConnectHost: () -> Void
@@ -16,7 +16,7 @@ struct WelcomeView: View {
                 Text("Connect Your Own OpenCode Host")
                     .font(.title2.bold())
                     .multilineTextAlignment(.center)
-                Text("This app talks to an OpenCode server you host yourself, over HTTPS. Pair once with a pairing link or password; you can add more hosts later in Settings.")
+                Text("This app talks to an OpenCode server you host yourself, over HTTPS. Pair once with a pairing link or password; you can add more hosts later on the Servers tab.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)

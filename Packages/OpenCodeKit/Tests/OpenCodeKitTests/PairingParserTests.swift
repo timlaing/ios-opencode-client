@@ -11,8 +11,21 @@ final class PairingParserTests: XCTestCase {
     }
 
     func testPlainHTTPLinkIsAcceptedForMockParity() throws {
-        let payload = try PairingParser.parse("http://127.0.0.1:4097/auth/connect/c1")
+        // Mock/demo profile only: production parse rejects plain http.
+        let payload = try PairingParser.parse("http://127.0.0.1:4097/auth/connect/c1", allowsInsecureHTTP: true)
         XCTAssertEqual(payload.destinations.map(\.absoluteString), ["http://127.0.0.1:4097"])
+    }
+
+    func testPlainHTTPLinkIsRejectedInProductionProfile() {
+        // Docs/navigation-screens.md: mock HTTP is a development-only
+        // transport profile — the production default spends no pairing
+        // code over a cleartext origin.
+        XCTAssertThrowsError(try PairingParser.parse("http://127.0.0.1:4097/auth/connect/c1")) { error in
+            XCTAssertEqual(error as? PairingParseError, .unsupportedScheme)
+        }
+        XCTAssertThrowsError(try PairingParser.parse(#"{"code":"x1","urls":["http://host.example:4097"]}"#)) { error in
+            XCTAssertEqual(error as? PairingParseError, .unsupportedScheme, "QR destinations too")
+        }
     }
 
     func testLinkOriginDropsUserinfoQueryAndFragmentLikePinnedOrigin() throws {
@@ -131,9 +144,19 @@ final class PairingParserTests: XCTestCase {
         XCTAssertEqual(url.absoluteString, "https://192.168.1.20:4096")
     }
 
-    func testManualAddressHonorsExplicitHTTPPrefix() throws {
-        let url = try PairingParser.manualAddress(host: "http://192.168.1.20", port: "4097")
+    func testManualAddressHonorsExplicitHTTPPrefixForMockParity() throws {
+        // Mock/demo profile only; production rejects http below.
+        let url = try PairingParser.manualAddress(host: "http://192.168.1.20", port: "4097", allowsInsecureHTTP: true)
         XCTAssertEqual(url.absoluteString, "http://192.168.1.20:4097")
+    }
+
+    func testManualAddressRejectsHTTPInProductionProfile() {
+        XCTAssertThrowsError(try PairingParser.manualAddress(host: "http://192.168.1.20", port: "4097")) { error in
+            XCTAssertEqual(error as? PairingParseError, .unsupportedScheme)
+        }
+        XCTAssertThrowsError(try PairingParser.manualAddress("http://localhost:4097")) { error in
+            XCTAssertEqual(error as? PairingParseError, .unsupportedScheme, "single-field form too")
+        }
     }
 
     func testManualAddressAllowsLocalhostAndDottedHostsWithoutPort() throws {
@@ -173,8 +196,12 @@ final class PairingParserTests: XCTestCase {
         XCTAssertEqual(try PairingParser.manualAddress("192.168.1.20:8443").absoluteString, "https://192.168.1.20:8443")
     }
 
-    func testManualAddressSingleFieldKeepsExplicitScheme() throws {
-        XCTAssertEqual(try PairingParser.manualAddress("http://localhost:4097").absoluteString, "http://localhost:4097")
+    func testManualAddressSingleFieldKeepsExplicitSchemeForMockParity() throws {
+        // Mock/demo profile only; production rejects http (see above).
+        XCTAssertEqual(
+            try PairingParser.manualAddress("http://localhost:4097", allowsInsecureHTTP: true).absoluteString,
+            "http://localhost:4097"
+        )
     }
 
     func testManualAddressSingleFieldAppliesSameRejections() {

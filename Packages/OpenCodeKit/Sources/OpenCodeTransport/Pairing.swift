@@ -61,20 +61,26 @@ public enum PairingParser {
 
     /// Parses a scanned QR payload or a pasted pairing link. JSON payloads are
     /// detected by a leading `{`; anything else is treated as a link.
-    public static func parse(_ raw: String) throws -> PairingPayload {
+    ///
+    /// `allowsInsecureHTTP` defaults to false — the production profile. Plain
+    /// `http://` destinations are rejected with `.unsupportedScheme` before a
+    /// pairing code or Basic credential can travel in cleartext; the mock /
+    /// demo profile opts in explicitly (docs/navigation-screens.md: mock HTTP
+    /// is a development-only transport profile).
+    public static func parse(_ raw: String, allowsInsecureHTTP: Bool = false) throws -> PairingPayload {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw PairingParseError.emptyInput }
         if trimmed.hasPrefix("{") {
-            return try parseJSONPayload(trimmed)
+            return try parseJSONPayload(trimmed, allowsInsecureHTTP: allowsInsecureHTTP)
         }
-        return try parsePairingLink(trimmed)
+        return try parsePairingLink(trimmed, allowsInsecureHTTP: allowsInsecureHTTP)
     }
 
     /// Single-field form of the manual rules: scheme, host, and optional port
     /// all come from one URL string (e.g. `https://host:4096`, `host:4096`,
     /// or a bare hostname).
-    public static func manualAddress(_ raw: String) throws -> URL {
-        try manualAddress(host: raw, port: "")
+    public static func manualAddress(_ raw: String, allowsInsecureHTTP: Bool = false) throws -> URL {
+        try manualAddress(host: raw, port: "", allowsInsecureHTTP: allowsInsecureHTTP)
     }
 
     /// Builds a bare host address for the password-fallback form (S03): the
@@ -83,7 +89,7 @@ public enum PairingParser {
     /// client's address rules, including its bare-address check: a
     /// single-label host needs a port. Paths stay allowed, where servers
     /// behind a proxy prefix live.
-    public static func manualAddress(host rawHost: String, port rawPort: String) throws -> URL {
+    public static func manualAddress(host rawHost: String, port rawPort: String, allowsInsecureHTTP: Bool = false) throws -> URL {
         let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
         let port = rawPort.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty else { throw PairingParseError.invalidAddress }
@@ -102,7 +108,7 @@ public enum PairingParser {
             candidate += ":" + port
         }
 
-        let url = try validatedAddress(candidate)
+        let url = try validatedAddress(candidate, allowsInsecureHTTP: allowsInsecureHTTP)
         let hostname = url.host ?? ""
         if url.path.isEmpty || url.path == "/", url.port == nil,
            hostname != "localhost", !hostname.contains("."), !hostname.hasPrefix("[") {
@@ -117,7 +123,7 @@ public enum PairingParser {
     /// code must match the pinned shape, duplicate addresses collapse in order,
     /// and one invalid address rejects the whole payload — the same
     /// all-or-nothing behavior as the web client.
-    private static func parseJSONPayload(_ value: String) throws -> PairingPayload {
+    private static func parseJSONPayload(_ value: String, allowsInsecureHTTP: Bool = false) throws -> PairingPayload {
         struct QR: Decodable {
             var code: String
             var urls: [String]
@@ -134,7 +140,7 @@ public enum PairingParser {
         guard !uniqueURLs.isEmpty else { throw PairingParseError.noDestinations }
         return PairingPayload(
             code: payload.code,
-            destinations: try uniqueURLs.map(validatedAddress)
+            destinations: try uniqueURLs.map { try validatedAddress($0, allowsInsecureHTTP: allowsInsecureHTTP) }
         )
     }
 
@@ -142,11 +148,17 @@ public enum PairingParser {
     /// `/auth/connect/<code>` path on an http(s) origin. The destination is
     /// the origin itself, which drops any userinfo, query, and fragment by
     /// construction — matching the web client, which reads `url.origin`.
-    private static func parsePairingLink(_ value: String) throws -> PairingPayload {
+    private static func parsePairingLink(_ value: String, allowsInsecureHTTP: Bool = false) throws -> PairingPayload {
         guard let url = URL(string: value), let scheme = url.scheme?.lowercased() else {
             throw PairingParseError.notAPairingLink
         }
         guard scheme == "http" || scheme == "https" else {
+            throw PairingParseError.unsupportedScheme
+        }
+        // Production profile: a printed pairing link over plain http would
+        // spend the single-use code — and later the Basic credential — in
+        // cleartext. Rejected before the code is ever read off the path.
+        guard scheme == "https" || allowsInsecureHTTP else {
             throw PairingParseError.unsupportedScheme
         }
         // Pinned `legacyPairingLink`: the pre-token format carries credentials
@@ -181,13 +193,19 @@ public enum PairingParser {
     /// query, or fragment — those are rejected, not silently stripped, so a
     /// credential-bearing or origin-muddied address never reaches the review
     /// screen (docs/implementation-defaults.md trust rules).
-    private static func validatedAddress(_ raw: String) throws -> URL {
+    private static func validatedAddress(_ raw: String, allowsInsecureHTTP: Bool = false) throws -> URL {
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let url = URL(string: value),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               url.host?.isEmpty == false else {
             throw PairingParseError.unsupportedSchemeIfPresent(value)
+        }
+        // Production profile gate (docs/navigation-screens.md): plain http
+        // is the mock/demo transport only, so a destination that would
+        // carry pairing and Basic credentials in cleartext never reviews.
+        guard scheme == "https" || allowsInsecureHTTP else {
+            throw PairingParseError.unsupportedScheme
         }
         guard url.user == nil, url.password == nil, url.query == nil, url.fragment == nil else {
             throw PairingParseError.credentialBearingAddress

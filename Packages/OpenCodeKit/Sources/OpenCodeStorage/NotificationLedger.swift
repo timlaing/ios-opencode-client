@@ -140,12 +140,14 @@ public struct NotificationLedger: Sendable {
         }
     }
 
-    /// Crash/restart reconciliation against the OS: claimed items whose
-    /// identifiers are still pending with the OS keep their claim; those the
-    /// OS reports as delivered are recorded; anything else never reached the
-    /// OS and is released so it can be retried (docs: "on crash/restart
-    /// reconcile pending/delivered notification identifiers before retrying
-    /// a claimed item").
+    /// Crash/restart reconciliation against the OS. A claimed key the OS
+    /// reports as delivered is recorded; one still pending with the OS
+    /// becomes `.scheduled` (it reached the OS after all); anything else
+    /// never reached the OS and is released — but ONLY once its lease has
+    /// expired. Releasing a live lease would drop a claim whose owner may
+    /// still be scheduling it, opening the door to a duplicate banner
+    /// (docs: "on crash/restart reconcile pending/delivered notification
+    /// identifiers before retrying a claimed item").
     public func reconcile(pendingIDs: Set<String>, deliveredIDs: Set<String>) throws {
         let timestamp = now()
         try db.write { db in
@@ -158,9 +160,20 @@ public struct NotificationLedger: Sendable {
                     record.leaseUntil = nil
                     record.updatedAt = timestamp
                     try record.update(db)
-                } else if !pendingIDs.contains(record.ledgerKey) {
+                } else if pendingIDs.contains(record.ledgerKey) {
+                    // It reached the OS: scheduling is done, so the claim
+                    // settles into `.scheduled` rather than staying held.
+                    record.state = State.scheduled.rawValue
+                    record.leaseUntil = nil
+                    record.updatedAt = timestamp
+                    try record.update(db)
+                } else if record.leaseUntil.map({ $0 <= timestamp }) ?? true {
+                    // Absent from the OS AND the lease is over (or was
+                    // never set): safe to release for retry.
                     try record.delete(db)
                 }
+                // Absent from the OS but the lease is still live: the owner
+                // may be mid-schedule — keep the claim.
             }
         }
     }

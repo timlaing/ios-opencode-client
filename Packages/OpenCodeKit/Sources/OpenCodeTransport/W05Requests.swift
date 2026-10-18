@@ -45,6 +45,10 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
         /// `CompactionPayload` is anyOf object|array — kept lossless.
         case compaction(payload: JSONValue)
         case move(projectID: String, subpath: String?, directory: String?)
+        /// An inbox variant outside this baseline's `user`/`synthetic`/
+        /// `compaction`/`move` set. Kept distinct so it is never presented
+        /// as a known kind; `rawType` still carries the wire name.
+        case unknown(type: String, payload: JSONValue?)
     }
 
     public var id: String
@@ -86,9 +90,13 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
             let payload = try container.decode(MovePayload.self, forKey: .payload)
             kind = .move(projectID: payload.projectID, subpath: payload.subpath, directory: payload.location.directory)
         default:
-            // Unknown inbox variant: keep its payload so the pending item
-            // stays visible and cancellable instead of silently dropped.
-            kind = .compaction(payload: try container.decodeIfPresent(JSONValue.self, forKey: .payload) ?? .null)
+            // Unknown inbox variant: keep its raw type and payload so the
+            // pending item stays visible and cancellable — never claimed
+            // as `.compaction`, which would render it as a real compact.
+            kind = .unknown(
+                type: type,
+                payload: try container.decodeIfPresent(JSONValue.self, forKey: .payload)
+            )
         }
     }
 
@@ -116,6 +124,12 @@ public struct InboxItem: Codable, Equatable, Sendable, Identifiable {
                 MovePayload(projectID: projectID, subpath: subpath, location: LocationRefValue(directory: directory ?? "")),
                 forKey: .payload
             )
+        case .unknown(_, let payload):
+            // The wire type is already encoded as `rawType`; only the
+            // payload is kind-specific. Absent payload stays absent.
+            if let payload {
+                try container.encode(payload, forKey: .payload)
+            }
         }
     }
 

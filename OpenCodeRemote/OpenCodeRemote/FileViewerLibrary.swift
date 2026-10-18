@@ -273,15 +273,19 @@ final class FileViewerLibrary {
 
     /// The complete file bytes once every range has arrived; nil while the
     /// buffer is still a prefix — Copy/Share must never export a partial
-    /// file as if it were the whole one.
+    /// file as if it were the whole one. A 206 whose `Content-Range` had
+    /// no parseable total is NEVER complete: `needsMoreBytes` can't ask
+    /// for more without a size, but that means "unknowable", not "done".
     var completeBytes: Data? {
         guard hasFetched, !needsMoreBytes else { return nil }
+        if isPartial, totalByteCount == nil { return nil }
         return buffer
     }
 
     /// The complete decoded text (text kinds only, and only when whole).
     var completeText: String? {
         guard hasFetched, !needsMoreBytes else { return nil }
+        if isPartial, totalByteCount == nil { return nil }
         return content?.text
     }
 

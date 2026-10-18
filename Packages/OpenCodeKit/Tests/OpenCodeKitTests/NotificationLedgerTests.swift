@@ -81,7 +81,7 @@ final class NotificationLedgerTests: XCTestCase {
         XCTAssertEqual(try ledger.state(key: key), .delivered)
     }
 
-    func testReconcileKeepsPendingRecordsDeliveredOnesAndReleasesLostClaims() throws {
+    func testReconcileKeepsPendingRecordsDeliveredOnesAndReleasesExpiredClaims() throws {
         let clock = TestClock()
         let ledger = try ledger(clock)
 
@@ -97,9 +97,19 @@ final class NotificationLedgerTests: XCTestCase {
             deliveredIDs: [deliveredKey]
         )
 
-        XCTAssertEqual(try ledger.state(key: keptKey), .claimed, "still pending with the OS keeps the claim")
+        XCTAssertEqual(try ledger.state(key: keptKey), .scheduled, "still pending with the OS: it reached the OS, scheduling is recorded")
         XCTAssertEqual(try ledger.state(key: deliveredKey), .delivered, "OS-delivered is recorded, not retried")
-        XCTAssertNil(try ledger.state(key: lostKey), "never reached the OS: released for retry")
+        // The live lease is never released: its owner may be between claim
+        // and UN add, and releasing now would let a second claim race a
+        // duplicate banner.
+        XCTAssertEqual(try ledger.state(key: lostKey), .claimed, "absent from the OS but the lease is live: keep the claim")
+        XCTAssertFalse(try ledger.claim(key: lostKey, hostID: "h", category: "c", sessionID: "s", owner: "c2", lease: 30), "a live lease still blocks reclamation")
+
+        // Once the lease expires the owner is presumed gone: the claim that
+        // never reached the OS is released for retry.
+        clock.advance(31)
+        try ledger.reconcile(pendingIDs: [], deliveredIDs: [])
+        XCTAssertNil(try ledger.state(key: lostKey), "expired and never reached the OS: released for retry")
         XCTAssertTrue(try ledger.claim(key: lostKey, hostID: "h", category: "c", sessionID: "s", owner: "c2", lease: 30))
     }
 

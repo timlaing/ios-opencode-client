@@ -125,6 +125,17 @@ public struct APIResponse: Sendable, Equatable {
 
     public var isSuccess: Bool { (200..<300).contains(statusCode) }
 
+    /// Case-insensitive header lookup. HTTP header field names are
+    /// case-insensitive (RFC 9110 §5.1) — URLSession delivers them in the
+    /// casing the server (or a proxy) sent, and `Content-Range`/`ETag`
+    /// lookups must not silently miss because a host answered `content-range`.
+    public func header(_ name: String) -> String? {
+        if let exact = headers[name] { return exact }
+        let lowered = name.lowercased()
+        if let exact = headers[lowered] { return exact }
+        return headers.first { $0.key.lowercased() == lowered }?.value
+    }
+
     public func decodedJSON<T: Decodable>(_ type: T.Type) throws -> T {
         guard case .json(let data) = payload else {
             throw TransportError.emptyBody

@@ -30,7 +30,23 @@ struct QRScannerView: UIViewControllerRepresentable {
         return scanner
     }
 
-    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {}
+    /// VisionKit's scanner is passive until told otherwise: without an
+    /// explicit start it shows the camera preview but recognizes nothing.
+    /// Started here (not make) so a re-appearance restarts it, and stopped
+    /// on dismantle so the camera is never left running behind a closed
+    /// sheet.
+    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
+        guard !scanner.isScanning else { return }
+        do {
+            try scanner.startScanning()
+        } catch {
+            context.coordinator.reportStartFailure()
+        }
+    }
+
+    static func dismantleUIViewController(_ scanner: DataScannerViewController, coordinator: Coordinator) {
+        scanner.stopScanning()
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onScan: onScan, onUnavailable: onUnavailable)
@@ -44,6 +60,13 @@ struct QRScannerView: UIViewControllerRepresentable {
         init(onScan: @escaping (String) -> Void, onUnavailable: @escaping (String) -> Void) {
             self.onScan = onScan
             self.onUnavailable = onUnavailable
+        }
+
+        /// A start-time failure (permission revoked between the support
+        /// check and the start, session conflict) — reported through the
+        /// same honest path as a runtime unavailability.
+        func reportStartFailure() {
+            onUnavailable("The camera can't be used for scanning right now. Pair manually instead.")
         }
 
         func dataScanner(
