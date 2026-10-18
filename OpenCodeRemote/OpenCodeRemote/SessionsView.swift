@@ -25,7 +25,10 @@ struct SessionsView: View {
     @State private var renameText = ""
     @State private var showingDelete = false
     @State private var deleteTarget: SessionsLibrary.SessionRow?
+    /// Row tap target — pushes the S08 conversation.
     @State private var detailTarget: SessionsLibrary.SessionRow?
+    /// Context-menu target — presents the W03 detail sheet.
+    @State private var infoTarget: SessionsLibrary.SessionRow?
     @State private var mutationError: String?
 
     private var visibleEntries: [HostLibrary.Entry] {
@@ -46,30 +49,7 @@ struct SessionsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if library.entries.isEmpty {
-                    ContentUnavailableView(
-                        "No Hosts Paired",
-                        systemImage: "server.rack",
-                        description: Text("Pair a server on the Servers tab to see its sessions.")
-                    )
-                } else {
-                    sessionList
-                }
-            }
-            .navigationTitle("Sessions")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) { scopeMenu }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingNewSession = true
-                    } label: {
-                        Label("New Session", systemImage: "plus")
-                    }
-                    .accessibilityIdentifier("S07.newSession")
-                    .disabled(library.entries.isEmpty)
-                }
-            }
+            decoratedContent
         }
         .searchable(text: $searchText, prompt: "Search session titles")
         .task {
@@ -117,6 +97,36 @@ struct SessionsView: View {
                 await sessions.search(searchText, entries: visibleEntries)
             }
         }
+    }
+
+    /// Navigation-stack content plus its presentations — extracted from
+    /// `body` so the compiler type-checks two moderate expressions rather
+    /// than one giant modifier chain.
+    private var decoratedContent: some View {
+        Group {
+            if library.entries.isEmpty {
+                ContentUnavailableView(
+                    "No Hosts Paired",
+                    systemImage: "server.rack",
+                    description: Text("Pair a server on the Servers tab to see its sessions.")
+                )
+            } else {
+                sessionList
+            }
+        }
+        .navigationTitle("Sessions")
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) { scopeMenu }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingNewSession = true
+                } label: {
+                    Label("New Session", systemImage: "plus")
+                }
+                .accessibilityIdentifier("S07.newSession")
+                .disabled(library.entries.isEmpty)
+            }
+        }
         .sheet(isPresented: $showingNewSession) {
             NewSessionSheet(
                 sessions: sessions,
@@ -131,7 +141,15 @@ struct SessionsView: View {
             .environment(library)
             .environment(projects)
         }
-        .sheet(item: $detailTarget) { row in
+        .navigationDestination(isPresented: Binding(
+            get: { detailTarget != nil },
+            set: { if !$0 { detailTarget = nil } }
+        )) {
+            if let row = detailTarget {
+                ConversationView(host: row.host, session: row.session, sessions: sessions)
+            }
+        }
+        .sheet(item: $infoTarget) { row in
             SessionDetailSheet(
                 host: row.host,
                 credential: library.credential(for: row.host.id),
@@ -277,6 +295,9 @@ struct SessionsView: View {
             .accessibilityIdentifier("S07.session.row.\(row.session.id)")
         }
         .contextMenu {
+            Button("Session Details…") {
+                infoTarget = row
+            }
             Button("Rename…") {
                 renameText = row.session.title ?? ""
                 renameTarget = row
