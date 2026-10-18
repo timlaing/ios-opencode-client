@@ -133,14 +133,18 @@ final class ApprovalLibrary {
                 }
             }
             // A superseded load finishing late must not clobber a newer
-            // result, and entries settled meanwhile never return.
-            guard generation == loadGeneration else { return }
+            // result, entries settled meanwhile never return, and a
+            // caller cancelled mid-flight (dismissed view, stopped
+            // watch) must not publish at all — cancellation is
+            // cooperative, so the service call may have completed.
+            guard generation == loadGeneration, !Task.isCancelled else { return }
             entries = merged.filter { !settledIDs.contains($0.id) }
             refreshError = linkedError
         } catch {
             // A failed refresh keeps the entries on screen — they stay
-            // pending until the host says otherwise.
-            guard generation == loadGeneration else { return }
+            // pending until the host says otherwise — unless the
+            // caller is gone: a cancelled refresh reports nothing.
+            guard generation == loadGeneration, !Task.isCancelled else { return }
             if !Self.isSilent(error) { refreshError = Self.message(for: error) }
         }
     }
@@ -190,10 +194,12 @@ final class ApprovalLibrary {
     /// pull-to-refresh, so one refresh after send routinely ran too
     /// early. Until the live event stream (W16) arrives, the dock
     /// polls on this cadence instead: each tick reconciles through
-    /// `load` (same generation and settled-ID guards), and the watch
-    /// ends early once a request is pending (the dock has it) or the
-    /// attempts run out. Cancellation — a newer watch superseding it,
-    /// the view going away — is routine and silent.
+    /// `load` (same generation, settled-ID, and cancellation guards),
+    /// and the watch ends early once the dock gains a request THIS
+    /// window discovered — a request that predates the window is not
+    /// what it is for, and must not end it (the admitted prompt may
+    /// still raise its own). Cancellation — a newer watch superseding
+    /// it, the view going away — is routine and silent.
     func startPostSendWatch(
         host: OpenCodeDomain.Host,
         sessionID: String,
@@ -203,6 +209,10 @@ final class ApprovalLibrary {
     ) {
         watchTask?.cancel()
         watchContext = (host, sessionID, childSessionIDs, attempts, intervalNanoseconds)
+        // Whatever is already on the dock predates this window (an
+        // earlier turn's approval, a linked child's) — only a request
+        // the window itself surfaces ends it.
+        let preexisting = Set(entries.map(\.id))
         watchTask = Task { [weak self] in
             for _ in 0..<max(1, attempts) {
                 do {
@@ -212,18 +222,23 @@ final class ApprovalLibrary {
                 }
                 guard let self, !Task.isCancelled else { return }
                 await load(host: host, sessionID: sessionID, childSessionIDs: childSessionIDs)
-                // The pending request is on screen — the sheet takes
-                // over, and an answer re-opens the watch.
-                if hasPending { return }
+                // The window found what it was opened for — a request
+                // nobody had seen yet is on the dock; the sheet takes
+                // over from here and an answer re-opens the watch.
+                if entries.contains(where: { !preexisting.contains($0.id) }) { return }
             }
         }
     }
 
-    /// Ends the watch (view dismissed). The stored context survives so
-    /// a later answer can still re-open it.
+    /// Ends the watch (view dismissed) and forgets its context: a
+    /// reply still in flight when the view went away must not revive
+    /// a watch for a dock nobody can see. The view re-records the
+    /// context on its next load (appear, pull-to-refresh, or send), so
+    /// an answer after coming back still re-opens the watch.
     func stopPostSendWatch() {
         watchTask?.cancel()
         watchTask = nil
+        watchContext = nil
     }
 
     /// Records the context an answer re-opens the watch under, WITHOUT

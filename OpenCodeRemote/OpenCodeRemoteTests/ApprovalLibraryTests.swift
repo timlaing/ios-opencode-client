@@ -522,4 +522,106 @@ final class ApprovalLibraryTests: XCTestCase {
         XCTAssertEqual(library.entries.map(\.id), ["per_next"],
                        "an answer without a prior send reopens the load-recorded watch")
     }
+
+    // MARK: - Watch window hardening (review R4)
+
+    func testWatchKeepsWatchingWhileAnEarlierApprovalIsPending() async {
+        // A send lands while an earlier approval is still on the dock:
+        // the pre-existing request must not end the watch — the NEW
+        // request the admitted prompt raises must still surface.
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+        ])
+        let calls = Counter()
+        let nextResponse = json(listJSON([
+            (id: "per_own", sessionID: "ses_current"),
+            (id: "per_second", sessionID: "ses_current"),
+        ]))
+        let library = library(responses, hook: { request in
+            guard request.operationID == "session.permission.list" else { return }
+            // Call 1 is the manual load; the prompt's own request
+            // exists only from the watch's SECOND poll on.
+            if calls.next() == 2 {
+                responses.set("session.permission.list", .success(nextResponse))
+            }
+        })
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+        XCTAssertEqual(library.entries.map(\.id), ["per_own"], "the earlier turn's approval")
+
+        library.startPostSendWatch(
+            host: host, sessionID: "ses_current", childSessionIDs: [],
+            attempts: 10, intervalNanoseconds: 10_000_000
+        )
+        await waitUntil { library.entries.map(\.id).count == 2 }
+        library.stopPostSendWatch()
+
+        XCTAssertEqual(library.entries.map(\.id), ["per_own", "per_second"],
+                       "a pre-existing approval does not end the watch for the prompt's own request")
+    }
+
+    func testStoppingTheWatchDiscardsAnInFlightPoll() async {
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+        ])
+        let calls = Counter()
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let library = library(responses, hook: { request in
+            guard request.operationID == "session.permission.list" else { return }
+            // No manual load here — call 1 IS the watch's first poll,
+            // held mid-flight after its payload was snapshotted.
+            if calls.next() == 1 {
+                enteredContinuation.yield()
+                // Cooperative cancellation: this returns early once the
+                // watch task is cancelled — exactly the race.
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+        })
+        library.startPostSendWatch(
+            host: host, sessionID: "ses_current", childSessionIDs: [],
+            attempts: 10, intervalNanoseconds: 10_000_000
+        )
+        var iterator = entered.makeAsyncIterator()
+        _ = await iterator.next() // poll 1 has its payload and is holding
+        library.stopPostSendWatch()
+        try? await Task.sleep(nanoseconds: 100_000_000) // the held response returns
+
+        XCTAssertTrue(library.entries.isEmpty,
+                      "a stopped watch's in-flight poll must not publish")
+    }
+
+    func testDismissalIsNotRevivedByAnInFlightAnswer() async throws {
+        // The view goes away while a reply is on the wire: the late
+        // 204 must not reopen a watch for a dock nobody can see.
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+            "session.permission.reply": .success(APIResponse(statusCode: 204, payload: .empty)),
+        ])
+        let recorder = Recorder()
+        let (replyEntered, replyContinuation) = AsyncStream<Void>.makeStream()
+        let library = library(responses, recorder: recorder, hook: { request in
+            guard request.operationID == "session.permission.reply" else { return }
+            replyContinuation.yield()
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        })
+        library.recordWatchContext(
+            host: host, sessionID: "ses_current", childSessionIDs: [],
+            attempts: 5, intervalNanoseconds: 10_000_000
+        )
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+        let pending = try XCTUnwrap(library.entries.first)
+
+        let answering = Task { [host] in
+            await library.submit(pending, decision: .once, message: nil, host: host)
+        }
+        var iterator = replyEntered.makeAsyncIterator()
+        _ = await iterator.next() // the reply is on the wire
+        library.stopPostSendWatch() // the view goes away mid-answer
+        let outcome = await answering.value
+        XCTAssertEqual(outcome, .accepted)
+
+        let settled = recorder.requests.count
+        try? await Task.sleep(nanoseconds: 150_000_000) // a revived watch would poll by now
+        XCTAssertEqual(recorder.requests.count, settled,
+                       "an in-flight answer must not revive a dismissed watch")
+    }
 }
