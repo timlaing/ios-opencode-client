@@ -97,9 +97,11 @@ final class ConversationLibrary {
             let page = try await service.messages(
                 at: host.address, credential: credential, sessionID: sessionID
             )
-            // A DIFFERENT session invalidates all cross-session state:
-            // projections and a pending submission belong to the old one.
-            if loadedSessionID != sessionID {
+            // A committed DIFFERENT session invalidates all cross-session
+            // state: projections and a pending submission belong to the
+            // old one. `nil` = nothing committed yet, so the state of the
+            // session being opened is kept.
+            if let loaded = loadedSessionID, loaded != sessionID {
                 projectedPending = [:]
                 pendingSubmission = nil
             }
@@ -154,6 +156,14 @@ final class ConversationLibrary {
             let page = try await service.messages(
                 at: host.address, credential: credential, sessionID: sessionID
             )
+            // A committed DIFFERENT session invalidates cross-session
+            // state — the same rule as open(). `nil` means no session
+            // committed yet: state from the session being loaded is
+            // legitimate and kept.
+            if let loaded = loadedSessionID, loaded != sessionID {
+                projectedPending = [:]
+                pendingSubmission = nil
+            }
             let fresh = Self.ordered(Self.deduped(page.data))
             let freshIDs = Set(fresh.map(\.id))
             // The newest page only overlaps what it covers. Without ANY
