@@ -35,15 +35,31 @@ final class ApprovalLibraryTests: XCTestCase {
         }
     }
 
+    /// Atomic call counter — the out-of-order-load test needs to
+    /// recognise its first in-flight request.
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func next() -> Int {
+            lock.lock(); defer { lock.unlock() }
+            value += 1
+            return value
+        }
+    }
+
     private struct StubTransport: OpenCodeTransport {
         let recorder: Recorder
         let responses: Responses
+        var hook: (@Sendable (APIRequest) async -> Void)?
 
         func perform(_ request: APIRequest) async throws -> APIResponse {
             recorder.record(request)
+            // Snapshot the response at CALL time, so a hook's delay can
+            // reorder completions without changing earlier payloads.
             guard let result = responses.get(request.operationID) else {
                 throw TransportError.connectionFailed("unstubbed \(request.operationID)")
             }
+            await hook?(request)
             switch result {
             case .success(let response): return response
             case .failure(let error): throw error
@@ -66,11 +82,12 @@ final class ApprovalLibraryTests: XCTestCase {
     private func library(
         _ responses: Responses,
         recorder: Recorder = Recorder(),
-        credential: BasicCredential? = BasicCredential(secret: "token")
+        credential: BasicCredential? = BasicCredential(secret: "token"),
+        hook: (@Sendable (APIRequest) async -> Void)? = nil
     ) -> ApprovalLibrary {
         ApprovalLibrary(
             service: PermissionService(makeTransport: { _ in
-                StubTransport(recorder: recorder, responses: responses)
+                StubTransport(recorder: recorder, responses: responses, hook: hook)
             }),
             credentialProvider: { _ in credential }
         )
@@ -258,5 +275,78 @@ final class ApprovalLibraryTests: XCTestCase {
         XCTAssertEqual(recorder.requests.last?.path,
                        "/api/session/ses_child/permission/per_child/reply",
                        "owner IDs are preserved — the viewing session never answers in their place")
+    }
+
+    // MARK: - Refresh races (review R1)
+
+    func testLinkedEntriesSurviveAFailedLocationWideRefresh() async {
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+            "permission.request.list": .success(json(locatedJSON([
+                (id: "per_child", sessionID: "ses_child"),
+            ]))),
+        ])
+        let library = library(responses)
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: ["ses_child"])
+        XCTAssertEqual(library.entries.map(\.id), ["per_own", "per_child"])
+
+        // The location-wide call now fails: the child's approval is
+        // still pending on the host, so it must not drop off the dock.
+        responses.set("permission.request.list", .failure(.http(status: 500, envelope: nil)))
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: ["ses_child"])
+
+        XCTAssertEqual(library.entries.map(\.id), ["per_own", "per_child"],
+                       "a failed location-wide refresh keeps attributed child entries")
+        XCTAssertEqual(library.refreshError, "The host returned an error (HTTP 500).")
+    }
+
+    func testSettledApprovalsNeverReturnFromARefresh() async throws {
+        // The host's list still contains the just-answered request
+        // (server lag): a refresh must not resurrect it in the dock.
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON(okList))),
+            "session.permission.reply": .success(APIResponse(statusCode: 204, payload: .empty)),
+        ])
+        let library = library(responses)
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+        let pending = try XCTUnwrap(library.entries.first)
+
+        let outcome = await library.submit(pending, decision: .once, message: nil, host: host)
+        XCTAssertEqual(outcome, .accepted)
+        XCTAssertTrue(library.entries.isEmpty)
+
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+        XCTAssertTrue(library.entries.isEmpty,
+                      "a settled approval never returns, whatever the list still says")
+    }
+
+    func testStaleLoadCannotOverwriteANewerOne() async {
+        let responses = Responses([
+            "session.permission.list": .success(json(listJSON([
+                (id: "per_old", sessionID: "ses_current"),
+            ]))),
+        ])
+        let calls = Counter()
+        let newResponse = json(listJSON([(id: "per_new", sessionID: "ses_current")]))
+        let library = library(responses, hook: { request in
+            guard request.operationID == "session.permission.list" else { return }
+            // Hold the FIRST call mid-flight: its payload was already
+            // snapshotted as the stale one before the swap.
+            if calls.next() == 1 {
+                responses.set("session.permission.list", .success(newResponse))
+                try? await Task.sleep(nanoseconds: 250_000_000)
+            }
+        })
+
+        let stale = Task { [host] in
+            await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+        }
+        // Let the first call snapshot its payload and fall asleep.
+        try? await Task.sleep(nanoseconds: 60_000_000)
+        await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
+
+        await stale.value
+        XCTAssertEqual(library.entries.map(\.id), ["per_new"],
+                       "a superseded load finishing late writes nothing")
     }
 }

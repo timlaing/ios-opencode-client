@@ -50,6 +50,12 @@ final class ApprovalLibrary {
     private(set) var entries: [Entry] = []
     /// Last refresh failure — surfaced in the sheet; entries are kept.
     private(set) var refreshError: String?
+    /// IDs settled by a 204/404 reply: a refresh that started earlier
+    /// must never bring them back into the dock.
+    private var settledIDs: Set<String> = []
+    /// Monotonic load token — results from a superseded load are
+    /// discarded, so overlapping refreshes cannot finish out of order.
+    private var loadGeneration = 0
 
     var hasPending: Bool { !entries.isEmpty }
     var pendingCount: Int { entries.count }
@@ -72,13 +78,16 @@ final class ApprovalLibrary {
 
     /// Reconciles the pending approvals for this conversation. The own
     /// list arrives first so the session's approvals are never held
-    /// back by a slow/failed location-wide call — linked attribution
-    /// needs the latter and is simply unavailable when it fails.
+    /// back by a slow/failed location-wide call; when that call fails,
+    /// the previously attributed LINKED entries are kept (still pending
+    /// until the host says otherwise) and the failure surfaced.
     func load(
         host: OpenCodeDomain.Host,
         sessionID: String,
         childSessionIDs: Set<String>
     ) async {
+        loadGeneration += 1
+        let generation = loadGeneration
         guard let credentialProvider, let credential = credentialProvider(host.id) else {
             refreshError = "Re-pair this host to check approvals."
             return
@@ -88,18 +97,30 @@ final class ApprovalLibrary {
                 at: host.address, credential: credential, sessionID: sessionID
             )
             var merged = own.map { Entry(request: $0, isLinked: false) }
-            if !childSessionIDs.isEmpty,
-               let all = try? await service.listAll(at: host.address, credential: credential) {
-                let linked = all.filter {
-                    childSessionIDs.contains($0.sessionID) && $0.sessionID != sessionID
+            var linkedError: String?
+            if !childSessionIDs.isEmpty {
+                do {
+                    let all = try await service.listAll(at: host.address, credential: credential)
+                    let linked = all.filter {
+                        childSessionIDs.contains($0.sessionID) && $0.sessionID != sessionID
+                    }
+                    merged += linked.map { Entry(request: $0, isLinked: true) }
+                } catch {
+                    // Linked entries are still pending on the host —
+                    // keep the ones already attributed on screen.
+                    merged += entries.filter(\.isLinked)
+                    if !Self.isSilent(error) { linkedError = Self.message(for: error) }
                 }
-                merged += linked.map { Entry(request: $0, isLinked: true) }
             }
-            entries = merged
-            refreshError = nil
+            // A superseded load finishing late must not clobber a newer
+            // result, and entries settled meanwhile never return.
+            guard generation == loadGeneration else { return }
+            entries = merged.filter { !settledIDs.contains($0.id) }
+            refreshError = linkedError
         } catch {
             // A failed refresh keeps the entries on screen — they stay
             // pending until the host says otherwise.
+            guard generation == loadGeneration else { return }
             if !Self.isSilent(error) { refreshError = Self.message(for: error) }
         }
     }
@@ -137,6 +158,7 @@ final class ApprovalLibrary {
     }
 
     private func remove(_ id: String) {
+        settledIDs.insert(id)
         entries.removeAll { $0.id == id }
     }
 

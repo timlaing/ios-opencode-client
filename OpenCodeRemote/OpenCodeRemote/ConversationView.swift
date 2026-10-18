@@ -378,6 +378,11 @@ struct ConversationView: View {
                         ) {
                             if draft == text { draft = "" }
                             attachments.consume(sentIDs)
+                            // A sent prompt is the usual cause of a new
+                            // permission request — refresh the dock now
+                            // instead of waiting for a pull (which some
+                            // transcript states do not offer).
+                            await loadApprovals()
                         }
                     }
                 } label: {
