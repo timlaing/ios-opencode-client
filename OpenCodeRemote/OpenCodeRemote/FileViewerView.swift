@@ -500,14 +500,20 @@ struct FileViewerView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            searchResults = try await service.find(
+            let results = try await service.find(
                 at: host.address,
                 credential: credential,
                 directory: startDirectory,
                 query: query,
                 limit: 50
             )
+            // Unstructured per-keystroke tasks complete in any order; a slow
+            // reply for a superseded query must not overwrite the current
+            // one's results (or its error).
+            guard query == filenameQuery.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+            searchResults = results
         } catch {
+            guard query == filenameQuery.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
             message = Self.message(for: error)
         }
     }

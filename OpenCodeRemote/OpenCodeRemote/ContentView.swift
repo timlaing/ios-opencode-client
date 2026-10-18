@@ -315,7 +315,10 @@ private struct ProjectsTab: View {
                 Section("Recent Folders") {
                     ForEach(Array(projects.recentLocations.enumerated()), id: \.offset) { _, item in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(item.location.project.canonical)
+                            // The chosen DIRECTORY, not the project root that
+                            // contains it (noteRecent stores what the user
+                            // picked; two subfolders are two rows).
+                            Text(item.location.directory)
                                 .font(.body.monospaced())
                                 .lineLimit(1)
                             Text(item.host.displayName)

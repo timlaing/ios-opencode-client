@@ -517,8 +517,13 @@ private struct NewSessionSheet: View {
                         if !recent.isEmpty {
                             Menu("Recent Folders") {
                                 ForEach(Array(recent.enumerated()), id: \.offset) { _, item in
-                                    Button(item.location.project.canonical) {
-                                        directory = item.location.project.canonical
+                                    // The chosen DIRECTORY, not the project
+                                    // root that contains it — noteRecent
+                                    // dedupes by directory, so two subfolders
+                                    // are two distinct rows that must set
+                                    // their own path.
+                                    Button(item.location.directory) {
+                                        directory = item.location.directory
                                     }
                                 }
                             }

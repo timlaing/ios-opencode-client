@@ -14,7 +14,20 @@ public struct URLSessionTransport: OpenCodeTransport {
     /// hosts, watchers, and reloads construct transports constantly, and
     /// per-value sessions discard keep-alive connections every time.
     /// Tests inject their own `session` (e.g. a `StubURLProtocol` one).
-    private static let sharedSession = URLSession(configuration: .ephemeral)
+    private static let sharedSession: URLSession = {
+        // .ephemeral keeps cookies and cached responses in MEMORY for the
+        // life of the process (and sets cookies by default). This session is
+        // shared by every host: a cookie set during pairing would ride along
+        // with later Basic-authed requests, and authorization-bearing
+        // responses (e.g. file bytes) could sit in the cache — so both are
+        // disabled outright, matching the privacy rule in the doc comment.
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: configuration)
+    }()
 
     private let baseURL: URL
     private let credential: BasicCredential?
