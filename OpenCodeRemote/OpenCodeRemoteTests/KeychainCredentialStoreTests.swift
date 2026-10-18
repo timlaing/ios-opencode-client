@@ -1,5 +1,6 @@
 import XCTest
 import OpenCodeStorage
+import Security
 
 /// Keychain round-trip on the simulator. Each test uses a unique service so
 /// runs never collide with each other or with real app items.
@@ -46,5 +47,54 @@ final class KeychainCredentialStoreTests: XCTestCase {
         XCTAssertEqual(try store.secret(for: "H-A"), "alpha")
         XCTAssertEqual(try store.secret(for: "H-B"), "beta")
         XCTAssertNil(try store.secret(for: "H-C"))
+    }
+
+    func testSaveUsesForegroundAccessibilityByDefault() throws {
+        try store.save(secret: "token-fg", for: hostID)
+        XCTAssertEqual(
+            try storedAccessibility(),
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly as String,
+            "foreground-only host credentials keep the docs' default class"
+        )
+    }
+
+    func testEnableBackgroundAccessUpgradesClassWithoutTouchingTheSecret() throws {
+        try store.save(secret: "token-bg", for: hostID)
+
+        try store.enableBackgroundAccess(for: hostID)
+        XCTAssertEqual(
+            try storedAccessibility(),
+            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
+            "local-push-enabled hosts must be readable while the device is locked"
+        )
+        XCTAssertEqual(try store.secret(for: hostID), "token-bg", "the secret itself is untouched")
+
+        try store.enableBackgroundAccess(for: hostID) // idempotent
+        XCTAssertEqual(try storedAccessibility(), kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+    }
+
+    func testEnableBackgroundAccessWithoutCredentialIsANoOp() throws {
+        XCTAssertNoThrow(try store.enableBackgroundAccess(for: hostID), "no item -> nothing to upgrade")
+    }
+
+    func testSaveWithBackgroundAccessibilityStoresTheClassDirectly() throws {
+        try store.save(secret: "token-both", for: hostID, accessibility: .afterFirstUnlockThisDeviceOnly)
+        XCTAssertEqual(try storedAccessibility(), kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
+        XCTAssertEqual(try store.secret(for: hostID), "token-both")
+    }
+
+    private func storedAccessibility() throws -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: store.service,
+            kSecAttrAccount as String: hostID,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let attributes = result as? [String: Any] else { return nil }
+        return attributes[kSecAttrAccessible as String] as? String
     }
 }

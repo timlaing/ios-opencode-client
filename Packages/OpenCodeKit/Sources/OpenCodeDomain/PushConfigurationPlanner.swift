@@ -114,13 +114,16 @@ public enum PushConfigurationPlanner {
     /// SSID present in `current` but absent from `desired` is removed.
     /// Duplicate SSIDs in persisted preferences (stale/interrupted saves)
     /// are merged rather than trapping — the plan then rewrites or removes
-    /// the extras.
+    /// the extras. `followedSessions` is deduplicated and sorted once: its
+    /// app-side source is a Set, whose iteration order differs per launch
+    /// and must never count as a change (like `hostIDs` below).
     public static func plan(
         desired: [String: [String]],
         current: [ManagedPushConfiguration],
         revision: Int,
         followedSessions: [String] = []
     ) -> PushConfigurationPlan {
+        let followedSessions = Array(Set(followedSessions)).sorted()
         let currentBySSID = Dictionary(
             current.map { ($0.ssid, $0) },
             uniquingKeysWith: { first, _ in first }

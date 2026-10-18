@@ -68,6 +68,14 @@ final class OpenCodePushProvider: NEAppPushProvider {
     }
 
     override func handleTimerEvent() {
+        // A host whose observer could not start — most importantly a
+        // Keychain read that failed while the device was locked
+        // (errSecInteractionNotAllowed) — is retried here; startObservers
+        // skips hosts that already have a supervisor, so healthy streams
+        // are untouched.
+        if let configuration = try? decodeConfiguration() {
+            startObservers(for: configuration, generation: generation)
+        }
         for supervisor in supervisors.values {
             Task { await supervisor.handleTimerEvent() }
         }
@@ -140,7 +148,16 @@ final class OpenCodePushProvider: NEAppPushProvider {
         for host in hosts where configuration.hostIDs.contains(host.id.rawValue) {
             guard supervisors[host.id.rawValue] == nil else { continue } // never a second stream per host
             let secret: String?
-            do { secret = try credentials.secret(for: host.id.rawValue) } catch { secret = nil }
+            do {
+                secret = try credentials.secret(for: host.id.rawValue)
+            } catch {
+                // A Keychain READ failure (a locked device returns
+                // errSecInteractionNotAllowed) is not "no credential":
+                // leave this host unsupervised so handleTimerEvent retries
+                // it instead of logging a misleading absence.
+                logger.error("keychain read failed for host; observer deferred: \(String(describing: error))")
+                continue
+            }
             guard let secret else {
                 logger.warning("host has no stored credential; observer not started")
                 continue

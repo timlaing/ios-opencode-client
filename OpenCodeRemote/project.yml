@@ -35,7 +35,7 @@ targets:
       path: OpenCodeRemote/Info.plist
       properties:
         CFBundleDisplayName: OpenCode Client
-        NSCameraUsageDescription: Scan the pairing QR code printed by opencode pair on your host.
+        NSCameraUsageDescription: Scan the pairing QR code printed by opencode pair, and take photos to attach to your messages.
         UILaunchScreen: {}
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

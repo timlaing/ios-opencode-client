@@ -134,4 +134,41 @@ final class LocalPushConfigurationControllerTests: XCTestCase {
         XCTAssertEqual(adapter.saves.first?.hostIDs, ["host_b"])
         XCTAssertNil(controller.lastFailure, "the queued request runs after the failure and clears it")
     }
+
+    func testApplyEnablesBackgroundCredentialAccessForEnabledHosts() async throws {
+        let adapter = FakeAdapter()
+        var requests: [[String]] = []
+        let controller = LocalPushConfigurationController(
+            adapter: adapter,
+            settleDelay: 0,
+            enableBackgroundAccess: { requests.append($0) }
+        )
+
+        controller.reconcile(eligibility: eligibility())
+        try await waitUntil("apply finished") { adapter.loadCount >= 2 }
+
+        XCTAssertEqual(
+            requests.last,
+            ["host_a"],
+            "push-enabled hosts get their credentials upgraded for locked-device reads"
+        )
+    }
+
+    func testApplySkipsBackgroundAccessForDisabledHosts() async throws {
+        let adapter = FakeAdapter()
+        var requests: [[String]] = []
+        let controller = LocalPushConfigurationController(
+            adapter: adapter,
+            settleDelay: 0,
+            enableBackgroundAccess: { requests.append($0) }
+        )
+
+        controller.reconcile(eligibility: [
+            LocalPushHostEligibility(hostID: "host_a", enabled: true, hasCredential: true, ssids: ["Home"]),
+            LocalPushHostEligibility(hostID: "host_b", enabled: false, hasCredential: true, ssids: ["Home"]),
+        ])
+        try await waitUntil("apply finished") { adapter.loadCount >= 2 }
+
+        XCTAssertEqual(requests.last, ["host_a"], "a disabled host is never granted background access")
+    }
 }

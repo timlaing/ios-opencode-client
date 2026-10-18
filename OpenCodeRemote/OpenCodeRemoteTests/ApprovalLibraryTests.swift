@@ -452,6 +452,12 @@ final class ApprovalLibraryTests: XCTestCase {
         // Stop only once a tick has demonstrably landed.
         await waitUntil { !recorder.requests.isEmpty }
         library.stopPostSendWatch()
+        // Cancellation is cooperative: a tick that had already passed its
+        // guard when stop landed may still issue its request (the design
+        // accepts the in-flight call completing; the guards only prevent
+        // publishing). Drain that window before baselining, then assert
+        // NO further polls — a broken cancel still fails here.
+        try? await Task.sleep(nanoseconds: 50_000_000)
         let settled = recorder.requests.filter { $0.operationID == "session.permission.list" }.count
         try? await Task.sleep(nanoseconds: 100_000_000)
         let after = recorder.requests.filter { $0.operationID == "session.permission.list" }.count

@@ -134,4 +134,37 @@ final class PushConfigurationPlannerTests: XCTestCase {
         let payload = try JSONDecoder().decode(PushProviderConfiguration.self, from: Data(legacy.utf8))
         XCTAssertEqual(payload.followedSessions, [], "absence means nothing followed, not a decode failure")
     }
+
+    func testFollowedSessionSetOrderAndDuplicatesNeverCountAsAChange() {
+        let desired = ["Home": ["host_a"]]
+        let current = [ManagedPushConfiguration(
+            ssid: "Home",
+            hostIDs: ["host_a"],
+            revision: 1,
+            followedSessions: ["ses_a", "ses_b"]
+        )]
+
+        // The app-side source is a Set: iteration order differs per launch
+        // and duplicates are possible after merges. Neither may trigger a
+        // manager write.
+        let reordered = PushConfigurationPlanner.plan(
+            desired: desired,
+            current: current,
+            revision: 2,
+            followedSessions: ["ses_b", "ses_a", "ses_a"]
+        )
+        XCTAssertTrue(reordered.isEmpty, "Set-derived order/duplicates are not a change")
+
+        let changed = PushConfigurationPlanner.plan(
+            desired: desired,
+            current: current,
+            revision: 2,
+            followedSessions: ["ses_c", "ses_b"]
+        )
+        XCTAssertEqual(
+            changed.upserts.first?.followedSessions,
+            ["ses_b", "ses_c"],
+            "the stored payload is sorted and deduplicated, like hostIDs"
+        )
+    }
 }

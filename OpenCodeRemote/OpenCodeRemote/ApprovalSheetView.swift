@@ -65,10 +65,13 @@ struct ApprovalSheetView: View {
         }
         .onAppear { resetReplyState() }
         // Adopt the queue head only while nothing is pinned (first load).
-        // Once pinned, the entry advances solely through an accepted
-        // reply — a refresh that reshuffles the dock can never retarget
-        // the buttons at a request the user never saw.
-        .onChange(of: approvals.entries) { _, entries in
+        // `initial: true` because the sheet is presented only once requests
+        // are already pending: onChange's default skips that first value,
+        // which would leave `presented` nil and the body stuck on the
+        // loading state. Adoption still only ever fills an empty pin — a
+        // refresh that reshuffles the dock can never retarget the buttons
+        // at a request the user never saw.
+        .onChange(of: approvals.entries, initial: true) { _, entries in
             if presented == nil { presented = entries.first }
         }
     }

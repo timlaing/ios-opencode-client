@@ -2,13 +2,34 @@ import Foundation
 import Security
 
 /// Device-only Keychain storage for host credentials
-/// (docs/implementation-defaults.md): `WhenUnlockedThisDeviceOnly`, never
+/// (docs/implementation-defaults.md): `ThisDeviceOnly`, never
 /// iCloud-synced, never logged. Restoring to another device therefore requires
-/// re-pairing, by design. The access group shared with the local-push
-/// extension is added together with the app-push entitlement.
+/// re-pairing, by design. Foreground-only host credentials default to
+/// `WhenUnlockedThisDeviceOnly`; hosts with local-push/background access
+/// enabled are upgraded via `enableBackgroundAccess` so the extension can
+/// read them while the device is locked. The access group shared with the
+/// local-push extension is added together with the app-push entitlement.
 public struct KeychainCredentialStore: Sendable {
     public enum StoreError: Error, Equatable {
         case unexpectedStatus(OSStatus)
+    }
+
+    /// The `ThisDeviceOnly` accessibility classes the implementation
+    /// defaults permit for host credentials.
+    public enum Accessibility: Sendable, Equatable {
+        /// Foreground-only host credentials — the default.
+        case whenUnlockedThisDeviceOnly
+        /// Hosts with local-push/background-upload access enabled: the
+        /// extension may start while the device is locked, where a
+        /// `WhenUnlocked` item is unreadable (errSecInteractionNotAllowed).
+        case afterFirstUnlockThisDeviceOnly
+
+        var attribute: CFString {
+            switch self {
+            case .whenUnlockedThisDeviceOnly: return kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            case .afterFirstUnlockThisDeviceOnly: return kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            }
+        }
     }
 
     public var service: String
@@ -17,7 +38,11 @@ public struct KeychainCredentialStore: Sendable {
         self.service = service
     }
 
-    public func save(secret: String, for hostID: String) throws {
+    public func save(
+        secret: String,
+        for hostID: String,
+        accessibility: Accessibility = .whenUnlockedThisDeviceOnly
+    ) throws {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -25,7 +50,7 @@ public struct KeychainCredentialStore: Sendable {
         ]
         let attributes: [String: Any] = [
             kSecValueData as String: Data(secret.utf8),
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecAttrAccessible as String: accessibility.attribute,
         ]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
@@ -37,6 +62,25 @@ public struct KeychainCredentialStore: Sendable {
         } else {
             guard updateStatus == errSecSuccess else { throw StoreError.unexpectedStatus(updateStatus) }
         }
+    }
+
+    /// Upgrades an existing credential to `AfterFirstUnlockThisDeviceOnly`
+    /// — the docs-mandated class once local-push/background access is
+    /// enabled for the host — without touching the stored secret. A host
+    /// with no credential yet is a no-op: pairing saves it later, and the
+    /// enablement path re-runs on every reconcile.
+    public func enableBackgroundAccess(for hostID: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: hostID,
+        ]
+        let attributes: [String: Any] = [
+            kSecAttrAccessible as String: Accessibility.afterFirstUnlockThisDeviceOnly.attribute,
+        ]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound { return }
+        guard status == errSecSuccess else { throw StoreError.unexpectedStatus(status) }
     }
 
     /// The stored secret, or nil when the host has no credential on this

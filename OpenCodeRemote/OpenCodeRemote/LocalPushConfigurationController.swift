@@ -39,9 +39,22 @@ final class LocalPushConfigurationController {
     /// is the correct default until those flows exist.
     var followedSessions: [String] = []
 
-    init(adapter: PushManagerAdapter, settleDelay: TimeInterval = 0.5) {
+    /// Upgrades stored credentials for hosts that gained local-push access
+    /// to the docs-mandated background-readable class
+    /// (docs/implementation-defaults.md: AfterFirstUnlockThisDeviceOnly
+    /// once local-push access is enabled — the extension may start while
+    /// the device is locked). Injected so this controller stays free of
+    /// Keychain dependencies; the composition root wires the real store.
+    private let enableBackgroundAccess: ([String]) -> Void
+
+    init(
+        adapter: PushManagerAdapter,
+        settleDelay: TimeInterval = 0.5,
+        enableBackgroundAccess: @escaping ([String]) -> Void = { _ in }
+    ) {
         self.adapter = adapter
         self.settleDelay = settleDelay
+        self.enableBackgroundAccess = enableBackgroundAccess
     }
 
     /// Requests a reconciliation. Latest-wins coalescing: while an apply is
@@ -86,6 +99,16 @@ final class LocalPushConfigurationController {
         }
         for upsert in plan.upserts {
             try await adapter.save(upsert)
+        }
+        // Local-push access is now (or still) enabled for these hosts:
+        // their credentials must be readable while the device is locked
+        // (docs/implementation-defaults.md — AfterFirstUnlockThisDeviceOnly
+        // once background access is enabled). Runs on every apply so a
+        // re-pair that downgraded the class is healed; the store treats a
+        // missing credential as a no-op.
+        let enabledHostIDs = Set(eligibility.filter(\.enabled).map(\.hostID)).sorted()
+        if !enabledHostIDs.isEmpty {
+            enableBackgroundAccess(enabledHostIDs)
         }
         guard !plan.isEmpty else { return }
         // Adopt the settle delay before reloading: a successful save is not
