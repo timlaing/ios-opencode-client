@@ -28,6 +28,11 @@ struct ConversationView: View {
     /// composer; the detail sheet opens from it.
     @State private var approvals = ApprovalLibrary()
     @State private var showingApproval = false
+    /// W10 forms (S12): pending-question dock beside the approval dock
+    /// (docs/navigation-screens.md S08/S12); the detail sheet opens
+    /// from it.
+    @State private var forms = FormLibrary()
+    @State private var showingForm = false
     /// Preserved across failures — cleared ONLY on durable admission.
     @State private var draft = ""
     /// W08 attachments (S09): prepared per the web inline/staging rule;
@@ -49,6 +54,7 @@ struct ConversationView: View {
             transcriptArea
             banners
             approvalDock
+            formsDock
             composer
         }
         .navigationTitle(session.title ?? "Untitled Session")
@@ -121,6 +127,11 @@ struct ConversationView: View {
             // State is injected inside the sheet closure — the
             // presenter's environment does not reach sheets.
             ApprovalSheetView(host: host, session: session, approvals: approvals)
+        }
+        .sheet(isPresented: $showingForm) {
+            // State is injected inside the sheet closure — the
+            // presenter's environment does not reach sheets.
+            FormSheetView(host: host, forms: forms)
         }
         .sheet(isPresented: $showingTray) {
             // State is injected inside the sheet closure — the
@@ -197,19 +208,23 @@ struct ConversationView: View {
         .refreshable {
             await conversation.refresh(host: host, sessionID: session.id)
             await loadApprovals()
+            await loadForms()
         }
         .task {
             conversation.attach(hosts: library)
             selection.attach(hosts: library)
             attachments.attach(hosts: library)
             approvals.attach(hosts: library)
+            forms.attach(hosts: library)
             await openTranscript()
             await loadApprovals()
+            await loadForms()
         }
         .onDisappear {
             // A dismissed conversation stops watching — its dock and
             // attribution are gone; nothing polls on its behalf.
             approvals.stopPostSendWatch()
+            forms.stopPostSendWatch()
         }
     }
 
@@ -340,6 +355,66 @@ struct ConversationView: View {
         )
     }
 
+    /// S12 dock (W10): pending questions above the composer, with a
+    /// count when several exist and the owner session ID on linked
+    /// child entries. Opens the detail sheet — never answers anything
+    /// by itself.
+    @ViewBuilder private var formsDock: some View {
+        if forms.hasPending {
+            Button {
+                showingForm = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "questionmark.circle.fill")
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(forms.pendingCount > 1
+                            ? "\(forms.pendingCount) questions waiting"
+                            : "Question waiting")
+                            .font(.subheadline.weight(.semibold))
+                        if let first = forms.entries.first, first.isLinked {
+                            Text("Child session \(first.ownerSessionID)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(10)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal)
+            .accessibilityIdentifier("S12.dock")
+        }
+    }
+
+    /// Refresh-driven question reconciliation, mirroring approvals: the
+    /// sessions inventory contributes child attribution when it knows
+    /// the descendants. Loading also RECORDS the watch context (no
+    /// polling starts) so an answer re-opens the window the same way a
+    /// sent prompt does.
+    private func loadForms() async {
+        let childSessionIDs = sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
+        forms.recordWatchContext(host: host, sessionID: session.id, childSessionIDs: childSessionIDs)
+        await forms.load(host: host, sessionID: session.id, childSessionIDs: childSessionIDs)
+    }
+
+    /// The post-send question watch: the host raises a form mid-turn —
+    /// after `send` has already returned on durable admission — so the
+    /// dock polls on the bounded cadence until the question appears or
+    /// the window closes (live events replace this with W16).
+    private func startFormWatch() {
+        forms.startPostSendWatch(
+            host: host,
+            sessionID: session.id,
+            childSessionIDs: sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
+        )
+    }
+
     private var composer: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !attachments.drafts.isEmpty {
@@ -407,6 +482,8 @@ struct ConversationView: View {
                             // R2; live events replace this with W16).
                             await loadApprovals()
                             startApprovalWatch()
+                            await loadForms()
+                            startFormWatch()
                         }
                     }
                 } label: {
