@@ -154,9 +154,10 @@ struct ConversationView: View {
                 Task {
                     let text = draft
                     // The draft is cleared ONLY when admission is durable
-                    // (directly or reconciled) — a failure preserves it.
+                    // (directly or reconciled) AND the field still holds
+                    // what was sent — text typed DURING the send is kept.
                     if await conversation.send(host: host, sessionID: session.id, text: text) {
-                        draft = ""
+                        if draft == text { draft = "" }
                     }
                 }
             } label: {

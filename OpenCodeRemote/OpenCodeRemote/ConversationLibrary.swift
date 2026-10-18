@@ -55,6 +55,14 @@ final class ConversationLibrary {
     private(set) var inboxItems: [InboxItem] = []
     private(set) var inboxError: String?
     private(set) var isLoadingInbox = false
+    /// Stable ID of the last UNCONFIRMED submission, keyed to its exact
+    /// text — reused on retry so the server sees the duplicate (409) and
+    /// reconciliation finds it, never a fresh ID that double-admits.
+    private var pendingSubmission: (messageID: String, text: String)?
+    /// Admitted-but-not-yet-delivered projections, kept through refreshes
+    /// until the transcript itself contains them or the inbox no longer
+    /// lists them (cancelled elsewhere).
+    private var projectedPending: [String: SessionMessage] = [:]
 
     init(
         service: SessionHistoryService? = nil,
@@ -92,6 +100,9 @@ final class ConversationLibrary {
             hasMore = page.cursor?.next != nil
             loadedSessionID = sessionID
             error = nil
+            // A re-open must not erase an admission whose delivery the
+            // page does not cover yet.
+            carryProjected()
         } catch {
             if !Self.isSilent(error) { self.error = Self.message(for: error) }
         }
@@ -160,6 +171,12 @@ final class ConversationLibrary {
             }
             loadedSessionID = sessionID
             error = nil
+            // A projected-but-undelivered admission is NOT in the newest
+            // page yet: the merge must not erase it. It survives while
+            // the inbox still admits it; once the transcript contains it
+            // it's retired to the transcript's ownership.
+            await pruneProjected(host: host, sessionID: sessionID, credential: credential)
+            carryProjected()
         } catch {
             if !Self.isSilent(error) { self.error = Self.message(for: error) }
         }
@@ -202,13 +219,23 @@ final class ConversationLibrary {
         }
         isSending = true
         defer { isSending = false }
-        let messageID = Self.stableMessageID()
+        // The same draft retries under the SAME stable ID — a duplicate
+        // then gets 409 and is reconciled; only a different text earns a
+        // fresh ID.
+        let messageID: String
+        if let pending = pendingSubmission, pending.text == trimmed {
+            messageID = pending.messageID
+        } else {
+            messageID = Self.stableMessageID()
+        }
+        pendingSubmission = (messageID, trimmed)
         do {
             let item = try await promptService.prompt(
                 at: host.address, credential: credential, sessionID: sessionID,
                 text: trimmed, messageID: messageID, delivery: delivery
             )
             admit(item)
+            pendingSubmission = nil
             bannerError = nil
             notice = nil
             // Authoritative read follows admission — nothing is streamed
@@ -217,6 +244,7 @@ final class ConversationLibrary {
             return true
         } catch {
             if await reconcileAdmission(host: host, sessionID: sessionID, messageID: messageID, credential: credential) {
+                pendingSubmission = nil
                 bannerError = nil
                 return true
             }
@@ -241,7 +269,7 @@ final class ConversationLibrary {
             notice = interrupted ? "Stopped the active turn." : "Nothing was running."
             bannerError = nil
         } catch {
-            if !Self.isSilent(error) { bannerError = Self.sendErrorMessage(for: error) }
+            if !Self.isSilent(error) { bannerError = Self.stopErrorMessage(for: error) }
         }
     }
 
@@ -262,11 +290,38 @@ final class ConversationLibrary {
     }
 
     /// Projects an admitted user item into the transcript once; a later
-    /// refresh dedupes by the shared ID.
+    /// refresh dedupes by the shared ID. The projection is TRACKED until
+    /// delivery so an immediate refresh cannot erase the just-sent
+    /// message while the server still has it only in the inbox.
     private func admit(_ item: InboxItem) {
         guard let projected = item.projectedMessage else { return }
         guard !messages.contains(where: { $0.id == projected.id }) else { return }
         messages.append(projected)
+        projectedPending[projected.id] = projected
+    }
+
+    /// Re-attaches admitted-but-undelivered projections after a page
+    /// merge, retiring the ones the transcript now owns.
+    private func carryProjected() {
+        let delivered = projectedPending.keys.filter { id in messages.contains { $0.id == id } }
+        delivered.forEach { projectedPending.removeValue(forKey: $0) }
+        let stillMissing = projectedPending.values
+            .filter { projection in !messages.contains { $0.id == projection.id } }
+            .sorted { $0.time.created < $1.time.created }
+        messages.append(contentsOf: stillMissing)
+    }
+
+    /// Drops projections the server no longer admits (cancelled from the
+    /// inbox elsewhere). A failed inbox read KEEPS them — unverifiable is
+    /// not gone.
+    private func pruneProjected(host: OpenCodeDomain.Host, sessionID: String, credential: BasicCredential?) async {
+        guard !projectedPending.isEmpty else { return }
+        guard let admitted = try? await promptService.inbox(at: host.address, credential: credential, sessionID: sessionID) else {
+            return
+        }
+        let admittedIDs = Set(admitted.map(\.id))
+        let gone = projectedPending.keys.filter { !admittedIDs.contains($0) }
+        gone.forEach { projectedPending.removeValue(forKey: $0) }
     }
 
     // MARK: - Inbox (S09)
@@ -365,6 +420,18 @@ final class ConversationLibrary {
             return "Connection lost — your draft is kept. Retrying first re-checks the pending list."
         default:
             return "The message could not be sent. Your draft is kept."
+        }
+    }
+
+    /// Stop-specific failure wording — never send/draft language.
+    private static func stopErrorMessage(for error: Error) -> String {
+        switch error {
+        case TransportError.http(let status, _):
+            return "The host could not stop the turn (HTTP \(status))."
+        case TransportError.connectionFailed:
+            return "The host is unreachable — the turn may still be running."
+        default:
+            return "The turn could not be stopped."
         }
     }
 

@@ -504,6 +504,101 @@ final class ConversationLibraryTests: XCTestCase {
         XCTAssertNil(idle.bannerError)
     }
 
+    // MARK: - Sending retry + projection survival (R1 regressions)
+
+    func testRetryOfSameDraftReusesStableMessageID() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.prompt":
+                // First attempt: admitted server-side, but the response
+                // is lost. The retry must reuse the SAME stable ID.
+                let promptCount = recorder.requests.filter { $0.operationID == "session.prompt" }.count
+                if promptCount == 1 {
+                    throw TransportError.connectionFailed("dropped after admission")
+                }
+                let payload = recorder.requests.first { $0.operationID == "session.prompt" }?.body
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                let stableID = (payload?["id"] as? String) ?? "msg_unknown"
+                return Fixtures.response(#"{"data":\#(Fixtures.inboxUser(id: stableID, text: "hello", created: 1000))}"#)
+            case "session.inbox.list":
+                // #1 (attempt 1 reconciliation): nothing found. #2 (prune
+                // during attempt 2's refresh): the retry IS admitted.
+                let listCount = recorder.requests.filter { $0.operationID == "session.inbox.list" }.count
+                if listCount == 1 { return Fixtures.response(#"{"data":[]}"#) }
+                let payload = recorder.requests.first { $0.operationID == "session.prompt" }?.body
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                let stableID = (payload?["id"] as? String) ?? "msg_unknown"
+                return Fixtures.response(#"{"data":[\#(Fixtures.inboxUser(id: stableID, text: "hello", created: 1000))]}"#)
+            case "session.message.list":
+                return Fixtures.response(Fixtures.page([]))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        let first = await library.send(host: one, sessionID: "ses_a", text: "hello")
+        XCTAssertFalse(first, "precondition: attempt 1 could not be reconciled")
+
+        let retry = await library.send(host: one, sessionID: "ses_a", text: "hello")
+        XCTAssertTrue(retry)
+
+        let promptBodies = recorder.requests.filter { $0.operationID == "session.prompt" }
+            .compactMap { $0.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } }
+        XCTAssertEqual(promptBodies.count, 2)
+        XCTAssertEqual(
+            promptBodies[0]["id"] as? String, promptBodies[1]["id"] as? String,
+            "retrying the SAME draft reuses the stable ID so the server can 409-detect the duplicate"
+        )
+        XCTAssertEqual(library.messages.map(\.id).first, promptBodies[1]["id"] as? String)
+    }
+
+    func testProjectedMessageSurvivesRefreshUntilInboxNoLongerAdmitsIt() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.prompt":
+                return Fixtures.response(#"{"data":\#(Fixtures.inboxUser(id: "msg_p", text: "pending", created: 1000))}"#)
+            case "session.message.list":
+                // Delivery never happens — the transcript stays empty.
+                return Fixtures.response(Fixtures.page([]))
+            case "session.inbox.list":
+                // #1: still admitted (kept). #2: cancelled elsewhere (gone).
+                let listCount = recorder.requests.filter { $0.operationID == "session.inbox.list" }.count
+                let item = Fixtures.inboxUser(id: "msg_p", text: "pending", created: 1000)
+                return Fixtures.response(listCount == 1 ? #"{"data":[\#(item)]}"# : #"{"data":[]}"#)
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        let admitted = await library.send(host: one, sessionID: "ses_a", text: "pending")
+        XCTAssertTrue(admitted)
+        XCTAssertEqual(
+            library.messages.map(\.id), ["msg_p"],
+            "the just-sent message survives the immediate refresh while delivery is pending"
+        )
+
+        await library.refresh(host: one, sessionID: "ses_a")
+        XCTAssertTrue(
+            library.messages.isEmpty,
+            "a projection whose inbox item is gone (cancelled elsewhere) is dropped"
+        )
+    }
+
+    func testStopFailureUsesStopSpecificWording() async throws {
+        let library = conversation(recorder: Recorder()) { _ in
+            throw TransportError.http(status: 500, envelope: nil)
+        }
+
+        await library.stop(host: one, sessionID: "ses_a")
+
+        XCTAssertEqual(
+            library.bannerError, "The host could not stop the turn (HTTP 500).",
+            "stop failures never reuse send/draft wording"
+        )
+    }
+
     // MARK: - Inbox (S09)
 
     func testInboxLifecycleLoadDeliverCancel() async throws {
