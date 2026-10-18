@@ -1,5 +1,20 @@
 # OpenCode Remote for iOS
 
+[![License](https://img.shields.io/github/license/timlaing/ios-opencode-client)](LICENSE)
+
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=coverage)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=bugs)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+
 Product design and implementation guide for a native iPhone/iPad client that preserves as much OpenCode web functionality as possible.
 
 ## Product decisions
@@ -44,21 +59,21 @@ Product design and implementation guide for a native iPhone/iPad client that pre
 
 ## Documents
 
-| Document | Purpose |
-| --- | --- |
-| [App design and feature checklist](docs/app-design.md) | Review features, screens, native-view priorities, and staged web parity |
-| [Notifications and Cloudflare Worker design](docs/notifications.md) | Initial local push, local Live Activity limits, and the future stateless APNs relay |
+| Document                                                                              | Purpose                                                                                                                             |
+| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| [App design and feature checklist](docs/app-design.md)                                | Review features, screens, native-view priorities, and staged web parity                                                             |
+| [Notifications and Cloudflare Worker design](docs/notifications.md)                   | Initial local push, local Live Activity limits, and the future stateless APNs relay                                                 |
 | [Home Assistant-derived local push implementation](docs/local-push-implementation.md) | Pinned HA source map, manager/provider lifecycle, Wi-Fi grouping, controlled recovery, status/delivery, and native acceptance tests |
-| [Implementation guide](docs/implementation-guide.md) | Integration boundaries, build sequence, verification, and release criteria |
-| [Remaining implementation decisions](docs/implementation-decisions.md) | Web-derived solutions, native engineering choices, and separate verification dependencies |
-| [Implementation defaults and user controls](docs/implementation-defaults.md) | Selected storage/rendering/security/sync defaults, complete interactions, resource budgets, and configurable preferences |
-| [Concrete API contract](docs/api-contract.md) | Exact initial workflows, payloads, envelopes, event handling, errors, and known baseline gaps |
-| [Navigation and screen specification](docs/navigation-screens.md) | S01–S20 native screens, actions, layouts, navigation, restoration, and state handling |
-| [Generated route catalog](docs/api-route-catalog.md) | All 141 pinned operations with initial/later scope and synthetic mock coverage |
-| [Generated data and mock testing](docs/testing-mock.md) | Runnable reference mock, fixtures, scenarios, test commands, fidelity limits, and native acceptance cases |
-| [Package verification](docs/verification.md) | Passed contract/mock checks, reproducibility, and remaining real-host/device evidence |
-| [Design gaps and release decisions](docs/design-review.md) | Outstanding onboarding, security, compatibility, performance, and support work |
-| [Free app decision and earlier monetisation analysis](docs/monetisation.md) | Selected free model; earlier options retained as inactive reference |
+| [Implementation guide](docs/implementation-guide.md)                                  | Integration boundaries, build sequence, verification, and release criteria                                                          |
+| [Remaining implementation decisions](docs/implementation-decisions.md)                | Web-derived solutions, native engineering choices, and separate verification dependencies                                           |
+| [Implementation defaults and user controls](docs/implementation-defaults.md)          | Selected storage/rendering/security/sync defaults, complete interactions, resource budgets, and configurable preferences            |
+| [Concrete API contract](docs/api-contract.md)                                         | Exact initial workflows, payloads, envelopes, event handling, errors, and known baseline gaps                                       |
+| [Navigation and screen specification](docs/navigation-screens.md)                     | S01–S20 native screens, actions, layouts, navigation, restoration, and state handling                                               |
+| [Generated route catalog](docs/api-route-catalog.md)                                  | All 141 pinned operations with initial/later scope and synthetic mock coverage                                                      |
+| [Generated data and mock testing](docs/testing-mock.md)                               | Runnable reference mock, fixtures, scenarios, test commands, fidelity limits, and native acceptance cases                           |
+| [Package verification](docs/verification.md)                                          | Passed contract/mock checks, reproducibility, and remaining real-host/device evidence                                               |
+| [Design gaps and release decisions](docs/design-review.md)                            | Outstanding onboarding, security, compatibility, performance, and support work                                                      |
+| [Free app decision and earlier monetisation analysis](docs/monetisation.md)           | Selected free model; earlier options retained as inactive reference                                                                 |
 
 The commercial model is decided: completely free. Earlier monetisation analysis is reference material, not implementation scope. Future hosting costs still need an operating plan; no paid service has been authorised.
 
