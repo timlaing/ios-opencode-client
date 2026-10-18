@@ -263,6 +263,18 @@ struct FileViewerView: View {
     /// Text and Markdown: monospaced, line-numbered rows with within-file
     /// search and line navigation, grown only by Load More.
     private func textPreview(_ entry: FileSystemEntry) -> some View {
+        // The reader must CONTAIN the List it scrolls: scrollTo addresses
+        // scroll views inside the reader, so a reader placed inside a
+        // Section can never move the enclosing List (S13 line navigation).
+        ScrollViewReader { proxy in
+            // Captured so searched-line navigation can scroll after the line
+            // budget grows to include the target row.
+            fileList(for: entry)
+                .onAppear { scrollProxy = proxy }
+        }
+    }
+
+    private func fileList(for entry: FileSystemEntry) -> some View {
         List {
             previewBanner
             if openKind == .markdown {
@@ -316,13 +328,8 @@ struct FileViewerView: View {
             if isLoading, viewer.content == nil {
                 ProgressView("Reading…")
             } else {
-                ScrollViewReader { proxy in
-                    // Captured so searched-line navigation can scroll after
-                    // the line budget grows to include the target row.
-                    Color.clear.onAppear { scrollProxy = proxy }
-                    ForEach(Array(viewer.visibleLines().enumerated()), id: \.offset) { index, line in
-                        lineRow(number: index + 1, text: line)
-                    }
+                ForEach(Array(viewer.visibleLines().enumerated()), id: \.offset) { index, line in
+                    lineRow(number: index + 1, text: line)
                 }
                 if viewer.hasMore {
                     Button {
@@ -634,7 +641,14 @@ struct FileViewerView: View {
             let file = try await read(entry, range: nil)
             guard viewer.continuesCurrentEntity(file) else {
                 await open(entry, force: true)
-                return viewer.completeBytes != nil
+                // A ranged kind reopens at its initial range only; a file
+                // larger than that is still incomplete — report honestly
+                // instead of a silent no-op tap.
+                if viewer.completeBytes == nil {
+                    loadMoreError = "The file changed on the host. Try again to copy or share the new version."
+                    return false
+                }
+                return true
             }
             viewer.adopt(file)
             return true

@@ -439,9 +439,11 @@ struct SessionsView: View {
     }
 
     private func deleteMessage(for row: SessionsLibrary.SessionRow) -> String {
-        let children = sessions.sessionsByHost[row.host.id]?.filter {
-            $0.parentID == row.session.id
-        }.count ?? 0
+        // Every locally-known descendant goes with the session — the server
+        // deletes the whole subtree (SessionsLibrary.remove) — so the
+        // destructive confirmation must count all of them, not just direct
+        // children, or it undercounts a session with grandchildren.
+        let children = sessions.descendantSessionIDs(of: row.session.id, on: row.host.id).count
         let title = row.session.title ?? row.session.id
         if children > 0 {
             return "“\(title)” and \(children) child session\(children == 1 ? "" : "s") are deleted from the server. This cannot be undone."

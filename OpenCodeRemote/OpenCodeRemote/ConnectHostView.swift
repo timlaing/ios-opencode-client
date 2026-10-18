@@ -401,7 +401,7 @@ struct ConnectHostView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Group {
-                let field = TextField(placeholder, text: text, axis: .vertical)
+                let field = TextField(placeholder, text: text)
                     .textFieldStyle(.roundedBorder)
                     .autocorrectionDisabled()
                     .textInputAutocapitalization(.never)

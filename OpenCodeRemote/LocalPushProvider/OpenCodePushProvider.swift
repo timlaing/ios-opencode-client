@@ -129,7 +129,13 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 Task { await supervisor.stop() }
                 logger.info("stopped removed host observer")
             }
-            try prepareStores()
+            // Reopen only when missing: a configuration change must not
+            // build a second HostStore/NotificationLedger (two GRDB queues
+            // on one file) while running supervisors still deliver through
+            // the ledger captured when they were created.
+            if hostStore == nil || ledger == nil {
+                try prepareStores()
+            }
             startObservers(for: configuration, generation: generation)
             // Existing streams keep running; only their notification policy
             // diff (followed sessions) is refreshed.
