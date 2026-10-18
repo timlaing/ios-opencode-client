@@ -124,10 +124,18 @@ struct AttachmentTrayView: View {
                 Text("Uploading…").font(.caption).foregroundStyle(.secondary)
             }
         case .ready(let staged, _):
-            Label(staged ? "Ready (staged on host)" : "Ready (inline)",
-                  systemImage: "checkmark.circle")
-                .font(.caption)
-                .foregroundStyle(.green)
+            // A remote host reference is ready WITHOUT any upload — it must
+            // not read as "inline" content that was never sent.
+            if case .hostReference = draft.source {
+                Label("Referenced on host", systemImage: "link")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            } else {
+                Label(staged ? "Ready (staged on host)" : "Ready (inline)",
+                      systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
         case .failed(let message):
             Label(message, systemImage: "exclamationmark.triangle")
                 .font(.caption)
@@ -147,6 +155,10 @@ struct AttachmentTrayView: View {
     }
 
     private func sizeLabel(_ draft: AttachmentLibrary.Draft) -> String {
+        // A remote host reference downloads nothing, so its size is unknown
+        // by design — label it as a reference rather than showing a MIME type
+        // that would imply uploaded content.
+        if case .hostReference = draft.source { return "Host reference" }
         guard draft.byteCount > 0 else { return draft.mimeType }
         let size = draft.byteCount.formatted(.byteCount(style: .file))
         return "\(size) · \(draft.mimeType)"

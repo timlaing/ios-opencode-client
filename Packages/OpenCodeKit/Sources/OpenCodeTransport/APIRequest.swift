@@ -41,6 +41,10 @@ public struct APIRequest: Sendable, Equatable {
     /// the credential, and stored secrets must never ride along to a
     /// destination (docs/implementation-defaults.md trust rules).
     public var omitsCredential: Bool
+    /// Extra request headers layered over the transport's defaults — e.g.
+    /// `Range` for a progressive `fs.read`. Never used to override
+    /// `Authorization`, which is owned by `credential`/`omitsCredential`.
+    public var headers: [String: String]
 
     public init(
         operationID: String,
@@ -50,7 +54,8 @@ public struct APIRequest: Sendable, Equatable {
         body: Data? = nil,
         contentType: String? = nil,
         credential: BasicCredential? = nil,
-        omitsCredential: Bool = false
+        omitsCredential: Bool = false,
+        headers: [String: String] = [:]
     ) {
         self.operationID = operationID
         self.method = method
@@ -60,6 +65,7 @@ public struct APIRequest: Sendable, Equatable {
         self.contentType = contentType
         self.credential = credential
         self.omitsCredential = omitsCredential
+        self.headers = headers
     }
 
     public static func jsonBody<T: Encodable>(

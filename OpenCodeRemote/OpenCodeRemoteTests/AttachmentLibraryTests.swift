@@ -420,6 +420,53 @@ final class AttachmentLibraryTests: XCTestCase {
         XCTAssertEqual(library.readyAttachments().map(\.name), ["doc.txt"])
     }
 
+    // MARK: - S13 Attach-to-Draft
+
+    func testAddHostReferenceIsReadyAtOnceAndSendsNothing() {
+        let recorder = Recorder()
+        let library = makeLibrary(recorder: recorder)
+
+        library.addHostReference(hostAbsolutePath: "/srv/demo/src/main.swift", name: "main.swift")
+
+        XCTAssertEqual(library.drafts.count, 1)
+        XCTAssertEqual(library.drafts[0].name, "main.swift")
+        XCTAssertEqual(library.drafts[0].byteCount, 0, "no bytes are read — the bytes live on the host")
+        guard case .ready(let staged, let uri) = library.drafts[0].state else {
+            return XCTFail("a host reference must be ready immediately: \(library.drafts[0].state)")
+        }
+        XCTAssertFalse(staged, "nothing was staged or uploaded")
+        XCTAssertEqual(uri, "file:///srv/demo/src/main.swift", "host absolute path, percent-encoded")
+        guard case .hostReference(let source) = library.drafts[0].source else {
+            return XCTFail("source must record the host reference for re-routing honesty")
+        }
+        XCTAssertEqual(source, uri, "state and source carry the same reference")
+        XCTAssertTrue(recorder.requests.isEmpty, "attach must perform no request — the host resolves on admission")
+        XCTAssertFalse(library.hasPending, "an instantly-ready reference never gates Send")
+    }
+
+    // MARK: - S13 Attach-to-Draft
+
+    func testHostReferenceIsReadyImmediatelyWithoutTouchingTheHost() {
+        let recorder = Recorder()
+        let library = makeLibrary(recorder: recorder)
+
+        library.addHostReference(hostAbsolutePath: "/srv/demo/src/main.swift", name: "main.swift")
+
+        XCTAssertEqual(library.drafts.count, 1)
+        XCTAssertEqual(recorder.requests.isEmpty, true,
+                       "a host reference never reads, stages, or uploads — the host resolves it at admission")
+
+        let draft = library.drafts[0]
+        XCTAssertEqual(draft.name, "main.swift")
+        XCTAssertEqual(draft.byteCount, 0, "no bytes are read client-side")
+        XCTAssertEqual(draft.state, .ready(staged: false, uri: "file:///srv/demo/src/main.swift"),
+                       "immediately ready with a percent-escaped file: URI")
+        guard case .hostReference(let uri) = draft.source else {
+            return XCTFail("source must record the remote reference, not a local file")
+        }
+        XCTAssertEqual(uri, "file:///srv/demo/src/main.swift")
+    }
+
     // MARK: - Capability labels
 
     func testUnsupportedReasonFollowsModelInputCapabilities() {

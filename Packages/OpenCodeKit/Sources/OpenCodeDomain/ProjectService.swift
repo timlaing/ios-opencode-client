@@ -113,4 +113,65 @@ public struct ProjectService: Sendable {
             .decodedJSON(FileWriteResponse.self)
         return try await resolveLocation(at: host, credential: credential, directory: targetDirectory)
     }
+
+    /// W11 S13: reads a file's raw bytes. The payload is octet-stream, never
+    /// JSON, so it is extracted as bytes and never run through `decodedJSON`
+    /// (docs/api-contract.md W11). `range` asks for one HTTP byte range for
+    /// the progressive preview; a 206 answer reports `isPartial` plus the
+    /// total size parsed from `Content-Range: bytes a-b/total`, while a 200
+    /// answer is the whole file (`isPartial == false`). Errors — 404 for a
+    /// missing file, 416 for an unsatisfiable range, permission failures,
+    /// symlink resolution — propagate as the server's actual outcome;
+    /// nothing is synthesized.
+    public struct ReadFile: Sendable, Equatable {
+        public var bytes: Data
+        public var etag: String?
+        public var isPartial: Bool
+        /// Total file size from `Content-Range` (nil on an unranged 200,
+        /// where the payload itself is the whole file).
+        public var totalByteCount: Int?
+
+        public init(bytes: Data, etag: String?, isPartial: Bool = false, totalByteCount: Int? = nil) {
+            self.bytes = bytes
+            self.etag = etag
+            self.isPartial = isPartial
+            self.totalByteCount = totalByteCount
+        }
+    }
+
+    public func readFile(
+        at host: URL,
+        credential: BasicCredential?,
+        directory: String,
+        path: String,
+        range: String? = nil
+    ) async throws -> ReadFile {
+        let response = try await makeTransport(host)
+            .perform(W02Requests.readFile(
+                directory: directory, path: path, credential: credential, range: range
+            ))
+        // A 200 may legitimately carry an empty file (payload `.empty`);
+        // anything else must be the octet-stream body itself.
+        let data: Data
+        switch response.payload {
+        case .bytes(let bytes): data = bytes
+        case .empty: data = Data()
+        case .json(let bytes): data = bytes // a 2xx that claims JSON still IS the file's bytes
+        }
+        return ReadFile(
+            bytes: data,
+            etag: response.headers["ETag"],
+            isPartial: response.statusCode == 206,
+            totalByteCount: Self.totalByteCount(fromContentRange: response.headers["Content-Range"])
+        )
+    }
+
+    /// Parses the total out of `Content-Range: bytes <start>-<end>/<total>`
+    /// (or `bytes * /<total>`), the only place a ranged read learns the
+    /// file's real size. Unparseable → nil, never a guess.
+    static func totalByteCount(fromContentRange value: String?) -> Int? {
+        guard let value, let slash = value.lastIndex(of: "/") else { return nil }
+        let total = value[value.index(after: slash)...]
+        return Int(total)
+    }
 }

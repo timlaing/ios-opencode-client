@@ -196,4 +196,35 @@ public enum W02Requests {
             credential: credential
         )
     }
+
+    /// `GET /api/fs/read/<path>` — reads one file's raw bytes (W11 file
+    /// viewer). The 200 response is `application/octet-stream`, never a
+    /// JSON envelope, so the caller reads `APIResponse.Payload.bytes`
+    /// rather than `decodedJSON` (docs/api-contract.md W11). `path` is the
+    /// location-relative file path; each segment is percent-encoded
+    /// independently so spaces, Unicode and reserved characters survive
+    /// while `/` stays as path structure. `location[directory]` is the
+    /// reviewed location, encoded as a deep-object query like every other
+    /// location-scoped call (encoding rules).
+    ///
+    /// `range` is a single HTTP byte range (`bytes=0-1048575`) for the S13
+    /// progressive preview: the baseline handler supports ONE range and
+    /// answers 206 with `Content-Range: bytes a-b/total` (docs/api-contract.md
+    /// W11 — do not assume multipart ranges). A server that ignores `Range`
+    /// answers 200 with the whole file, which the caller treats as complete.
+    public static func readFile(
+        directory: String,
+        path: String,
+        credential: BasicCredential? = nil,
+        range: String? = nil
+    ) -> APIRequest {
+        APIRequest(
+            operationID: "fs.read",
+            method: .get,
+            path: "/api/fs/read/" + path,
+            query: [QueryPair(key: "location[directory]", value: directory)],
+            credential: credential,
+            headers: range.map { ["Range": $0] } ?? [:]
+        )
+    }
 }

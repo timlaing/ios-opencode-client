@@ -29,6 +29,12 @@ public struct URLSessionTransport: OpenCodeTransport {
         if let contentType = request.contentType {
             urlRequest.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
+        // Extra request headers (e.g. `Range` for a progressive fs.read).
+        // `Authorization` is skipped: it is owned by the credential fields
+        // above and must never be overridable from here.
+        for (field, value) in request.headers where field.caseInsensitiveCompare("Authorization") != .orderedSame {
+            urlRequest.setValue(value, forHTTPHeaderField: field)
+        }
         urlRequest.httpBody = request.body
 
         let data: Data

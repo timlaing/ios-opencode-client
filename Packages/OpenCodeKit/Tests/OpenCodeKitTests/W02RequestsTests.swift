@@ -53,4 +53,22 @@ final class W02RequestsTests: XCTestCase {
         let url = try request.url(baseURL: base).absoluteString
         XCTAssertTrue(url.contains("path=%2Fsrv%2Fdemo%2Fnew%2Fopencode.jsonc"))
     }
+
+    // MARK: - W11 ranged read (S13 progressive preview)
+
+    func testReadFileCarriesSingleRangeHeaderWhenAsked() {
+        let request = W02Requests.readFile(
+            directory: "/srv/demo",
+            path: "big.log",
+            range: "bytes=0-1048575"
+        )
+        XCTAssertEqual(request.operationID, "fs.read")
+        XCTAssertEqual(request.method, .get)
+        XCTAssertEqual(request.headers["Range"], "bytes=0-1048575", "ONE range, exactly as asked")
+    }
+
+    func testReadFileOmitsRangeHeaderWhenUnranged() {
+        let request = W02Requests.readFile(directory: "/srv/demo", path: "README.md")
+        XCTAssertTrue(request.headers.isEmpty, "an unranged read asks for the whole file — no Range header")
+    }
 }

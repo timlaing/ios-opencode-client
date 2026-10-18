@@ -92,6 +92,103 @@ final class ProjectServiceTests: XCTestCase {
         XCTAssertEqual(entries, [FileSystemEntry(path: "main.py", type: .file)])
     }
 
+    // MARK: - W11 fs.read (S13 file viewer)
+
+    func testReadFileReturnsOctetStreamBytesAndETag() async throws {
+        let recorder = Recorder()
+        let content = Data("# Hello\n".utf8)
+        let response = APIResponse(
+            statusCode: 200,
+            headers: ["ETag": "\"abc123\""],
+            payload: .bytes(content)
+        )
+        let file = try await service([
+            "fs.read": .success(response),
+        ], recorder: recorder).readFile(at: host, credential: credential, directory: "/srv/demo", path: "README.md")
+
+        XCTAssertEqual(file.bytes, content, "200 is octet-stream — decoded as raw bytes, never JSON")
+        XCTAssertEqual(file.etag, "\"abc123\"", "the server's ETag is surfaced for If-None-Match revalidation")
+
+        let request = recorder.requests.first
+        XCTAssertEqual(request?.operationID, "fs.read")
+        XCTAssertEqual(request?.method, .get)
+        XCTAssertEqual(request?.path, "/api/fs/read/README.md")
+        XCTAssertEqual(request?.query, [QueryPair(key: "location[directory]", value: "/srv/demo")])
+    }
+
+    func testReadFileEscapesPathSegments() async throws {
+        let recorder = Recorder()
+        let response = APIResponse(statusCode: 200, payload: .bytes(Data()))
+        _ = try await service([
+            "fs.read": .success(response),
+        ], recorder: recorder).readFile(at: host, credential: credential, directory: "/srv/demo", path: "src/my file.py")
+
+        // `path` is stored raw; each segment is percent-encoded when the URL
+        // is built, so a space can never be mistaken for a separator.
+        let request = try XCTUnwrap(recorder.requests.first)
+        XCTAssertEqual(request.path, "/api/fs/read/src/my file.py")
+        XCTAssertEqual(request.query, [QueryPair(key: "location[directory]", value: "/srv/demo")])
+        let url = try request.url(baseURL: host).absoluteString
+        XCTAssertTrue(url.contains("/api/fs/read/src/my%20file.py"), url)
+    }
+
+    func testReadFilePartial206ParsesContentRangeTotalAndKeepsETag() async throws {
+        let recorder = Recorder()
+        let slice = Data("alpha\nbeta".utf8)
+        let response = APIResponse(
+            statusCode: 206,
+            headers: ["ETag": "W/\"v1\"", "Content-Range": "bytes 0-9/4096"],
+            payload: .bytes(slice)
+        )
+        let file = try await service([
+            "fs.read": .success(response),
+        ], recorder: recorder).readFile(
+            at: host, credential: credential,
+            directory: "/srv/demo", path: "big.txt",
+            range: "bytes=0-9"
+        )
+
+        XCTAssertEqual(file.bytes, slice, "the slice is the body, never re-decoded")
+        XCTAssertTrue(file.isPartial, "206 means a prefix — the preview must ask for more")
+        XCTAssertEqual(file.totalByteCount, 4096, "Content-Range's total is the only size a range reveals")
+        XCTAssertEqual(file.etag, "W/\"v1\"", "revalidation survives partial reads")
+        XCTAssertEqual(recorder.requests.first?.headers["Range"], "bytes=0-9", "the Range rides on the request")
+    }
+
+    func testReadFileWholeFile200IsCompleteWithoutContentRange() async throws {
+        let response = APIResponse(
+            statusCode: 200,
+            headers: ["ETag": "\"abc123\""],
+            payload: .bytes(Data("the whole file".utf8))
+        )
+        let file = try await service([
+            "fs.read": .success(response),
+        ]).readFile(at: host, credential: credential, directory: "/srv/demo", path: "small.txt")
+
+        XCTAssertFalse(file.isPartial, "a 200 is the whole file even if a Range was asked for")
+        XCTAssertNil(file.totalByteCount, "no Content-Range on a 200 — the payload itself is the size")
+        XCTAssertEqual(file.bytes, Data("the whole file".utf8))
+    }
+
+    func testReadFileEmptyBodyIsAnEmptyFileNotAnError() async throws {
+        let response = APIResponse(statusCode: 200, payload: .empty)
+        let file = try await service([
+            "fs.read": .success(response),
+        ]).readFile(at: host, credential: credential, directory: "/srv/demo", path: "empty.txt")
+
+        XCTAssertEqual(file.bytes, Data(), "an empty file is zero bytes, not a failure")
+        XCTAssertFalse(file.isPartial)
+    }
+
+    func testTotalByteCountParserAcceptsExactAndStarFormsOnly() {
+        XCTAssertEqual(ProjectService.totalByteCount(fromContentRange: "bytes 0-9/4096"), 4096)
+        XCTAssertEqual(ProjectService.totalByteCount(fromContentRange: "bytes */4096"), 4096)
+        XCTAssertNil(ProjectService.totalByteCount(fromContentRange: "bytes 0-9/*"),
+                     "an unknown total stays unknown — never a guess")
+        XCTAssertNil(ProjectService.totalByteCount(fromContentRange: "garbage"))
+        XCTAssertNil(ProjectService.totalByteCount(fromContentRange: nil))
+    }
+
     // MARK: - New Project (write then re-resolve)
 
     func testCreateProjectWritesConfigThenResolvesNewDirectory() async throws {

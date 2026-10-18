@@ -44,6 +44,10 @@ final class AttachmentLibrary {
             case file(url: URL)
             case photo(PhotosPickerItem)
             case prepared(data: Data, mimeType: String)
+            /// S13 Attach-to-Draft: a remote host path referenced by a
+            /// `file:` URI. The bytes live on the host — never downloaded,
+            /// staged, or re-uploaded here (docs/api-contract.md W11).
+            case hostReference(uri: String)
         }
 
         let id = UUID()
@@ -131,6 +135,24 @@ final class AttachmentLibrary {
             drafts.append(draft)
             loadThenPrepare(draftID: draft.id, host: host)
         }
+    }
+
+    /// S13 Attach-to-Draft: adds a draft that is immediately `.ready` with a
+    /// remote `file:` reference. No bytes are read, staged, or uploaded — the
+    /// host resolves the path itself when the prompt is admitted. It never
+    /// sends; the caller returns to the existing draft (docs/api-contract.md
+    /// W11, navigation-screens.md S13).
+    func addHostReference(hostAbsolutePath: String, name: String) {
+        let uri = AttachmentRouter.fileURI(hostAbsolutePath: hostAbsolutePath)
+        let draft = Draft(
+            name: name,
+            mimeType: "application/octet-stream", // the host resolves the real type
+            byteCount: 0,
+            state: .ready(staged: false, uri: uri),
+            source: .hostReference(uri: uri),
+            isPhoto: false
+        )
+        drafts.append(draft)
     }
 
     func addFiles(_ urls: [URL], host: OpenCodeDomain.Host) {
@@ -386,6 +408,11 @@ final class AttachmentLibrary {
             return (data, MimeType.sniff(data))
         case .prepared(let data, let mimeType):
             return (data, mimeType)
+        case .hostReference:
+            // A remote reference is never read here — the host resolves the
+            // path when the prompt is admitted. Reaching this path would be a
+            // routing bug, so fail honestly rather than invent bytes.
+            throw CocoaError(.fileWriteInvalidFileName)
         }
     }
 

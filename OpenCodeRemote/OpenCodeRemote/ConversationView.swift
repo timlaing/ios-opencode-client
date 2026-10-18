@@ -42,6 +42,9 @@ struct ConversationView: View {
     @State private var showingCamera = false
     @State private var showingFileImporter = false
     @State private var photoSelection: [PhotosPickerItem] = []
+    /// W11 Files inspector (S13): read-only tree + preview over the
+    /// session's workspace; opens from the trailing toolbar button.
+    @State private var showingFiles = false
     /// Which queued confirmation is on screen. The library's queue is
     /// the source of truth; the sequencer gives each question its own
     /// presentation cycle (SwiftUI ignores presented-data swaps on a
@@ -83,6 +86,14 @@ struct ConversationView: View {
                     Label("Active Context", systemImage: "square.stack.3d.up")
                 }
                 .accessibilityIdentifier("S08.context")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingFiles = true
+                } label: {
+                    Label("Files", systemImage: "folder")
+                }
+                .accessibilityIdentifier("S13.files")
             }
         }
         .sheet(isPresented: $showingSelection) {
@@ -139,6 +150,31 @@ struct ConversationView: View {
             AttachmentTrayView(
                 attachments: attachments, host: host, inputCapabilities: inputCapabilities
             )
+        }
+        .sheet(isPresented: $showingFiles) {
+            // State is injected inside the sheet closure — the
+            // presenter's environment does not reach sheets. The viewer
+            // starts at the session's workspace location and hands the
+            // existing draft a remote `file:` reference on Attach.
+            if let directory = session.location?.directory {
+                FileViewerView(
+                    host: host,
+                    credential: library.credential(for: host.id),
+                    startDirectory: directory
+                ) { hostAbsolutePath in
+                    attachments.addHostReference(
+                        hostAbsolutePath: hostAbsolutePath,
+                        name: (hostAbsolutePath as NSString).lastPathComponent
+                    )
+                    showingFiles = false
+                }
+            } else {
+                ContentUnavailableView(
+                    "No Workspace Location",
+                    systemImage: "questionmark.folder",
+                    description: Text("This session has no workspace directory, so its files cannot be browsed.")
+                )
+            }
         }
         .fullScreenCover(isPresented: $showingCamera) {
             CameraPickerView { image in
