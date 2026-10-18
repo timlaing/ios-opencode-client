@@ -81,11 +81,16 @@ final class SelectionLibrary {
         credentialProvider = { [weak hosts] id in hosts?.credential(for: id) }
     }
 
-    /// Loads both inventories and the host default, seeded with the
-    /// session's CURRENT selection so checkmarks appear immediately.
-    /// The snapshot seeds a (host, session) pair only ONCE: a confirmed
-    /// switch (or an earlier seed) is remembered under that identity and
-    /// always beats the immutable, possibly-stale snapshot.
+    /// Loads the host's inventories, seeded with the session's CURRENT
+    /// selection so checkmarks appear immediately. The snapshot seeds a
+    /// (host, session) pair only ONCE: a confirmed switch (or an earlier
+    /// seed) is remembered under that identity and always beats the
+    /// immutable, possibly-stale snapshot.
+    ///
+    /// A load that another host's load supersedes mid-flight writes
+    /// NOTHING — its late results, errors and busy flag belong to the
+    /// host it started with (`inventoriesHostID` is the identity each
+    /// write is checked against).
     func load(host: OpenCodeDomain.Host, session: Session) async {
         let key = Self.key(hostID: host.id, sessionID: session.id)
         if let known = confirmedBySession[key] {
@@ -113,39 +118,66 @@ final class SelectionLibrary {
         isLoading = true
         error = nil
         notice = nil
-        defer { isLoading = false }
+        defer {
+            // A superseded load must not clear the CURRENT load's busy
+            // flag — the active host still owns the fetches in flight.
+            if inventoriesHostID == host.id {
+                isLoading = false
+            }
+        }
 
+        // Every result and failure is host-identity checked: a late
+        // response from a superseded load must not land under the host
+        // that is now active.
         var failures: [String] = []
         do {
-            models = try await service.models(at: host.address, credential: credential)
+            let fetched = try await service.models(at: host.address, credential: credential)
+            if inventoriesHostID == host.id { models = fetched }
         } catch {
-            if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
+            if inventoriesHostID == host.id, !Self.isSilent(error) {
+                failures.append(Self.message(for: error))
+            }
         }
         do {
-            defaultModel = try await service.defaultModel(at: host.address, credential: credential)
+            let fetched = try await service.defaultModel(at: host.address, credential: credential)
+            if inventoriesHostID == host.id { defaultModel = fetched }
         } catch {
-            if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
+            if inventoriesHostID == host.id, !Self.isSilent(error) {
+                failures.append(Self.message(for: error))
+            }
         }
         do {
-            agents = try await service.agents(at: host.address, credential: credential)
+            let fetched = try await service.agents(at: host.address, credential: credential)
+            if inventoriesHostID == host.id { agents = fetched }
         } catch {
-            if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
+            if inventoriesHostID == host.id, !Self.isSilent(error) {
+                failures.append(Self.message(for: error))
+            }
         }
         do {
-            commands = try await actionService.commands(at: host.address, credential: credential)
+            let fetched = try await actionService.commands(at: host.address, credential: credential)
+            if inventoriesHostID == host.id { commands = fetched }
         } catch {
-            if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
+            if inventoriesHostID == host.id, !Self.isSilent(error) {
+                failures.append(Self.message(for: error))
+            }
         }
         do {
-            skills = try await actionService.skills(at: host.address, credential: credential)
+            let fetched = try await actionService.skills(at: host.address, credential: credential)
+            if inventoriesHostID == host.id { skills = fetched }
         } catch {
-            if !Self.isSilent(error) { failures.append(Self.message(for: error)) }
+            if inventoriesHostID == host.id, !Self.isSilent(error) {
+                failures.append(Self.message(for: error))
+            }
         }
-        // One host, one problem: collapse duplicate messages (e.g. three
-        // identical connection failures) while preserving first order.
-        var seen = Set<String>()
-        let unique = failures.filter { seen.insert($0).inserted }
-        error = unique.isEmpty ? nil : unique.joined(separator: " ")
+        if inventoriesHostID == host.id {
+            // One host, one problem: collapse duplicate messages (e.g.
+            // three identical connection failures) preserving first
+            // order. A superseded load contributes nothing.
+            var seen = Set<String>()
+            let unique = failures.filter { seen.insert($0).inserted }
+            error = unique.isEmpty ? nil : unique.joined(separator: " ")
+        }
     }
 
     /// Switches the session's model for subsequent turns. Returns true

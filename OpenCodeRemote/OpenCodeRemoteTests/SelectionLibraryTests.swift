@@ -28,11 +28,14 @@ final class SelectionLibraryTests: XCTestCase {
 
         static let modelsList = located("[\(modelJSON)]")
 
+        static let otherModelJSON = #"{"id":"other-code","modelID":"other-code","providerID":"other","name":"Other Code","capabilities":{"tools":true,"input":["text"],"output":["text"]},"variants":[{"id":"fast"}],"time":{"released":0},"cost":[],"status":"active","enabled":true,"limit":{"context":1000,"output":500}}"#
+
         static let agentsList = #"[{"id":"build","name":"Build","description":"Dev agent","mode":"primary","hidden":false},{"id":"reviewer","name":"Reviewer","mode":"subagent","hidden":false},{"id":"secret","name":"Secret","mode":"primary","hidden":true}]"#
 
         static let commandsList = #"[{"name":"review","description":"Synthetic review command"}]"#
         static let skillsList = #"[{"id":"demo-review","name":"Demo review","path":"/srv/demo/.opencode/skills/review.md","content":"Review generated files only."}]"#
-        static let emptyActions = located("[]")
+        /// A bare JSON array — callers wrap it with `located(…)`.
+        static let emptyActions = "[]"
 
         static let sessionJSON = #"{"id":"ses_a","title":"Demo","agent":"plan","model":{"id":"old-model","providerID":"other"}}"#
         static let sessionList = #"{"data":[\#(sessionJSON)]}"#
@@ -737,5 +740,95 @@ final class SelectionLibraryTests: XCTestCase {
             recorder.requests.filter { $0.operationID == "session.command" }.count, 1,
             "the command reached the host exactly once"
         )
+    }
+
+    func testALateHostLoadNeverTouchesTheNewHostsInventories() async throws {
+        let modelGate = Latch()
+        let commandGate = Latch()
+        let recorder = Recorder()
+
+        // Host A: its model list fails and its command list succeeds —
+        // but BOTH answers arrive only AFTER host B has taken over.
+        let handlerA: @Sendable (APIRequest) throws -> APIResponse = { request in
+            switch request.operationID {
+            case "model.list":
+                throw TransportError.http(status: 500, envelope: nil)
+            case "model.default":
+                throw TransportError.http(status: 503, envelope: nil)
+            case "agent.list":
+                return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list":
+                return Fixtures.response(Fixtures.located(Fixtures.commandsList))
+            case "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.skillsList))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        // Host B: a different model, and NO commands or skills.
+        let handlerB: @Sendable (APIRequest) throws -> APIResponse = { request in
+            switch request.operationID {
+            case "model.list":
+                return Fixtures.response(Fixtures.located("[\(Fixtures.otherModelJSON)]"))
+            case "model.default":
+                throw TransportError.http(status: 503, envelope: nil)
+            case "agent.list":
+                return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+            case "command.list", "skill.list":
+                return Fixtures.response(Fixtures.located(Fixtures.emptyActions))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        // The stub transport sees the REAL target URL, so each host is
+        // served its own inventory — and host A's late calls are held.
+        let stub: @Sendable (URL) -> StubTransport = { url in
+            let isHostA = url.host == "host_one.local"
+            return StubTransport(
+                recorder: recorder,
+                handler: isHostA ? handlerA : handlerB,
+                hook: { request in
+                    guard isHostA else { return }
+                    if request.operationID == "model.list" { await modelGate.wait() }
+                    if request.operationID == "command.list" { await commandGate.wait() }
+                }
+            )
+        }
+        let library = SelectionLibrary(
+            service: ModelAgentService(makeTransport: { url in stub(url) }),
+            actionService: SkillCommandService(makeTransport: { url in stub(url) }),
+            credentialProvider: { id in
+                ["host_one": BasicCredential(secret: "t"), "host_two": BasicCredential(secret: "t")][id.rawValue] ?? nil
+            }
+        )
+
+        // Host A's load starts and is held on its first request…
+        let loadA = Task { await library.load(host: one, session: seededSession) }
+        var arrived = false
+        for _ in 0..<100 {
+            if await modelGate.isArrived { arrived = true; break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertTrue(arrived, "host A's load must reach the transport")
+
+        // …host B loads fully while A is still in flight…
+        await library.load(host: two, session: seededSession)
+        XCTAssertEqual(library.models.map(\.id), ["other-code"], "precondition: B's model")
+        XCTAssertTrue(library.commands.isEmpty)
+        XCTAssertNil(library.error, "B's own load succeeds — any later error can only be A's late answer")
+
+        // …then A's superseded answers arrive: they must change nothing.
+        await modelGate.signal()
+        await commandGate.signal()
+        await loadA.value
+
+        XCTAssertEqual(library.models.map(\.id), ["other-code"],
+                       "A's late model failure never lands under B")
+        XCTAssertTrue(library.commands.isEmpty,
+                      "A's late command list never populates B's picker")
+        XCTAssertTrue(library.skills.isEmpty,
+                      "A's late skill list never populates B's picker")
+        XCTAssertNil(library.error, "A's late HTTP 500 must not surface under B")
+        XCTAssertFalse(library.isLoading, "the superseded load never clears the busy flag")
     }
 }
