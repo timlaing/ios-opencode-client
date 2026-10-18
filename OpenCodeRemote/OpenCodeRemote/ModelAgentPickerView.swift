@@ -23,6 +23,13 @@ struct ModelAgentPickerView: View {
     var conversation: ConversationLibrary?
 
     @State private var query = ""
+    /// A tapped command collects arguments before it runs:
+    /// `Command.Info` exposes no metadata about whether a command needs
+    /// text, so the field is always offered (empty stays valid for
+    /// template commands) instead of assuming `""` is what the user
+    /// meant.
+    @State private var pendingCommand: CommandInfo?
+    @State private var commandText = ""
 
     private var term: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -146,8 +153,37 @@ struct ModelAgentPickerView: View {
             }
         }
         .searchable(text: $query, prompt: "Search models, agents, actions")
+        .alert(
+            "Run Command",
+            isPresented: Binding(
+                get: { pendingCommand != nil },
+                set: { if !$0 { pendingCommand = nil } }
+            ),
+            presenting: pendingCommand
+        ) { command in
+            TextField("Arguments (optional)", text: $commandText)
+            Button("Cancel", role: .cancel) {}
+            Button("Run") { runCommand(command) }
+        } message: { command in
+            Text("Runs /\(command.name) on the host. Arguments are sent as its text.")
+        }
         .task {
             await selection.load(host: host, session: session)
+        }
+    }
+
+    private func runCommand(_ command: CommandInfo) {
+        let text = commandText
+        commandText = ""
+        Task {
+            let sent = await selection.invokeCommand(
+                host: host, sessionID: session.id, command: command, text: text
+            )
+            if sent {
+                // The effect lands host-side — only an authoritative
+                // transcript re-read may show it.
+                await conversation?.refresh(host: host, sessionID: session.id)
+            }
         }
     }
 
@@ -255,16 +291,11 @@ struct ModelAgentPickerView: View {
 
     private func commandRow(_ command: CommandInfo) -> some View {
         Button {
-            Task {
-                let sent = await selection.invokeCommand(
-                    host: host, sessionID: session.id, command: command
-                )
-                if sent {
-                    // The effect lands host-side — only an authoritative
-                    // transcript re-read may show it.
-                    await conversation?.refresh(host: host, sessionID: session.id)
-                }
-            }
+            // Collect arguments first — see `pendingCommand`. Running is
+            // 204-authoritative and only an authoritative re-read may
+            // show the result (handled in `runCommand`).
+            commandText = ""
+            pendingCommand = command
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text("/\(command.name)")

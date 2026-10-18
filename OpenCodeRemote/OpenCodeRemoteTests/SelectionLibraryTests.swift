@@ -73,6 +73,21 @@ final class SelectionLibraryTests: XCTestCase {
         var isArrived: Bool { hasArrived }
     }
 
+    /// A lock-guarded toggle so a handler can change behavior between
+    /// two sequential loads (host change).
+    private final class Phase: @unchecked Sendable {
+        private let lock = NSLock()
+        private var failing = false
+
+        func failActionLists() {
+            lock.lock(); failing = true; lock.unlock()
+        }
+
+        var actionListsFail: Bool {
+            lock.lock(); defer { lock.unlock() }; return failing
+        }
+    }
+
     private struct StubTransport: OpenCodeTransport {
         var recorder: Recorder
         var handler: @Sendable (APIRequest) throws -> APIResponse
@@ -558,7 +573,8 @@ final class SelectionLibraryTests: XCTestCase {
     // MARK: - Commands and skills (W07)
 
     func testInvocationsAre204Authoritative() async throws {
-        let library = makeLibrary(recorder: Recorder()) { request in
+        let recorder = Recorder()
+        let library = makeLibrary(recorder: recorder) { request in
             switch request.operationID {
             case "session.command", "experimental.session.skill":
                 return Fixtures.empty()
@@ -573,11 +589,21 @@ final class SelectionLibraryTests: XCTestCase {
             content: "Review generated files only."
         )
 
-        let sent = await library.invokeCommand(host: one, sessionID: "ses_a", command: command)
+        let sent = await library.invokeCommand(
+            host: one, sessionID: "ses_a", command: command, text: "generated files"
+        )
         XCTAssertTrue(sent, "204 is the authority — nothing rendered locally")
         XCTAssertNil(library.error)
         XCTAssertNotNil(library.notice, "a confirmed invocation is acknowledged")
         XCTAssertFalse(library.isInvoking)
+
+        // The user's arguments reach the request body verbatim.
+        let request = try XCTUnwrap(recorder.requests.first { $0.operationID == "session.command" })
+        let payload = request.body.flatMap {
+            try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+        }
+        XCTAssertEqual(payload?["text"] as? String, "generated files")
+        XCTAssertEqual(payload?["name"] as? String, "review")
 
         let activated = await library.activateSkill(host: one, sessionID: "ses_a", skill: skill)
         XCTAssertTrue(activated)
@@ -622,5 +648,94 @@ final class SelectionLibraryTests: XCTestCase {
 
         XCTAssertFalse(sent)
         XCTAssertEqual(library.error, "Re-pair this host to run commands or skills.")
+    }
+
+    func testActionInventoriesDoNotSurviveAHostChange() async throws {
+        let phase = Phase()
+        let library = makeLibrary(
+            recorder: Recorder(),
+            handler: { request in
+                switch request.operationID {
+                case "model.list":
+                    return Fixtures.response(Fixtures.located("[\(Fixtures.modelJSON)]"))
+                case "model.default":
+                    return Fixtures.response(Fixtures.located(Fixtures.modelJSON))
+                case "agent.list":
+                    return Fixtures.response(Fixtures.located(Fixtures.agentsList))
+                case "command.list":
+                    if phase.actionListsFail {
+                        throw TransportError.http(status: 500, envelope: nil)
+                    }
+                    return Fixtures.response(Fixtures.located(Fixtures.commandsList))
+                case "skill.list":
+                    if phase.actionListsFail {
+                        throw TransportError.http(status: 500, envelope: nil)
+                    }
+                    return Fixtures.response(Fixtures.located(Fixtures.skillsList))
+                default:
+                    throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+                }
+            },
+            credentials: [
+                "host_one": BasicCredential(secret: "t"),
+                "host_two": BasicCredential(secret: "t"),
+            ]
+        )
+
+        // Host A's actions load.
+        await library.load(host: one, session: seededSession)
+        XCTAssertEqual(library.commands.map(\.id), ["review"], "precondition")
+        XCTAssertEqual(library.skills.map(\.id), ["demo-review"])
+
+        // Moving to host B where BOTH action lists fail: host A's rows
+        // must not survive under B — empty plus the error is the honest
+        // state.
+        phase.failActionLists()
+        await library.load(host: two, session: seededSession)
+
+        XCTAssertTrue(library.commands.isEmpty, "host A's commands never appear under host B")
+        XCTAssertTrue(library.skills.isEmpty, "host A's skills never appear under host B")
+        XCTAssertEqual(library.error, "The host rejected the request (HTTP 500).")
+        XCTAssertEqual(library.models.map(\.id), ["demo-code"],
+                       "inventories that succeed still populate for the new host")
+    }
+
+    func testSecondInvocationIsRejectedWhileOneIsInFlight() async throws {
+        let latch = Latch()
+        let recorder = Recorder()
+        let library = makeLibrary(recorder: recorder, handler: { request in
+            switch request.operationID {
+            case "session.command", "experimental.session.skill":
+                return Fixtures.empty()
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }, hook: { request in
+            if request.operationID == "session.command" {
+                await latch.wait()
+            }
+        })
+        let command = CommandInfo(name: "review")
+
+        // Hold the first invocation at the transport…
+        let first = Task { await library.invokeCommand(host: one, sessionID: "ses_a", command: command) }
+        var arrived = false
+        for _ in 0..<100 {
+            if await latch.isArrived { arrived = true; break }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertTrue(arrived, "the first invocation must reach the transport")
+
+        // …a second tap while it is in flight must NOT run the command.
+        let second = await library.invokeCommand(host: one, sessionID: "ses_a", command: command)
+        XCTAssertFalse(second, "a second invocation is rejected while one is in flight")
+
+        await latch.signal()
+        let sent = await first.value
+        XCTAssertTrue(sent, "the held invocation still completes authoritatively")
+        XCTAssertEqual(
+            recorder.requests.filter { $0.operationID == "session.command" }.count, 1,
+            "the command reached the host exactly once"
+        )
     }
 }

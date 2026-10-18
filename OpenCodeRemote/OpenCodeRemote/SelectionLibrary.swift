@@ -58,6 +58,11 @@ final class SelectionLibrary {
     /// paint its result into the wrong (currently visible) transcript.
     private var activeHostID: HostID?
     private var activeSessionID: String?
+    /// Which host the visible inventories belong to. On a host change
+    /// they are cleared BEFORE any request, so a partial failure can
+    /// never leave the previous host's models/agents/commands/skills
+    /// offered under the new host.
+    private var inventoriesHostID: HostID?
 
     init(
         service: ModelAgentService? = nil,
@@ -93,6 +98,14 @@ final class SelectionLibrary {
         }
         activeHostID = host.id
         activeSessionID = session.id
+        if inventoriesHostID != host.id {
+            models = []
+            agents = []
+            defaultModel = nil
+            commands = []
+            skills = []
+            inventoriesHostID = host.id
+        }
         guard let credential = credentialProvider?(host.id) else {
             error = "Re-pair this host to choose a model or agent."
             return
@@ -199,15 +212,19 @@ final class SelectionLibrary {
 
     // MARK: - Command and skill invocation (W07)
 
-    /// Invokes a discovered command in a session (empty argument text —
-    /// template commands expand host-side). Returns true ONLY on the
-    /// host's 204: nothing executes or renders locally, so the caller
-    /// re-reads the transcript for the effect.
+    /// Invokes a discovered command in a session. Returns true ONLY on
+    /// the host's 204: nothing executes or renders locally, so the
+    /// caller re-reads the transcript for the effect. `text` carries the
+    /// user's arguments (sent even when empty — schema-required; template
+    /// commands expand host-side). A second invocation while one is in
+    /// flight is rejected: a double tap must not run a command twice.
     func invokeCommand(
         host: OpenCodeDomain.Host,
         sessionID: String,
-        command: CommandInfo
+        command: CommandInfo,
+        text: String = ""
     ) async -> Bool {
+        guard !isInvoking else { return false }
         guard let credential = credentialProvider?(host.id) else {
             error = "Re-pair this host to run commands or skills."
             return false
@@ -218,7 +235,7 @@ final class SelectionLibrary {
         do {
             try await actionService.invokeCommand(
                 at: host.address, credential: credential,
-                sessionID: sessionID, name: command.name, text: ""
+                sessionID: sessionID, name: command.name, text: text
             )
             error = nil
             notice = "Command “\(command.name)” sent — the host works it into the conversation."
@@ -230,12 +247,14 @@ final class SelectionLibrary {
     }
 
     /// Activates a discovered skill for subsequent turns; same
-    /// 204-is-the-only-authority rule as `invokeCommand`.
+    /// 204-is-the-only-authority rule as `invokeCommand`, including the
+    /// single-flight guard (activation is a real host-side effect too).
     func activateSkill(
         host: OpenCodeDomain.Host,
         sessionID: String,
         skill: SkillInfo
     ) async -> Bool {
+        guard !isInvoking else { return false }
         guard let credential = credentialProvider?(host.id) else {
             error = "Re-pair this host to run commands or skills."
             return false
