@@ -446,7 +446,16 @@ struct ConnectHostView: View {
             case .unreachable:
                 return "The host couldn't be reached at that address. Check the address, port, and that the server is running."
             case .rejectedCredential:
-                return "The host rejected the credential. Check the password and try again."
+                // The pairing-code flow typed NO password: its credential is
+                // the redeemed token, which redeemAndConnect REUSES on retry
+                // — a rejected token can never succeed, so "try again" is a
+                // dead end; only a fresh code recovers (the old one is spent
+                // anyway). `review != nil` separates the flows exactly: scan
+                // AND paste both set it; the manual password fields render
+                // only when it is nil.
+                return review != nil
+                    ? "The host rejected the paired credential. Generate a new code with opencode pair."
+                    : "The host rejected the credential. Check the password and try again."
             case .unsupportedUsername:
                 return "OpenCode hosts use the username \"opencode\" — change it back and retry."
             case .invalidResponse:
