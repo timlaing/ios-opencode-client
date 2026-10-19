@@ -196,18 +196,22 @@ final class ProjectServiceTests: XCTestCase {
         let writeBody = #"{"location":{"directory":"/srv/demo"},"data":{"path":"/srv/demo/Telescope/opencode.jsonc"}}"#
         let resolveBody = #"{"directory":"/srv/demo/Telescope","project":{"id":"project_telescope","directory":"/srv/demo/Telescope","canonical":"/srv/demo/Telescope"}}"#
         let resolved = try await service([
+            "fs.list": .success(json(#"{"location":{"directory":"/srv/demo"},"data":[]}"#)),
             "experimental.fs.write": .success(json(writeBody)),
             "location.get": .success(json(resolveBody)),
         ], recorder: recorder).createProject(at: host, credential: credential, parentDirectory: "/srv/demo", name: "  Telescope  ")
 
         XCTAssertEqual(resolved.project.id, "project_telescope")
-        XCTAssertEqual(recorder.requests.map(\.operationID), ["experimental.fs.write", "location.get"],
-                       "config first, then the server-verified re-resolve")
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["fs.list", "experimental.fs.write", "location.get"],
+                       "check the target first, then config, then the server-verified re-resolve")
+        XCTAssertEqual(recorder.requests[0].query,
+                       [QueryPair(key: "location[directory]", value: "/srv/demo"), QueryPair(key: "path", value: ".")],
+                       "the check lists the parent itself")
 
-        let write = recorder.requests[0]
+        let write = recorder.requests[1]
         XCTAssertEqual(write.body, Data("{}".utf8), "an empty valid JSONC object")
         XCTAssertTrue(write.query.contains(QueryPair(key: "path", value: "/srv/demo/Telescope/opencode.jsonc")))
-        XCTAssertEqual(recorder.requests[1].query.first,
+        XCTAssertEqual(recorder.requests[2].query.first,
                        QueryPair(key: "location[directory]", value: "/srv/demo/Telescope"),
                        "re-resolve uses the target directory")
     }
@@ -231,25 +235,49 @@ final class ProjectServiceTests: XCTestCase {
         let writeBody = #"{"location":{"directory":"/"},"data":{"path":"/Telescope/opencode.jsonc"}}"#
         let resolveBody = #"{"directory":"/Telescope","project":{"id":"p","directory":"/Telescope","canonical":"/Telescope"}}"#
         let resolved = try await service([
+            "fs.list": .success(json(#"{"location":{"directory":"/"},"data":[]}"#)),
             "experimental.fs.write": .success(json(writeBody)),
             "location.get": .success(json(resolveBody)),
         ], recorder: recorder).createProject(at: host, credential: credential, parentDirectory: "/", name: "Telescope")
 
         XCTAssertEqual(resolved.directory, "/Telescope")
         XCTAssertEqual(
-            recorder.requests[0].query.first,
+            recorder.requests[1].query.first,
             QueryPair(key: "location[directory]", value: "/"),
             "root parent must stay \"/\", never the empty string"
         )
         XCTAssertEqual(
-            recorder.requests[0].query.last,
+            recorder.requests[1].query.last,
             QueryPair(key: "path", value: "/Telescope/opencode.jsonc"),
             "no double slash when joining at the root"
         )
         XCTAssertEqual(
-            recorder.requests[1].query.first,
+            recorder.requests[2].query.first,
             QueryPair(key: "location[directory]", value: "/Telescope")
         )
+    }
+
+    func testCreateProjectRejectsExistingTargetBeforeAnyWrite() async throws {
+        let recorder = Recorder()
+        let listBody = #"{"location":{"directory":"/srv/demo"},"data":[{"path":"Telescope","type":"directory"}]}"#
+        let writeBody = #"{"location":{"directory":"/srv/demo"},"data":{"path":"/srv/demo/Telescope/opencode.jsonc"}}"#
+        let service = service([
+            "fs.list": .success(json(listBody)),
+            "experimental.fs.write": .success(json(writeBody)), // never reached
+        ], recorder: recorder)
+
+        do {
+            _ = try await service.createProject(
+                at: host, credential: credential, parentDirectory: "/srv/demo", name: "  Telescope  "
+            )
+            XCTFail("an existing target must be rejected before any write")
+        } catch let error as ProjectService.CreateProjectError {
+            XCTAssertEqual(error, .alreadyExists("/srv/demo/Telescope"),
+                           "the conflict names the exact target the write would have hit")
+        }
+
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["fs.list"],
+                       "an existing project's opencode.jsonc is never replaced with {}")
     }
 
     func testFolderNameAcceptsOrdinaryUnicode() throws {

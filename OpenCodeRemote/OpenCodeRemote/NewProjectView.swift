@@ -162,6 +162,8 @@ struct NewProjectView: View {
 
     private static func message(for error: Error) -> String {
         switch error {
+        case ProjectService.CreateProjectError.alreadyExists(let directory):
+            return "“\(directory)” already exists on the host. Open it instead of overwriting it."
         case TransportError.http(let status, _):
             return "The host could not create the project (HTTP \(status)). If the folder already exists, open it instead of overwriting it."
         case TransportError.connectionFailed:

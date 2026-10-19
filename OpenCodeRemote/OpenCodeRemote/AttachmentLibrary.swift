@@ -225,6 +225,14 @@ final class AttachmentLibrary {
               drafts[index].isPhoto, drafts[index].photoMode != mode else { return }
         drafts[index].photoMode = mode
         guard drafts[index].state != .uploading else { return } // never re-route mid-flight
+        // Supersede the preparation in flight: loadThenPrepare REPLACES
+        // the task reference, so without this both tasks run — each
+        // reaches start(...) and route(...) and prepares the same photo
+        // twice; for a staged photo that is also TWO uploads, and the
+        // routeToken check discards only the first upload's result, not
+        // its transfer.
+        drafts[index].task?.cancel()
+        drafts[index].routeToken = nil
         drafts[index].state = .preparing
         loadThenPrepare(draftID: draftID, host: host)
     }
@@ -286,9 +294,16 @@ final class AttachmentLibrary {
         drafts[index].task = Task { [weak self] in
             do {
                 let (bytes, sniffed) = try await Self.loadBytes(from: source)
+                // A cancel can land while loading (remove, cancel, or a
+                // setPhotoCopy superseding this draft) and loadBytes never
+                // observes it itself — Data(contentsOf:) is synchronous and
+                // loadTransferable does not contract for cancellation — so
+                // without this check the cancelled task would still run the
+                // whole pipeline and route (duplicating a staged upload).
+                try Task.checkCancellation()
                 self?.start(draftID: draftID, host: host, bytes: bytes, mimeType: sniffed)
             } catch is CancellationError {
-                // remove/cancel already decided the draft's fate.
+                // remove/cancel/setPhotoCopy already decided the draft's fate.
             } catch {
                 self?.fail(draftID, message: Self.readErrorMessage(for: error))
             }
