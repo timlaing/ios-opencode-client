@@ -59,6 +59,12 @@ final class IntegrationsLibraryTests: XCTestCase {
         /// the negative — a toggle can only ever write the FIRST
         /// document under the directory (the editable one).
         static let configNegativeElsewhere = #"[{"type":"document","path":"/srv/demo/opencode.jsonc","info":{"plugins":[]}},{"type":"document","path":"/srv/demo/.opencode/workspace.jsonc","info":{"plugins":["-demo.audit"]}}]"#
+
+        /// Two id-less plugins of the SAME constant-keyed kind: their
+        /// synthetic runtime keys must not collide, or the second
+        /// overwrites the first row and the inspector hides a
+        /// host-provided plugin.
+        static let pluginListTwoBuiltins = #"{"location":{"directory":"/srv/demo"},"data":[{"source":{"type":"builtin"},"features":{"server":true},"state":{"status":"active"}},{"source":{"type":"builtin"},"features":{"tui":true},"state":{"status":"active"}}]}"#
     }
 
     /// Captured-var mutation is not allowed in `@Sendable` handlers.
@@ -114,11 +120,11 @@ final class IntegrationsLibraryTests: XCTestCase {
 
     private struct StubTransport: OpenCodeTransport {
         var recorder: Recorder
-        var handler: @Sendable (APIRequest) throws -> APIResponse
+        var handler: @Sendable (APIRequest) async throws -> APIResponse
 
         func perform(_ request: APIRequest) async throws -> APIResponse {
             recorder.record(request)
-            return try handler(request)
+            return try await handler(request)
         }
 
         func events() -> AsyncThrowingStream<OpenCodeEvent, Error> {
@@ -138,7 +144,7 @@ final class IntegrationsLibraryTests: XCTestCase {
 
     private func library(
         recorder: Recorder,
-        handler: @escaping @Sendable (APIRequest) throws -> APIResponse,
+        handler: @escaping @Sendable (APIRequest) async throws -> APIResponse,
         credentials: [String: BasicCredential?] = ["host_one": BasicCredential(secret: "t")]
     ) -> IntegrationsLibrary {
         library(recorder: recorder, handler: handler) { id in credentials[id.rawValue] ?? nil }
@@ -146,7 +152,7 @@ final class IntegrationsLibraryTests: XCTestCase {
 
     private func library(
         recorder: Recorder,
-        handler: @escaping @Sendable (APIRequest) throws -> APIResponse,
+        handler: @escaping @Sendable (APIRequest) async throws -> APIResponse,
         provider: @escaping @MainActor (HostID) -> BasicCredential?
     ) -> IntegrationsLibrary {
         let stub: @Sendable () -> StubTransport = { StubTransport(recorder: recorder, handler: handler) }
@@ -633,6 +639,98 @@ final class IntegrationsLibraryTests: XCTestCase {
         XCTAssertEqual(
             row?.canEnable, false,
             "planToggle writes only /srv/demo/opencode.jsonc — it could never remove this directive"
+        )
+    }
+
+    // MARK: - Load generation vs the authoritative readback
+
+    /// A refresh held open across the write must not overwrite the
+    /// readback: the readback supersedes in-flight loads, so the
+    /// stale pre-write inventory lands nowhere (the user would
+    /// otherwise see "Declared, not running" rows beside a
+    /// "Saved — the host reloaded the location." notice).
+    func testReadbackSupersedesAnInFlightLoad() async throws {
+        let recorder = Recorder()
+        let runtimeCalls = Counter()
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list":
+                let call = runtimeCalls.next() // 0-based
+                if call == 1 {
+                    // The in-flight refresh: held open across the write
+                    // and the readback, then answering with its
+                    // PRE-write snapshot.
+                    enteredContinuation.yield()
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    return Fixtures.response(Fixtures.emptyPluginList)
+                }
+                // Call 0 (the completed first load) is pre-write; every
+                // later call — the readback among them — is post-write.
+                return Fixtures.response(
+                    call == 0 ? Fixtures.emptyPluginList : Fixtures.pluginList
+                )
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write", "location.reload":
+                return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        // The refresh starts and is held at its inventory read.
+        let stale = Task { await library.load(host: one, sessionDirectory: "/srv/demo") }
+        var iterator = entered.makeAsyncIterator()
+        _ = await iterator.next()
+
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+        await library.applyToggle(host: one, plan: plan)
+
+        // The superseded refresh finishes LAST, carrying pre-write rows.
+        await stale.value
+
+        let row = library.rows.first { $0.id == "demo.audit" }
+        XCTAssertNotNil(
+            row?.runtime,
+            "the superseded refresh's pre-write inventory must not overwrite the readback"
+        )
+        XCTAssertEqual(row?.statusText, "Active")
+        XCTAssertEqual(library.notice, "Saved — the host reloaded the location.")
+    }
+
+    // MARK: - Synthetic runtime keys
+
+    /// Id-less plugins of the same constant kind share ONE runtimeKey:
+    /// without per-occurrence keys the second built-in overwrites the
+    /// first row and the inspector (S16: show the effective inventory)
+    /// hides a host-provided plugin.
+    func testTwoIdlessBuiltinsAreTwoRows() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginListTwoBuiltins)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertEqual(
+            library.rows.count, 4,
+            "declared demo.audit + old.pkg, plus one row per id-less built-in"
+        )
+        let synthetic = library.rows.filter { $0.id.hasPrefix("built-in") }
+        XCTAssertEqual(
+            synthetic.map(\.id), ["built-in", "built-in#2"],
+            "the first occurrence keeps the base key (declared joins); later ones uniquify"
+        )
+        XCTAssertEqual(synthetic.first?.runtime?.features.server, true)
+        XCTAssertEqual(
+            synthetic.last?.runtime?.features.tui, true,
+            "each row carries ITS plugin's runtime facts"
         )
     }
 }

@@ -95,7 +95,10 @@ final class PluginDirectivesTests: XCTestCase {
         // Whitespace OUTSIDE the removed chunk is never reflowed — the
         // splice removes exactly the directive and its owning comma, so
         // the spaces that flanked the gap remain (both results are
-        // valid JSON; byte-surgery, not reformatting).
+        // valid JSON; byte-surgery, not reformatting). For the LAST
+        // element the separating comma and the directive go together
+        // and the trivia between the previous comma and the directive
+        // stays the same way.
         XCTAssertEqual(
             PluginDirectives.enable("b", in: #"{"plugins":["a", "-b", "c"]}"#)?.resultingText,
             #"{"plugins":["a",  "c"]}"#
@@ -106,11 +109,23 @@ final class PluginDirectivesTests: XCTestCase {
         )
         XCTAssertEqual(
             PluginDirectives.enable("b", in: #"{"plugins":["a", "-b"]}"#)?.resultingText,
-            #"{"plugins":["a"]}"#
+            #"{"plugins":["a" ]}"#
         )
         XCTAssertEqual(
             PluginDirectives.enable("b", in: #"{"plugins":["-b"]}"#)?.resultingText,
             #"{"plugins":[]}"#
+        )
+    }
+
+    /// The comment between the previous element's comma and the removed
+    /// LAST directive documents the PREVIOUS element — the splice drops
+    /// only the separating comma and the directive's own chunk, so it
+    /// survives (docs/api-contract.md W14: comments are preserved).
+    func testEnableKeepsThePreviousElementsCommentWhenRemovingTheLastDirective() {
+        let raw = "{\"plugins\": [\n    \"a.pkg\", // keep me\n    \"-b.pkg\"\n]}"
+        XCTAssertEqual(
+            PluginDirectives.enable("b.pkg", in: raw)?.resultingText,
+            "{\"plugins\": [\n    \"a.pkg\" // keep me\n    ]}"
         )
     }
 
@@ -145,7 +160,7 @@ final class PluginDirectivesTests: XCTestCase {
         XCTAssertNil(PluginDirectives.enable("weird", in: raw))
         XCTAssertEqual(
             PluginDirectives.enable("b", in: raw)?.resultingText,
-            #"{"plugins":["we\"ird"]}"#
+            #"{"plugins":["we\"ird" ]}"#
         )
         // A JSONC trailing comma on a LONE element travels with it —
         // leaving it behind would write "[,]".
@@ -162,7 +177,10 @@ final class PluginDirectivesTests: XCTestCase {
     /// A target may carry JSON-significant characters (a local plugin
     /// path can): the splice escapes them so the written document
     /// stays valid, and enable's DECODED comparison recognises the
-    /// escaped directive again — disable/enable round-trips.
+    /// escaped directive again — disable/enable round-trips. The
+    /// directive itself comes and goes exactly; like every removal,
+    /// the trivia between the previous comma and the directive stays
+    /// (the one surviving space is valid JSONC).
     func testDisableEscapesSpecialCharactersInTheTarget() {
         let quotedTarget = #"C:\plug"ins"#
         let edit = PluginDirectives.disable(quotedTarget, in: #"{"plugins":["x"]}"#)
@@ -172,7 +190,7 @@ final class PluginDirectivesTests: XCTestCase {
         )
         XCTAssertEqual(
             PluginDirectives.enable(quotedTarget, in: edit?.resultingText ?? "")?.resultingText,
-            #"{"plugins":["x"]}"#
+            #"{"plugins":["x" ]}"#
         )
 
         let newlineTarget = "a\nb"
@@ -181,7 +199,7 @@ final class PluginDirectivesTests: XCTestCase {
         XCTAssertEqual(
             PluginDirectives.enable(newlineTarget, in: newlineEdit?.resultingText ?? "")?
                 .resultingText,
-            #"{"plugins":["x"]}"#
+            #"{"plugins":["x" ]}"#
         )
 
         // A target carrying a CRLF grapheme (one Character) escapes as
@@ -192,7 +210,7 @@ final class PluginDirectivesTests: XCTestCase {
         XCTAssertEqual(
             PluginDirectives.enable(crlfTarget, in: crlfEdit?.resultingText ?? "")?
                 .resultingText,
-            #"{"plugins":["x"]}"#
+            #"{"plugins":["x" ]}"#
         )
     }
 
@@ -212,12 +230,12 @@ final class PluginDirectivesTests: XCTestCase {
             PluginDirectives.disable("c.pkg", in: crlf)?.resultingText,
             "// Windows endings\r\n{\"plugins\": [\r\n    \"a.pkg\", // keep\r\n    \"-b.pkg\"\r\n, \"-c.pkg\"]}"
         )
-        // Enable removes the LAST element as preceding-comma-through-
-        // chunk-end — the span owns the comment and CRLF between them;
-        // the leading comment survives.
+        // Enable removes the LAST element as separating-comma plus its
+        // own chunk — the previous element's trailing comment sits
+        // between them and SURVIVES; the file's leading comment too.
         XCTAssertEqual(
             PluginDirectives.enable("b.pkg", in: crlf)?.resultingText,
-            "// Windows endings\r\n{\"plugins\": [\r\n    \"a.pkg\"]}"
+            "// Windows endings\r\n{\"plugins\": [\r\n    \"a.pkg\" // keep\r\n    ]}"
         )
     }
 }

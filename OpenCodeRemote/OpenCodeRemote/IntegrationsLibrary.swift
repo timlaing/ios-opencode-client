@@ -281,6 +281,10 @@ final class IntegrationsLibrary {
             // guard, and a silently skipped readback would claim an
             // outcome from stale rows.
             do {
+                // Supersede any in-flight load: its pre-write snapshot
+                // must not overwrite this authoritative readback (nor
+                // prune `unreflected` against rows that predate it).
+                loadGeneration += 1
                 let inventory = try await fetchInventory(
                     host: host, credential: credential, sessionDirectory: plan.directory
                 )
@@ -404,6 +408,22 @@ final class IntegrationsLibrary {
                rows[target] != nil {
                 key = target
             }
+            // Id-less built-in/SDK plugins share ONE constant key: give
+            // every occurrence after the first its own, or two host
+            // built-ins collapse into a single row (the later one
+            // overwrites the earlier runtime) and the inspector hides
+            // part of the effective inventory. The first occurrence
+            // keeps the base key so a declared directive with that
+            // name still joins.
+            if isConstantRuntimeKey(plugin), rows[key]?.runtime != nil {
+                var occurrence = 2
+                var candidate = "\(key)#\(occurrence)"
+                while rows[candidate]?.runtime != nil {
+                    occurrence += 1
+                    candidate = "\(key)#\(occurrence)"
+                }
+                key = candidate
+            }
             var row = row(for: key)
             row.runtime = plugin
             if row.target == nil {
@@ -447,6 +467,18 @@ final class IntegrationsLibrary {
         if case .local(let path) = plugin.source { return path }
         if case .unknown(let type) = plugin.source { return "unknown:\(type)" }
         return plugin.source == .builtin ? "built-in" : "sdk"
+    }
+
+    /// Whether `runtimeKey` fell through to a CONSTANT (the plugin has
+    /// no id, package target, local path or unknown type to name it
+    /// by) — only such keys need per-occurrence uniquification; keys
+    /// from id/target/path are join keys and stay untouched.
+    private static func isConstantRuntimeKey(_ plugin: PluginInfo) -> Bool {
+        if plugin.id != nil { return false }
+        switch plugin.source {
+        case .builtin, .sdk: return true
+        case .package, .local, .unknown: return false
+        }
     }
 
     private static func isProtectedSource(_ source: PluginInfo.Source) -> Bool {

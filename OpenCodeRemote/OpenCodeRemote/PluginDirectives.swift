@@ -79,13 +79,15 @@ enum PluginDirectives {
     }
 
     /// Enables `target` by REMOVING its `"-target"` directive, keeping
-    /// every neighbouring directive and comment. ONE contiguous splice
-    /// per case (Swift indices are invalidated by mutation): a
-    /// comma-closed element loses its chunk AND its closing comma; the
-    /// LAST element instead loses its PRECEDING comma through its chunk
-    /// end; a lone element empties the array. Trivia trailing the
-    /// removed directive travels with it. Returns nil when no negative
-    /// directive exists or there is no plugins array.
+    /// every neighbouring directive and comment. The removal is
+    /// computed WITHOUT mutating indices first: a comma-closed element
+    /// loses its chunk AND its closing comma as one contiguous range;
+    /// the LAST element loses its separating comma and its own chunk,
+    /// built from substrings so the trivia between them (the previous
+    /// element's trailing comment) survives; a lone element empties
+    /// the array, taking a JSONC trailing comma with it. Trivia
+    /// trailing the removed directive travels with it. Returns nil
+    /// when no negative directive exists or there is no plugins array.
     static func enable(_ target: String, in raw: String) -> Edit? {
         guard let array = pluginsArray(in: raw) else { return nil }
         let negative = "-" + target
@@ -101,9 +103,18 @@ enum PluginDirectives {
             guard comma < raw.endIndex, raw[comma] == "," else { return nil }
             removeRange = element.range.lowerBound..<raw.index(after: comma)
         } else if index > 0 {
-            // Last element: remove the preceding comma through the
-            // chunk end.
-            removeRange = array.elements[index - 1].range.upperBound..<element.range.upperBound
+            // Last element: drop ONLY the separating comma and the
+            // directive's own chunk — trivia between them (the previous
+            // element's trailing comment) stays. Substrings keep every
+            // index valid across both removals.
+            let comma = array.elements[index - 1].range.upperBound
+            guard comma < raw.endIndex, raw[comma] == "," else { return nil }
+            return Edit(
+                resultingText: String(raw[..<comma])
+                    + String(raw[raw.index(after: comma)..<element.range.lowerBound])
+                    + String(raw[element.range.upperBound...]),
+                description: "Remove \"\(negative)\" from the plugins directives."
+            )
         } else {
             // The array's only element — a JSONC trailing comma travels
             // with it (a leftover "," would make the written document
