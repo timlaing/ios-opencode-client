@@ -343,6 +343,37 @@ final class SessionsLibraryTests: XCTestCase {
         XCTAssertFalse(library.hasMoreByHost[one.id] ?? true, "second page had no further cursor")
     }
 
+    func testLoadMoreFailureIsNotAListingFailure() async throws {
+        let one = host("host_one", name: "Mock A")
+        let failMore = Flag(false)
+        let library = library { request in
+            if Fixtures.query(request)["cursor"] == "opaque-1" {
+                if failMore.value { throw TransportError.http(status: 500, envelope: nil) }
+                return Fixtures.response(Fixtures.page([Fixtures.session("ses_page2")]))
+            }
+            return Fixtures.response(Fixtures.page([Fixtures.session("ses_a")], next: "opaque-1"))
+        }
+        await library.load([entry(one)])
+        XCTAssertNil(library.errorsByHost[one.id])
+
+        failMore.value = true
+        await library.loadMore(host: one)
+
+        XCTAssertNil(library.errorsByHost[one.id],
+                     "page one is on screen — a failed NEXT page must not claim the listing failed")
+        XCTAssertTrue(library.visibleErrors(entries: [entry(one)], hostFilter: nil).isEmpty,
+                      "no false Host Status row for a failed next-page fetch")
+        XCTAssertEqual(library.loadMoreErrorsByHost[one.id], "The host could not load more sessions (HTTP 500).",
+                       "the paging failure surfaces at Load More in paging wording")
+        XCTAssertEqual(library.sessionsByHost[one.id]?.map(\.id), ["ses_a"],
+                       "the listed inventory is untouched by the paging failure")
+
+        // A fresh listing supersedes the paging failure.
+        failMore.value = false
+        await library.load(host: one)
+        XCTAssertNil(library.loadMoreErrorsByHost[one.id], "reload clears the stale paging error")
+    }
+
     // MARK: - Mutations
 
     func testRenameUpdatesLocalTitleOnlyAfterServerAccepts() async throws {

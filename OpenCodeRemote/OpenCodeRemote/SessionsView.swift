@@ -249,6 +249,18 @@ struct SessionsView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
+                        // Paging failures sit HERE, not in Host Status: the
+                        // rows are listed — claiming otherwise would be a
+                        // lie beside them (they stay out of errorsByHost).
+                        ForEach(loadMoreFailures, id: \.id) { failure in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(failure.name)
+                                    .font(.caption.weight(.medium))
+                                Text(failure.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                            }
+                        }
                     }
                 }
             }
@@ -259,6 +271,13 @@ struct SessionsView: View {
 
     private var hasMorePages: Bool {
         visibleEntries.contains { sessions.hasMoreByHost[$0.id] == true }
+    }
+
+    private var loadMoreFailures: [(id: HostID, name: String, message: String)] {
+        visibleEntries.compactMap { entry in
+            guard let message = sessions.loadMoreErrorsByHost[entry.id] else { return nil }
+            return (entry.id, entry.host.displayName, message)
+        }
     }
 
     private func sessionRow(_ row: SessionsLibrary.SessionRow) -> some View {

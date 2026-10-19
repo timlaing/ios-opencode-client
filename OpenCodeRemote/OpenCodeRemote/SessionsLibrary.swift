@@ -33,6 +33,13 @@ final class SessionsLibrary {
     /// search that succeeds must never erase a still-missing inventory's
     /// error (the same discipline `markViewed` documents).
     private(set) var searchErrorsByHost: [HostID: String] = [:]
+    /// NEXT-page fetch failures, kept apart from listing failures for the
+    /// reason `searchErrorsByHost` documents: page one IS on screen, so
+    /// these must never reach `errorsByHost` / `visibleErrors` — Host
+    /// Status would claim "could not list sessions" beside rows that ARE
+    /// listed, and the false error would stick until the next successful
+    /// load. Surfaced at the Load More control instead.
+    private(set) var loadMoreErrorsByHost: [HostID: String] = [:]
     private(set) var loadingHosts: Set<HostID> = []
 
     /// Results of the last server-side TITLE search, kept separate so
@@ -91,6 +98,9 @@ final class SessionsLibrary {
     /// project-scoped page would corrupt the cursor chain and survive
     /// until the next unscoped refresh.
     func load(host: OpenCodeDomain.Host) async {
+        // A fresh listing attempt supersedes any paging failure recorded
+        // for this host.
+        loadMoreErrorsByHost[host.id] = nil
         guard let credentialProvider, let credential = credentialProvider(host.id) else {
             errorsByHost[host.id] = "Re-pair this host to list its sessions."
             return
@@ -119,13 +129,19 @@ final class SessionsLibrary {
         else { return }
         loadingHosts.insert(host.id)
         defer { loadingHosts.remove(host.id) }
+        // A retry starts clean: the control's previous failure clears the
+        // moment a new attempt begins.
+        loadMoreErrorsByHost[host.id] = nil
         do {
             let page = try await service.sessions(at: host.address, credential: credential, cursor: cursorForNextPage(host: host))
             sessionsByHost[host.id, default: []].append(contentsOf: page.data)
             hasMoreByHost[host.id] = page.cursor?.next != nil
             nextCursors[host.id] = page.cursor?.next
         } catch {
-            errorsByHost[host.id] = Self.message(for: error)
+            // A failed NEXT page is not a listing failure — page one is on
+            // screen (the discipline `search` and `markViewed` follow); it
+            // belongs beside Load More, in paging wording.
+            loadMoreErrorsByHost[host.id] = Self.loadMoreMessage(for: error)
         }
     }
 
@@ -370,6 +386,20 @@ final class SessionsLibrary {
             return "The host is unreachable right now. Pull to refresh to try again."
         default:
             return "Sessions could not be searched on this host."
+        }
+    }
+
+    /// Next-page failures get PAGING wording — "could not list sessions"
+    /// would claim the inventory is broken when page one is on screen and
+    /// only the follow-up fetch failed (same discipline as search).
+    private static func loadMoreMessage(for error: Error) -> String {
+        switch error {
+        case TransportError.http(let status, _):
+            return "The host could not load more sessions (HTTP \(status))."
+        case TransportError.connectionFailed:
+            return "The host is unreachable right now. Pull to refresh to try again."
+        default:
+            return "More sessions could not be loaded from this host."
         }
     }
 
