@@ -140,6 +140,55 @@ final class URLSessionTransportTests: XCTestCase {
         XCTAssertEqual(String(decoding: data, as: UTF8.self), "raw-bytes")
     }
 
+    func testSameOriginRequiresExactSchemeHostAndPort() throws {
+        let base = URL(string: "https://host.example:4096/api/info")!
+        XCTAssertTrue(URLSessionTransport.isSameOrigin(base, URL(string: "https://host.example:4096/other")!),
+                      "the path alone may differ")
+        XCTAssertFalse(URLSessionTransport.isSameOrigin(base, URL(string: "http://host.example:4096/api/info")!),
+                       "a scheme downgrade must not count as the same origin")
+        XCTAssertFalse(URLSessionTransport.isSameOrigin(base, URL(string: "https://evil.example:4096/api/info")!),
+                       "a host change must not count as the same origin")
+        XCTAssertFalse(URLSessionTransport.isSameOrigin(base, URL(string: "https://host.example:8443/api/info")!),
+                       "a port change must not count as the same origin")
+        XCTAssertFalse(URLSessionTransport.isSameOrigin(base, URL(string: "https://host.example/api/info")!),
+                       "an explicit port never equals the default (fail closed)")
+    }
+
+    func testOriginGuardRefusesCrossOriginRedirectsForCredentialRequests() throws {
+        // `perform`/`events` set Authorization by hand and URLSession
+        // follows 3xx automatically — the guard is the only thing stopping
+        // the host secret from riding along to another origin (W01Requests:
+        // "stored secrets must never ride along to a destination").
+        let original = URL(string: "https://host.example:4096/api/info")!
+        let task = session.dataTask(with: URLRequest(url: original))
+        let response = try XCTUnwrap(HTTPURLResponse(
+            url: original, statusCode: 302, httpVersion: "HTTP/1.1", headerFields: nil
+        ))
+        let originGuard = URLSessionTransport.OriginGuard()
+
+        // Each sentinel only survives if the completion handler never runs.
+        var followed: URLRequest? = URLRequest(url: original)
+        originGuard.urlSession(
+            session, task: task, willPerformHTTPRedirection: response,
+            newRequest: URLRequest(url: URL(string: "http://host.example:4096/api/info")!)
+        ) { followed = $0 }
+        XCTAssertNil(followed, "an https→http downgrade must not receive the credential")
+
+        followed = URLRequest(url: original)
+        originGuard.urlSession(
+            session, task: task, willPerformHTTPRedirection: response,
+            newRequest: URLRequest(url: URL(string: "https://evil.example:4096/api/info")!)
+        ) { followed = $0 }
+        XCTAssertNil(followed, "a host change must not receive the credential")
+
+        followed = nil
+        originGuard.urlSession(
+            session, task: task, willPerformHTTPRedirection: response,
+            newRequest: URLRequest(url: URL(string: "https://host.example:4096/next")!)
+        ) { followed = $0 }
+        XCTAssertNotNil(followed, "same-origin redirects (path normalisation) still follow")
+    }
+
     func testConnectionFailureMapsToConnectionFailed() async throws {
         StubURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
         do {

@@ -160,6 +160,10 @@ private struct HostRow: View {
             Text("Re-pair Required")
                 .font(.caption)
                 .foregroundStyle(.red)
+        case .invalidResponse:
+            Text("Not OpenCode")
+                .font(.caption)
+                .foregroundStyle(.orange)
         }
     }
 }

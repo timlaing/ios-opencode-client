@@ -97,6 +97,17 @@ final class HostLibraryTests: XCTestCase {
         XCTAssertEqual(library.entries.first?.connection, .unreachable)
     }
 
+    func testRefreshSurfacesNotOpenCodeInsteadOfUnreachable() async throws {
+        // The host ANSWERED with an undocumented status: the connection is
+        // working — S02 must not send the user to a network that is fine.
+        let (library, _, _) = try makeLibrary(health: .failure(.http(status: 500, envelope: nil)))
+        try library.add(try paired())
+
+        await library.refreshStates()
+
+        XCTAssertEqual(library.entries.first?.connection, .invalidResponse)
+    }
+
     func testRepairingTheSameAddressReplacesTheRow() async throws {
         let (library, _, credentials) = try makeLibrary(health: .success(healthy("1.0.0")))
         let first = try paired(secret: "old-token")

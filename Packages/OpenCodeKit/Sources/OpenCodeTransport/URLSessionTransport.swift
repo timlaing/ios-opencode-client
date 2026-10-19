@@ -39,6 +39,46 @@ public struct URLSessionTransport: OpenCodeTransport {
         self.session = session ?? Self.sharedSession
     }
 
+    /// Refuses redirects that change origin. `perform` and `events` set the
+    /// Basic `Authorization` header BY HAND, and URLSession follows 3xx
+    /// responses automatically — without this guard a host or reverse proxy
+    /// redirecting to another origin (or downgrading https → http, bypassing
+    /// the pairing gate) would carry the host secret there, breaking the
+    /// trust rule in `W01Requests.redeem`: stored secrets must never ride
+    /// along to a destination. Same-origin redirects (a proxy normalising a
+    /// path) still follow; every hop is checked against the task's ORIGINAL
+    /// url, so same-origin → cross-origin chains are caught too.
+    final class OriginGuard: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession,
+            task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping (URLRequest?) -> Void
+        ) {
+            guard let original = task.originalRequest?.url,
+                  let target = request.url,
+                  URLSessionTransport.isSameOrigin(original, target)
+            else {
+                completionHandler(nil)
+                return
+            }
+            completionHandler(request)
+        }
+    }
+
+    /// Fail-closed origin equality for the guard: scheme, host
+    /// (case-insensitive) and port must match EXACTLY — an explicit port
+    /// never equals the default (nil ≠ 443) — because the credential is what
+    /// is being protected. Deliberately stricter than HostLibrary's
+    /// `isSameServer`, which is a UX dedup and tolerates cosmetic
+    /// differences.
+    static func isSameOrigin(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.scheme?.lowercased() == rhs.scheme?.lowercased()
+            && lhs.host?.lowercased() == rhs.host?.lowercased()
+            && lhs.port == rhs.port
+    }
+
     public func perform(_ request: APIRequest) async throws -> APIResponse {
         var urlRequest = URLRequest(url: try request.url(baseURL: baseURL))
         urlRequest.httpMethod = request.method.rawValue
@@ -60,7 +100,7 @@ public struct URLSessionTransport: OpenCodeTransport {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: urlRequest)
+            (data, response) = try await session.data(for: urlRequest, delegate: OriginGuard())
         } catch let error as URLError {
             throw error.code == .cancelled ? TransportError.cancelled : TransportError.connectionFailed(error.localizedDescription)
         }
@@ -102,7 +142,7 @@ public struct URLSessionTransport: OpenCodeTransport {
             let task = Task {
                 do {
                     let request = try eventRequest()
-                    let (bytes, response) = try await session.bytes(for: request)
+                    let (bytes, response) = try await session.bytes(for: request, delegate: OriginGuard())
                     guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                         throw TransportError.http(
                             status: (response as? HTTPURLResponse)?.statusCode ?? 0,

@@ -20,6 +20,10 @@ final class HostLibrary {
         case unreachable
         /// The host rejected the stored credential: re-pair required.
         case reauthRequired
+        /// The host answered, but not as an OpenCode server (no such
+        /// path, non-JSON body, or an undocumented status): the network
+        /// is fine — "Unreachable" would blame a working connection.
+        case invalidResponse
     }
 
     struct Entry: Identifiable {
@@ -201,6 +205,12 @@ final class HostLibrary {
             return .reachable(version: info.version)
         } catch HostPairingService.Failure.rejectedCredential {
             return .reauthRequired
+        } catch HostPairingService.Failure.invalidResponse {
+            // Reached, but the answer was not an OpenCode one (no such
+            // path, non-JSON body, 5xx): the network is working — calling
+            // it "Unreachable" would send the user to a connection that is
+            // fine and change nothing.
+            return .invalidResponse
         } catch {
             return .unreachable
         }

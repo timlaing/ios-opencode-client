@@ -89,6 +89,39 @@ final class HostPairingServiceTests: XCTestCase {
         }
     }
 
+    func testRedeemNonAuthHTTPStatusIsInvalidResponse() async {
+        // The pinned contract declares no 404 for server.connect: the
+        // destination answered (wrong path / not opencode), so it was
+        // REACHED — "couldn't be reached" would blame a working network.
+        do {
+            _ = try await service(
+                recorder: Recorder(),
+                redeem: .failure(.http(status: 404, envelope: nil)),
+                health: .success(json(#"{"version":"1"}"#))
+            ).redeem(code: "c", at: destination)
+            XCTFail("Expected failure")
+        } catch {
+            XCTAssertEqual(error as? HostPairingService.Failure, .invalidResponse)
+        }
+    }
+
+    func testRedeemBadRequestIsExpiredCode() async {
+        // The contract's InvalidRequestError on this code-only route means
+        // the CODE was rejected (the mock answers 401 for spent codes; 400
+        // is the other declared failure) — same user action either way:
+        // generate a fresh `opencode pair` link.
+        do {
+            _ = try await service(
+                recorder: Recorder(),
+                redeem: .failure(.http(status: 400, envelope: nil)),
+                health: .success(json(#"{"version":"1"}"#))
+            ).redeem(code: "garbled", at: destination)
+            XCTFail("Expected failure")
+        } catch {
+            XCTAssertEqual(error as? HostPairingService.Failure, .expiredCode)
+        }
+    }
+
     func testRedeemMalformedSuccessPayloadIsInvalidResponse() async {
         do {
             _ = try await service(
@@ -187,6 +220,21 @@ final class HostPairingServiceTests: XCTestCase {
         } catch {
             XCTAssertEqual(error as? HostPairingService.Failure, .invalidResponse,
                            "the address answered — it is not an OpenCode server")
+        }
+    }
+
+    func testCompletePairingNonAuthHTTPStatusIsInvalidResponse() async {
+        // A 5xx (or 404) from the health endpoint: the server was
+        // REACHED — reporting .unreachable would blame a working network.
+        do {
+            _ = try await service(
+                recorder: Recorder(),
+                redeem: .success(json(#"{"token":"t"}"#)),
+                health: .failure(.http(status: 500, envelope: nil))
+            ).completePairing(secret: "t", at: destination, displayName: "")
+            XCTFail("Expected failure")
+        } catch {
+            XCTAssertEqual(error as? HostPairingService.Failure, .invalidResponse)
         }
     }
 

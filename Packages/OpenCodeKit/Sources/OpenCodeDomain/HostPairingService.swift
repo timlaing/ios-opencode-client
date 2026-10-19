@@ -60,12 +60,21 @@ public struct HostPairingService: Sendable {
         } catch let error as TransportError {
             switch error {
             case .http(let status, _) where status == 401 || status == 403:
+                // The reference answer for an expired/used code (mock
+                // server.py: 401 "Pairing link expired or already used").
                 throw Failure.expiredCode
-            // A 2xx whose body is NOT JSON (a reverse proxy's HTML page,
-            // a redirect target) answers decodedJSON with emptyBody — the
-            // host WAS reached; claiming unreachable would send the user
-            // hunting for a network problem that does not exist.
-            case .decodingFailed, .emptyBody:
+            case .http(let status, _) where status == 400:
+                // The pinned contract's other declared failure on this
+                // code-only route (InvalidRequestError): the code was
+                // rejected — the same user action as expired (generate a
+                // fresh `opencode pair` link).
+                throw Failure.expiredCode
+            // Any other STATUS means the destination ANSWERED — 404 is not
+            // the opencode path, 5xx is a host/proxy failure — and a 2xx
+            // whose body is not JSON (a reverse proxy's HTML page) answers
+            // decodedJSON with emptyBody. Claiming unreachable would send
+            // the user hunting for a network problem that does not exist.
+            case .http, .decodingFailed, .emptyBody:
                 throw Failure.invalidResponse
             default:
                 throw Failure.unreachable
@@ -117,9 +126,9 @@ public struct HostPairingService: Sendable {
             switch error {
             case .http(let status, _) where status == 401 || status == 403:
                 throw Failure.rejectedCredential
-            // Same as redeem: a 2xx with a non-JSON body was REACHED —
-            // it just is not an OpenCode server payload.
-            case .decodingFailed, .emptyBody:
+            // Same rule as redeem: any other status (404, 400, 5xx) or a
+            // non-JSON success body was REACHED — never "unreachable".
+            case .http, .decodingFailed, .emptyBody:
                 throw Failure.invalidResponse
             default:
                 throw Failure.unreachable
