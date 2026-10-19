@@ -484,6 +484,36 @@ final class AttachmentLibraryTests: XCTestCase {
                      "non-native types are host-file territory, not model ingestion")
         XCTAssertNotNil(AttachmentLibrary.unsupportedReason(mimeType: "application/pdf", inputCapabilities: ["text"]))
     }
+
+    func testPhotoNameKeepsTheStemAndFollowsThePreparedBytes() {
+        // First preparation (default Balanced re-encodes a picked HEIC):
+        let first = AttachmentLibrary.photoName(current: "Photo", mimeType: "image/jpeg", pickerExtension: "heic")
+        XCTAssertTrue(first.hasPrefix("Photo "), "the first preparation claims a timestamped stem")
+        XCTAssertTrue(first.hasSuffix(".jpg"), "balanced bytes are JPEG — not the picker's HEIC label")
+
+        let stem = first.dropLast(".jpg".count)
+
+        // Mode switch to Original: HEIC bytes under the SAME stem.
+        let original = AttachmentLibrary.photoName(
+            current: first, mimeType: "application/octet-stream", pickerExtension: "heic"
+        )
+        XCTAssertEqual(original, "\(stem).heic",
+                       "a copy-mode change must never leave HEIC bytes named .jpg")
+
+        // Back to Balanced: JPEG again, stem still stable.
+        XCTAssertEqual(
+            AttachmentLibrary.photoName(current: original, mimeType: "image/jpeg", pickerExtension: nil),
+            "\(stem).jpg"
+        )
+
+        // Alpha mode, and an unknown type with no picker extension.
+        XCTAssertTrue(AttachmentLibrary.photoName(current: "Photo", mimeType: "image/png", pickerExtension: nil)
+            .hasSuffix(".png"))
+        XCTAssertEqual(
+            AttachmentLibrary.photoName(current: "\(stem).jpg", mimeType: "application/octet-stream", pickerExtension: nil),
+            "\(stem).bin"
+        )
+    }
 }
 
 /// Photo pipeline tests (implementation defaults): Balanced downscales

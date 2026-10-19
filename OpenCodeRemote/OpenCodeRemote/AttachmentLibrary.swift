@@ -380,24 +380,23 @@ final class AttachmentLibrary {
     /// picker-photo extension claim stays here (it needs MainActor state).
     private func start(draftID: UUID, host: OpenCodeDomain.Host, bytes: Data, mimeType: String) {
         guard let index = drafts.firstIndex(where: { $0.id == draftID }) else { return }
-        if drafts[index].isPhoto, drafts[index].name == "Photo" {
-            // Extension follows the REAL prepared bytes: balanced mode
-            // always re-encodes to png/jpeg, but original mode returns the
-            // picked bytes untouched and MimeType.sniff has no HEIC case —
-            // falling back to jpg would name HEIC bytes .jpg.
-            let ext: String
-            switch mimeType {
-            case "image/png": ext = "png"
-            case "image/jpeg": ext = "jpg"
-            default:
-                if case .photo(let item) = drafts[index].source,
-                   let picked = item.supportedContentTypes.first?.preferredFilenameExtension {
-                    ext = picked
-                } else {
-                    ext = "bin"
-                }
+        if drafts[index].isPhoto {
+            // Extension follows the REAL prepared bytes and is recomputed
+            // on EVERY preparation — a copy-mode change swaps the bytes'
+            // type (balanced → jpeg; original → the picked HEIC, which
+            // MimeType.sniff cannot name) — while `photoName` keeps the
+            // timestamped stem.
+            let pickerExtension: String?
+            if case .photo(let item) = drafts[index].source {
+                pickerExtension = item.supportedContentTypes.first?.preferredFilenameExtension
+            } else {
+                pickerExtension = nil
             }
-            drafts[index].name = "Photo \(Self.timestampName()).\(ext)"
+            drafts[index].name = Self.photoName(
+                current: drafts[index].name,
+                mimeType: mimeType,
+                pickerExtension: pickerExtension
+            )
         }
         drafts[index].mimeType = mimeType
         drafts[index].byteCount = bytes.count
@@ -580,6 +579,33 @@ final class AttachmentLibrary {
         default:
             return "The file could not be read."
         }
+    }
+
+    /// The photo draft's name for the CURRENT prepared bytes. The FIRST
+    /// preparation claims a timestamped stem; every later preparation
+    /// keeps that stem and refreshes only the extension, so a copy-mode
+    /// change (balanced ⇄ original swaps the bytes' type) never leaves
+    /// the name contradicting the bytes it stages.
+    static func photoName(current: String, mimeType: String, pickerExtension: String?) -> String {
+        let ext: String
+        switch mimeType {
+        case "image/png": ext = "png"
+        case "image/jpeg": ext = "jpg"
+        default:
+            // Original mode returns picked bytes untouched and
+            // MimeType.sniff has no HEIC case — the PICKER's extension
+            // names them (falling back to jpg would name HEIC bytes .jpg).
+            ext = pickerExtension ?? "bin"
+        }
+        let stem: String
+        if current == "Photo" {
+            stem = "Photo \(timestampName())"
+        } else if let dot = current.lastIndex(of: ".") {
+            stem = String(current[..<dot])
+        } else {
+            stem = current
+        }
+        return "\(stem).\(ext)"
     }
 
     private static func timestampName() -> String {
