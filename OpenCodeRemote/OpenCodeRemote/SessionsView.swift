@@ -453,6 +453,9 @@ struct SessionsView: View {
 
     private static func mutationMessage(_ error: Error, action: String) -> String {
         switch error {
+        case SessionsLibrary.LibraryError.missingCredential:
+            // Not a network problem — retrying would fail the same way.
+            return "This device no longer holds this host's credential. Re-pair the host, then try the \(action) again."
         case TransportError.connectionFailed:
             return "The \(action) could not reach the host. Check the connection and try again."
         case TransportError.http(let status, _):
@@ -580,6 +583,9 @@ private struct NewSessionSheet: View {
             dismiss()
         } catch {
             switch error {
+            case SessionsLibrary.LibraryError.missingCredential:
+                // Not a network problem — retrying would fail the same way.
+                errorMessage = "Re-pair this host to create sessions on it. The draft is kept."
             case TransportError.http(let status, _):
                 errorMessage = "The host rejected the session creation (HTTP \(status)). Check the directory and try again."
             case TransportError.connectionFailed:

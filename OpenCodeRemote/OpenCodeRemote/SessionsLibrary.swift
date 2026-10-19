@@ -13,6 +13,13 @@ import OpenCodeTransport
 final class SessionsLibrary {
     typealias CredentialProvider = @MainActor (HostID) -> BasicCredential?
 
+    /// Distinct from a connection failure: the fix is re-pairing the host,
+    /// not waiting for the network — callers must not report it as
+    /// unreachable (users would retry forever against the real cause).
+    enum LibraryError: Error {
+        case missingCredential
+    }
+
     private let service: SessionService
     private var credentialProvider: CredentialProvider?
     let localState: SessionLocalStateStore
@@ -226,7 +233,7 @@ final class SessionsLibrary {
 
     func create(host: OpenCodeDomain.Host, directory: String, title: String?) async throws -> Session {
         guard let credentialProvider, let credential = credentialProvider(host.id) else {
-            throw TransportError.connectionFailed("missing credential")
+            throw LibraryError.missingCredential
         }
         let created = try await service.createSession(
             at: host.address, credential: credential, directory: directory,
@@ -238,7 +245,7 @@ final class SessionsLibrary {
 
     func rename(host: OpenCodeDomain.Host, sessionID: String, title: String) async throws {
         guard let credentialProvider, let credential = credentialProvider(host.id) else {
-            throw TransportError.connectionFailed("missing credential")
+            throw LibraryError.missingCredential
         }
         try await service.rename(at: host.address, credential: credential, sessionID: sessionID, title: title)
         updateLocal(sessionID: sessionID, in: host.id) { $0.title = title }
@@ -249,7 +256,7 @@ final class SessionsLibrary {
 
     func remove(host: OpenCodeDomain.Host, sessionID: String) async throws {
         guard let credentialProvider, let credential = credentialProvider(host.id) else {
-            throw TransportError.connectionFailed("missing credential")
+            throw LibraryError.missingCredential
         }
         try await service.remove(at: host.address, credential: credential, sessionID: sessionID)
         // The server deletes child sessions with the parent (W03); drop

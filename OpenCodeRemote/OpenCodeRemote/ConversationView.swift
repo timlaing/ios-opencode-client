@@ -512,14 +512,23 @@ struct ConversationView: View {
                             // host creates the permission request only
                             // when the agent reaches the guarded tool,
                             // AFTER this returns (and the empty/error
-                            // transcript states offer no pull). Refresh
-                            // now for the fast case, then WATCH for the
-                            // request that does not exist yet (review
-                            // R2; live events replace this with W16).
-                            await loadApprovals()
+                            // transcript states offer no pull). The watch
+                            // must START first: it snapshots the entries on
+                            // the dock as its baseline, and the refresh may
+                            // already surface the request (the fast case) —
+                            // refresh-first would fold that request into the
+                            // baseline, it would never look "new", and the
+                            // watch would poll its full window (30 ticks
+                            // each for approvals and forms) for a dock that
+                            // already shows it. recordWatchContext in the
+                            // loads re-records the same context without
+                            // touching the task. WATCH still covers the
+                            // request that does not exist yet (review R2;
+                            // live events replace this with W16).
                             startApprovalWatch()
-                            await loadForms()
                             startFormWatch()
+                            await loadApprovals()
+                            await loadForms()
                         }
                     }
                 } label: {
