@@ -298,7 +298,7 @@ final class AttachmentLibraryTests: XCTestCase {
                      "a multi-gigabyte pick must never be loaded just to warn about its size")
         XCTAssertEqual(library.drafts.count, 1, "the draft waits, un-routed")
 
-        library.answerConfirmation(true, host: host)
+        library.answerConfirmation(try XCTUnwrap(library.pendingConfirmation), accepted: true, host: host)
         XCTAssertNil(library.pendingConfirmation)
         try await waitUntilReady(library)
         guard case .ready(let staged, _) = library.drafts[0].state else {
@@ -316,7 +316,7 @@ final class AttachmentLibraryTests: XCTestCase {
         try await Task.sleep(nanoseconds: 100_000_000)
         XCTAssertEqual(library.pendingConfirmation != nil, true)
 
-        library.answerConfirmation(false, host: host)
+        library.answerConfirmation(try XCTUnwrap(library.pendingConfirmation), accepted: false, host: host)
         XCTAssertTrue(library.drafts.isEmpty, "declining removes the draft entirely")
         XCTAssertNil(library.pendingConfirmation)
     }
@@ -333,7 +333,7 @@ final class AttachmentLibraryTests: XCTestCase {
         let confirmation = try XCTUnwrap(library.pendingConfirmation)
         XCTAssertEqual(confirmation.kind, .duplicate)
 
-        library.answerConfirmation(false, host: host)
+        library.answerConfirmation(try XCTUnwrap(library.pendingConfirmation), accepted: false, host: host)
         XCTAssertEqual(library.drafts.count, 1, "declining keeps exactly the original")
         XCTAssertNil(library.pendingConfirmation)
     }
@@ -351,12 +351,12 @@ final class AttachmentLibraryTests: XCTestCase {
         XCTAssertEqual(head.name, "one.bin", "the first question surfaces first")
         XCTAssertEqual(library.drafts.count, 2, "neither draft is lost while the queue waits")
 
-        library.answerConfirmation(true, host: host)
+        library.answerConfirmation(try XCTUnwrap(library.pendingConfirmation), accepted: true, host: host)
         let next = try XCTUnwrap(library.pendingConfirmation)
         XCTAssertEqual(next.name, "two.bin",
                        "answering one surfaces the next — a second question never overwrites the first")
 
-        library.answerConfirmation(true, host: host)
+        library.answerConfirmation(try XCTUnwrap(library.pendingConfirmation), accepted: true, host: host)
         XCTAssertNil(library.pendingConfirmation)
         for _ in 0..<100 {
             if !library.hasPending { break }

@@ -252,18 +252,23 @@ final class AttachmentLibrary {
         loadThenPrepare(draftID: draftID, host: host)
     }
 
-    /// Answers the HEAD confirmation: accepting routes the held bytes,
-    /// declining removes the draft entirely. The next queued question —
-    /// if any — becomes the pending one immediately. A pre-load
-    /// oversized answer (a picked FILE's size was asked from metadata
-    /// before any read) starts the read now instead of routing bytes
-    /// that were deliberately never loaded.
-    func answerConfirmation(_ accepted: Bool, host: OpenCodeDomain.Host) {
-        guard !confirmationQueue.isEmpty else { return }
-        let confirmation = confirmationQueue.removeFirst()
+    /// Answers the confirmation that is ON SCREEN: accepting routes the
+    /// held bytes (or, for a pre-load oversized answer — a picked FILE's
+    /// size was asked from metadata before any read — starts the read),
+    /// declining removes THAT draft. `enqueue` orders by PICK, so a
+    /// newly finished pick can insert ahead of a live alert and the
+    /// queue head is not always what the sequencer presents: keying the
+    /// answer to the presented entry means a superseded question
+    /// (re-prepared or removed meanwhile) is never answered by silently
+    /// consuming its neighbour's.
+    func answerConfirmation(
+        _ answered: PendingConfirmation, accepted: Bool, host: OpenCodeDomain.Host
+    ) {
+        guard let index = confirmationQueue.firstIndex(where: { $0.id == answered.id }) else { return }
+        let confirmation = confirmationQueue.remove(at: index)
         if accepted, confirmation.preLoad {
-            guard let index = drafts.firstIndex(where: { $0.id == confirmation.id }) else { return }
-            drafts[index].oversizedAccepted = true
+            guard let draftIndex = drafts.firstIndex(where: { $0.id == confirmation.id }) else { return }
+            drafts[draftIndex].oversizedAccepted = true
             loadThenPrepare(draftID: confirmation.id, host: host)
         } else if accepted {
             route(confirmation.id, host: host)

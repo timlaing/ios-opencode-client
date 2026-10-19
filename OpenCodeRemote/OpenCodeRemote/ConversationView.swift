@@ -244,11 +244,11 @@ struct ConversationView: View {
             presenting: confirmationAlerts.presented
         ) { confirmation in
             Button("Attach Anyway") {
-                attachments.answerConfirmation(true, host: host)
+                attachments.answerConfirmation(confirmation, accepted: true, host: host)
             }
             .accessibilityIdentifier("S09.confirm.accept")
             Button("Cancel", role: .cancel) {
-                attachments.answerConfirmation(false, host: host)
+                attachments.answerConfirmation(confirmation, accepted: false, host: host)
             }
             .accessibilityIdentifier("S09.confirm.cancel")
         } message: { confirmation in

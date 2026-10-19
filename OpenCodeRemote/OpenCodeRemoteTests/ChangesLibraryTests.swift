@@ -354,8 +354,8 @@ final class ChangesLibraryTests: XCTestCase {
         XCTAssertTrue(library.loading.isEmpty)
         XCTAssertTrue(library.errors.isEmpty)
         XCTAssertEqual(
-            recorder.requests.map(\.operationID), ["vcs.get", "vcs.status", "vcs.base", "vcs.diff"],
-            "the workspace section reads branch, status, base and the mode diff"
+            recorder.requests.map(\.operationID).sorted(), ["vcs.base", "vcs.diff", "vcs.get", "vcs.status"],
+            "the workspace section reads branch, status, base and the mode diff — order-free, the four run concurrently"
         )
     }
 
@@ -434,8 +434,13 @@ final class ChangesLibraryTests: XCTestCase {
             "the session scope keeps its adopted state across a scope switch"
         )
         XCTAssertEqual(
-            recorder.requests.map(\.operationID),
-            ["session.diff", "vcs.get", "vcs.status", "vcs.base", "vcs.diff"]
+            recorder.requests.first?.operationID, "session.diff",
+            "the session scope round-trips before the scope switch starts"
+        )
+        XCTAssertEqual(
+            recorder.requests.dropFirst().map(\.operationID).sorted(),
+            ["vcs.base", "vcs.diff", "vcs.get", "vcs.status"],
+            "the workspace reads are order-free — the four run concurrently"
         )
     }
 
