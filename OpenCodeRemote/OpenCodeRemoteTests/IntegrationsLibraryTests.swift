@@ -805,4 +805,49 @@ final class IntegrationsLibraryTests: XCTestCase {
             "nothing is known to be saved when the write outcome is unknown"
         )
     }
+
+    // MARK: - Banner ownership across applies
+
+    /// A new apply owns BOTH banners: the view renders notice and
+    /// toggleError independently, so an earlier "Saved" beside an
+    /// unknown write outcome would contradict the W14 rule (a stale
+    /// error beside a later "Saved, but…" would too).
+    func testANewApplyClearsStaleBanners() async throws {
+        let recorder = Recorder()
+        let writeCalls = Counter()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "location.reload": return Fixtures.noContent
+            case "experimental.fs.write":
+                if writeCalls.next() == 0 { return Fixtures.noContent }
+                throw TransportError.connectionFailed("dropped mid-save")
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        // First apply: full success — the banner carries "Saved".
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let firstPlan = try XCTUnwrap(library.pendingPlan)
+        await library.applyToggle(host: one, plan: firstPlan)
+        XCTAssertEqual(library.notice, "Saved — the host reloaded the location.")
+        XCTAssertNil(library.toggleError)
+
+        // Second apply: the write drops — the stale "Saved" must not
+        // sit beside the unknown outcome. (The stub filesystem keeps
+        // answering the ORIGINAL bytes, so `keep.pkg` is still
+        // declared positive and disable plans cleanly.)
+        await library.planToggle(host: one, target: "keep.pkg", enable: false)
+        let secondPlan = try XCTUnwrap(library.pendingPlan)
+        await library.applyToggle(host: one, plan: secondPlan)
+        XCTAssertNil(library.notice, "the earlier outcome must not contradict this one")
+        XCTAssertEqual(
+            library.toggleError,
+            "The connection dropped during the save — pull to refresh to see whether the change landed."
+        )
+        XCTAssertNil(library.pendingPlan)
+    }
 }

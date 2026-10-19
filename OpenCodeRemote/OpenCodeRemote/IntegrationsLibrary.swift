@@ -269,6 +269,12 @@ final class IntegrationsLibrary {
         }
         isToggling = true
         defer { isToggling = false }
+        // A new attempt owns the banners: the view renders notice and
+        // toggleError independently, so an earlier "Saved" beside an
+        // unknown write outcome would contradict it — and a stale
+        // error beside a later "Saved, but…" would too.
+        notice = nil
+        toggleError = nil
         do {
             let latest = try await projectService.readFile(
                 at: host.address, credential: credential,
