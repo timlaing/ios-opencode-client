@@ -46,6 +46,9 @@ final class W10RequestsTests: XCTestCase {
         XCTAssertEqual(request.method, .post)
         XCTAssertEqual(request.path, "/api/session/ses_demo_003/form/frm_demo/reply")
         XCTAssertEqual(request.credential, BasicCredential(secret: "t"))
+        // Byte-exact: OpenCodeAPI.encoder sets .sortedKeys (APIRequest.swift),
+        // so this order is deterministic — drop that setting only together
+        // with this assertion (switch to a decoded-JSON comparison).
         let body = String(decoding: try XCTUnwrap(request.body), as: UTF8.self)
         XCTAssertEqual(
             body,

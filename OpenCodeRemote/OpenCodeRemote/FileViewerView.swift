@@ -51,6 +51,14 @@ struct FileViewerView: View {
     @State private var openFile: FileSystemEntry?
     @State private var openKind: FileViewerLibrary.Kind = .text
     @State private var isLoading = false
+    /// Identity of the CURRENT preview session, bumped by every open() and
+    /// by Back. Each read captures it before its `await` and discards a
+    /// result that no longer matches — otherwise a slow read for a file the
+    /// user already left would adopt its bytes (or its error) into whatever
+    /// file is open now: a 200 shows the previous file's content under the
+    /// new name, a 206 splices two files' bytes, and a stale failure would
+    /// clear the entry the user is reading.
+    @State private var openGeneration = 0
     /// Failures of a Load More / Copy / Share follow-up read: shown INLINE so
     /// the preview the user already has is never thrown away by a later error.
     @State private var loadMoreError: String?
@@ -108,6 +116,9 @@ struct FileViewerView: View {
                     // the parent folder.
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
+                            // Leave the preview session: any read still in
+                            // flight for it must not adopt or report after.
+                            openGeneration += 1
                             openFile = nil
                         } label: {
                             Label("Back", systemImage: "chevron.left")
@@ -534,6 +545,10 @@ struct FileViewerView: View {
         markdownShowsSource = false
         zoom = 1
         viewer.beginFile(kind: openKind)
+        // New preview session: in-flight reads for the previous file are now
+        // stale by definition.
+        openGeneration += 1
+        let generation = openGeneration
         // Binary has no preview at all, so nothing is fetched on open —
         // Share pulls the whole file on demand, Attach needs no bytes.
         guard openKind != .binary else { return }
@@ -551,8 +566,10 @@ struct FileViewerView: View {
                 // 416 — instead of declaring the file unreadable.
                 file = try await read(entry, range: nil)
             }
+            guard generation == openGeneration else { return }
             viewer.adopt(file)
         } catch {
+            guard generation == openGeneration else { return }
             openFile = nil
             message = Self.message(for: error)
         }
@@ -569,10 +586,14 @@ struct FileViewerView: View {
             viewer.loadMore()
         }
         guard let entry = openFile, let range = viewer.nextRange() else { return }
+        let generation = openGeneration
         isLoading = true
         defer { isLoading = false }
         do {
             let file = try await read(entry, range: range)
+            // Back (or a new open) while this read was in flight: the bytes
+            // belong to a session that no longer exists — drop them.
+            guard generation == openGeneration else { return }
             // A changed entity tag means the host file changed between ranged
             // reads; splicing the slices would fabricate content that never
             // existed, so the preview restarts from byte 0 instead.
@@ -586,6 +607,7 @@ struct FileViewerView: View {
             // lines the previous slice exposed.
             textHits = viewer.search(textQuery)
         } catch {
+            guard generation == openGeneration else { return }
             loadMoreError = Self.message(for: error)
         }
     }
@@ -645,10 +667,15 @@ struct FileViewerView: View {
     private func fetchWholeFileIfNeeded() async -> Bool {
         if viewer.completeBytes != nil { return true }
         guard let entry = openFile else { return false }
+        let generation = openGeneration
         isLoading = true
         defer { isLoading = false }
         do {
             let file = try await read(entry, range: nil)
+            // Back (or a new open) while this read was in flight: the bytes
+            // belong to a session that no longer exists — drop them. For
+            // Copy/Share that means a false return, never a stale adopt.
+            guard generation == openGeneration else { return false }
             guard viewer.continuesCurrentEntity(file) else {
                 await open(entry, force: true)
                 // A ranged kind reopens at its initial range only; a file
@@ -666,6 +693,9 @@ struct FileViewerView: View {
             textHits = viewer.search(textQuery)
             return true
         } catch {
+            // A stale failure must not paint an error over whatever file is
+            // open now; the action simply did not complete for this session.
+            guard generation == openGeneration else { return false }
             loadMoreError = Self.message(for: error)
             return false
         }
@@ -731,17 +761,29 @@ struct FileViewerView: View {
 private struct PDFKitPreview: UIViewRepresentable {
     let data: Data
 
+    /// Last data applied to the view. `PDFDocument.dataRepresentation()`
+    /// RE-SERIALIZES the document and its bytes rarely equal the source, so
+    /// comparing against the view's document would reload (and reset page/
+    /// zoom) on almost every SwiftUI update — while serialising the whole
+    /// PDF on the main thread each time.
+    final class Coordinator {
+        var data: Data?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> PDFView {
         let view = PDFView()
         view.autoScales = true
         view.document = PDFDocument(data: data)
+        context.coordinator.data = data
         return view
     }
 
     func updateUIView(_ view: PDFView, context: Context) {
-        if view.document?.dataRepresentation() != data {
-            view.document = PDFDocument(data: data)
-        }
+        guard context.coordinator.data != data else { return }
+        context.coordinator.data = data
+        view.document = PDFDocument(data: data)
     }
 }
 
