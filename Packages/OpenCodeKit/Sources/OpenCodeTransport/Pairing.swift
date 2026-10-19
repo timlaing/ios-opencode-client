@@ -93,19 +93,29 @@ public enum PairingParser {
         let host = rawHost.trimmingCharacters(in: .whitespacesAndNewlines)
         let port = rawPort.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty else { throw PairingParseError.invalidAddress }
+
+        var candidate = host.contains("://") ? host : "https://" + host
         if !port.isEmpty {
             guard let number = Int(port), (1...65_535).contains(number) else {
                 throw PairingParseError.invalidAddress
             }
-        }
-
-        var candidate = host.contains("://") ? host : "https://" + host
-        if !port.isEmpty {
             // A port typed into both places is ambiguous; only fill the field.
-            guard let url = URL(string: candidate), url.port == nil else {
+            // The port belongs in the AUTHORITY: appending the text to the
+            // full URL string would land ":4096" inside the final path
+            // segment of a proxy-prefix address
+            // (https://host/opencode:4096) — a URL validatedAddress ACCEPTS
+            // (the non-empty path skips the bare-host check), so the review
+            // screen would offer a destination that actually pairs on 443
+            // against a path that does not exist.
+            guard var components = URLComponents(string: candidate),
+                  components.port == nil else {
                 throw PairingParseError.invalidAddress
             }
-            candidate += ":" + port
+            components.port = number
+            guard let rebuilt = components.string else {
+                throw PairingParseError.invalidAddress
+            }
+            candidate = rebuilt
         }
 
         let url = try validatedAddress(candidate, allowsInsecureHTTP: allowsInsecureHTTP)

@@ -209,6 +209,17 @@ final class PairingParserTests: XCTestCase {
         XCTAssertEqual(url.absoluteString, "https://gateway.example/opencode")
     }
 
+    func testManualAddressPutsSeparatePortIntoAuthorityBesideProxyPrefixPath() throws {
+        // String-appending the port would land ":4096" inside the final
+        // path segment (…/opencode:4096) — a URL validatedAddress accepts,
+        // pairing on 443 against a path that does not exist.
+        let url = try PairingParser.manualAddress(host: "https://gateway.example/opencode", port: "4096")
+        XCTAssertEqual(url.absoluteString, "https://gateway.example:4096/opencode")
+        XCTAssertEqual(url.host, "gateway.example")
+        XCTAssertEqual(url.port, 4096, "the port lands in the authority")
+        XCTAssertEqual(url.path, "/opencode", "the proxy prefix path survives")
+    }
+
     // MARK: - Single-field manual form
 
     func testManualAddressSingleFieldDefaultsToHTTPSGivenHostWithPort() throws {
