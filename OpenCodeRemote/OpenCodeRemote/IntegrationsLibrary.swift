@@ -33,17 +33,22 @@ final class IntegrationsLibrary {
         var declaredInPaths: [String]
         /// Document paths whose negative directive disables it.
         var disabledInPaths: [String]
+        /// Whether the EDITABLE document is among `disabledInPaths` —
+        /// `planToggle` writes only that document, so an Enable offered
+        /// for a directive that lives elsewhere could only fail.
+        var negativeIsEditable: Bool
         /// Built-in/SDK sources (host policy) may not be disabled.
         var isProtected: Bool
         var statusText: String
         var detailText: String
         var featuresText: String?
 
-        /// Enable appears only for a negatively-declared target;
-        /// Disable only when the target is not already disabled and its
-        /// source is host policy-free. (The editable-document gate lives
-        /// in `planToggle`, which reports honestly when there is none.)
-        var canEnable: Bool { target != nil && !disabledInPaths.isEmpty }
+        /// Enable appears only for a negatively-declared target whose
+        /// negative is in the EDITABLE document; Disable only when the
+        /// target is not already disabled and its source is host
+        /// policy-free. (The no-editable-document case falls out: the
+        /// negative cannot be editable.)
+        var canEnable: Bool { target != nil && negativeIsEditable }
         var canDisable: Bool { target != nil && !isProtected && disabledInPaths.isEmpty }
     }
 
@@ -372,7 +377,7 @@ final class IntegrationsLibrary {
             order.append(key)
             return PluginRow(
                 id: key, target: nil, runtime: nil,
-                declaredInPaths: [], disabledInPaths: [],
+                declaredInPaths: [], disabledInPaths: [], negativeIsEditable: false,
                 isProtected: false, statusText: "", detailText: "", featuresText: nil
             )
         }
@@ -427,6 +432,10 @@ final class IntegrationsLibrary {
             }
             row.detailText = sourceDetail(row.runtime?.source)
             row.featuresText = featuresText(row.runtime?.features)
+            // Only a negative inside the EDITABLE document can be
+            // removed by a toggle — an Enable offered for a directive
+            // elsewhere could only fail.
+            row.negativeIsEditable = editable.map { row.disabledInPaths.contains($0.path) } ?? false
             if row.isProtected { row.statusText += " (protected)" }
             return row
         }

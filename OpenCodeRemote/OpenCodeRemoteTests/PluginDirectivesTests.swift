@@ -147,6 +147,12 @@ final class PluginDirectivesTests: XCTestCase {
             PluginDirectives.enable("b", in: raw)?.resultingText,
             #"{"plugins":["we\"ird"]}"#
         )
+        // A JSONC trailing comma on a LONE element travels with it —
+        // leaving it behind would write "[,]".
+        XCTAssertEqual(
+            PluginDirectives.enable("b", in: #"{"plugins":["-b",]}"#)?.resultingText,
+            #"{"plugins":[]}"#
+        )
         // Object entries are never toggled either.
         XCTAssertNil(
             PluginDirectives.enable("c.pkg", in: #"{"plugins":[{"package":"c.pkg"}]}"#)

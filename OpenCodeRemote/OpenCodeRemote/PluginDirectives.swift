@@ -105,8 +105,15 @@ enum PluginDirectives {
             // chunk end.
             removeRange = array.elements[index - 1].range.upperBound..<element.range.upperBound
         } else {
-            // The array's only element.
-            removeRange = element.range
+            // The array's only element — a JSONC trailing comma travels
+            // with it (a leftover "," would make the written document
+            // invalid: "[,]").
+            if array.hasTrailingComma, element.range.upperBound < raw.endIndex,
+               raw[element.range.upperBound] == "," {
+                removeRange = element.range.lowerBound..<raw.index(after: element.range.upperBound)
+            } else {
+                removeRange = element.range
+            }
         }
         var text = raw
         text.removeSubrange(removeRange)

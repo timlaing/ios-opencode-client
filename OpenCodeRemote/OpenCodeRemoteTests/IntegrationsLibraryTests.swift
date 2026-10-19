@@ -53,6 +53,12 @@ final class IntegrationsLibraryTests: XCTestCase {
         /// The host answers under a DIFFERENT location than the one
         /// the session asked for.
         static let pluginListOtherLocation = #"{"location":{"directory":"/srv/other"},"data":[]}"#
+
+        /// The session's own document declares nothing; a LATER,
+        /// higher-precedence document under the same directory holds
+        /// the negative — a toggle can only ever write the FIRST
+        /// document under the directory (the editable one).
+        static let configNegativeElsewhere = #"[{"type":"document","path":"/srv/demo/opencode.jsonc","info":{"plugins":[]}},{"type":"document","path":"/srv/demo/.opencode/workspace.jsonc","info":{"plugins":["-demo.audit"]}}]"#
     }
 
     /// Captured-var mutation is not allowed in `@Sendable` handlers.
@@ -603,6 +609,30 @@ final class IntegrationsLibraryTests: XCTestCase {
         XCTAssertFalse(
             library.unreflected.contains("demo.audit"),
             "unknown is not \"not applied\" — the marker claims a fact we do not have"
+        )
+    }
+
+    /// The negative directive lives ONLY in a document the toggle
+    /// cannot edit — the row keeps its "disabled by directive" facts
+    /// but never offers an Enable that could only fail.
+    func testEnableIsOfferedOnlyWhenTheEditableDocumentHoldsTheNegative() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.emptyPluginList)
+            case "config.get": return Fixtures.response(Fixtures.configNegativeElsewhere)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        let row = library.rows.first { $0.id == "demo.audit" }
+        XCTAssertEqual(row?.disabledInPaths, ["/srv/demo/.opencode/workspace.jsonc"])
+        XCTAssertEqual(row?.statusText, "Disabled in config", "the directive facts stay visible")
+        XCTAssertEqual(
+            row?.canEnable, false,
+            "planToggle writes only /srv/demo/opencode.jsonc — it could never remove this directive"
         )
     }
 }
