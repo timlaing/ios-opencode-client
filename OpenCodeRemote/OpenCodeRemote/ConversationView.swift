@@ -830,12 +830,10 @@ struct ConversationView: View {
     }
 
     /// Inline-only markdown so user/assistant text renders formatting
-    /// without executing anything.
+    /// without executing anything; only web links stay tappable
+    /// (`MarkdownRendering`).
     private func markdown(_ text: String) -> Text {
-        if let attributed = try? AttributedString(
-            markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        ) {
+        if let attributed = MarkdownRendering.attributed(text) {
             return Text(attributed)
         }
         return Text(verbatim: text)

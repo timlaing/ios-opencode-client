@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		02E40F38255176E1572FDF04 /* ChangesLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55BE9C65B012C7371A10BE3C /* ChangesLibrary.swift */; };
 		030B0ED399071A6ED7D9EF1A /* FileViewerLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A587D02A4583FE7A2D1E567 /* FileViewerLibraryTests.swift */; };
+		0E2F46A94CF32E3A43666950 /* MarkdownRenderingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BA338926676B245F6220991 /* MarkdownRenderingTests.swift */; };
 		0E44E7CDAFF09E66CFAF455B /* ChangesLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 307C9A540F238195FC376223 /* ChangesLibraryTests.swift */; };
 		15D5AF11E68E4E97977019C8 /* FileViewerLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30C09BA37961AAA99C961ADF /* FileViewerLibrary.swift */; };
 		18BEBFC212CE2E7A07CBC7C2 /* AttachmentLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8232ECF13984BB52C92B4FFE /* AttachmentLibraryTests.swift */; };
@@ -31,6 +32,7 @@
 		4EA3B4C2FBAB4ED9FBE467D8 /* SelectionLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D765A067EB12DEFAE6CA558A /* SelectionLibraryTests.swift */; };
 		54DDBF68BC53CB3F1F93834C /* LocalPushConfigurationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BA2EB179D0D74E5233F1BB6 /* LocalPushConfigurationController.swift */; };
 		55594B3DF9CFB129CE822E88 /* SessionLocalStateStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A94EE53AFEC0878CF834794 /* SessionLocalStateStoreTests.swift */; };
+		564C55CF10FD80851EB3D2C3 /* MarkdownRendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = C706802D2672E7FBB027B1F0 /* MarkdownRendering.swift */; };
 		565AEFEC1ED814A4EB8028B0 /* FormLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C33883AD144C6131A8F3B463 /* FormLibraryTests.swift */; };
 		58BAF77E85BB89F2E0D829B3 /* ProjectsLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */; };
 		5CC7CD5B80C758016BD07AD8 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F554B44B72453E1ACCBA4D5 /* ContentView.swift */; };
@@ -112,6 +114,7 @@
 		011D665A8B085778E8A2ABF6 /* ApprovalLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalLibrary.swift; sourceTree = "<group>"; };
 		06EB5D222785B49795B89A59 /* ConnectHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectHostView.swift; sourceTree = "<group>"; };
 		0A587D02A4583FE7A2D1E567 /* FileViewerLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewerLibraryTests.swift; sourceTree = "<group>"; };
+		0BA338926676B245F6220991 /* MarkdownRenderingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRenderingTests.swift; sourceTree = "<group>"; };
 		108EBC9303F50D544E810CA9 /* SessionLocalStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionLocalStateStore.swift; sourceTree = "<group>"; };
 		118BAFECEFA9DD1F3DFC7F9D /* SessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsView.swift; sourceTree = "<group>"; };
 		1455773B6233F4959A4315B6 /* AttachmentLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttachmentLibrary.swift; sourceTree = "<group>"; };
@@ -156,6 +159,7 @@
 		C2A957884CCF9676C256BBF2 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		C2F471708ABD498D52D76954 /* OpenCodeRemote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenCodeRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C33883AD144C6131A8F3B463 /* FormLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormLibraryTests.swift; sourceTree = "<group>"; };
+		C706802D2672E7FBB027B1F0 /* MarkdownRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendering.swift; sourceTree = "<group>"; };
 		CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsLibraryTests.swift; sourceTree = "<group>"; };
 		D544CC0D1391BC960867BE0C /* FormSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormSheetView.swift; sourceTree = "<group>"; };
 		D765A067EB12DEFAE6CA558A /* SelectionLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionLibraryTests.swift; sourceTree = "<group>"; };
@@ -224,6 +228,7 @@
 				557CD3B06333747A5958EEEA /* HostLibraryTests.swift */,
 				A3CCAF8F588A0B928A8D5102 /* KeychainCredentialStoreTests.swift */,
 				E1A97F76428C3F7698113221 /* LocalPushConfigurationControllerTests.swift */,
+				0BA338926676B245F6220991 /* MarkdownRenderingTests.swift */,
 				479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */,
 				CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */,
 				D765A067EB12DEFAE6CA558A /* SelectionLibraryTests.swift */,
@@ -257,6 +262,7 @@
 				D544CC0D1391BC960867BE0C /* FormSheetView.swift */,
 				45806627CE3F3195AAF1D97E /* HostLibrary.swift */,
 				1BA2EB179D0D74E5233F1BB6 /* LocalPushConfigurationController.swift */,
+				C706802D2672E7FBB027B1F0 /* MarkdownRendering.swift */,
 				6D65D183486C0DE9CB0FE855 /* ModelAgentPickerView.swift */,
 				83BF9FAC0843B814B7183B2F /* NewProjectView.swift */,
 				FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */,
@@ -496,6 +502,7 @@
 				93C3984B18F0A6352D809934 /* FormSheetView.swift in Sources */,
 				A73F651900612517D6F962C0 /* HostLibrary.swift in Sources */,
 				54DDBF68BC53CB3F1F93834C /* LocalPushConfigurationController.swift in Sources */,
+				564C55CF10FD80851EB3D2C3 /* MarkdownRendering.swift in Sources */,
 				3E0B6F6FCB767690D722FA56 /* ModelAgentPickerView.swift in Sources */,
 				FDDA3D58718234DCE5C3A3C2 /* NewProjectView.swift in Sources */,
 				8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */,
@@ -534,6 +541,7 @@
 				2CC62EE5E90DDE822EB9B6FD /* HostLibraryTests.swift in Sources */,
 				FDFC4FEEEF10D1649CAB244D /* KeychainCredentialStoreTests.swift in Sources */,
 				FC4F62AF7B6D3284C98EFAFD /* LocalPushConfigurationControllerTests.swift in Sources */,
+				0E2F46A94CF32E3A43666950 /* MarkdownRenderingTests.swift in Sources */,
 				29C14B0551E936B987D1EFC2 /* OpenCodeRemoteTests.swift in Sources */,
 				58BAF77E85BB89F2E0D829B3 /* ProjectsLibraryTests.swift in Sources */,
 				4EA3B4C2FBAB4ED9FBE467D8 /* SelectionLibraryTests.swift in Sources */,

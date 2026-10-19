@@ -371,15 +371,13 @@ struct FileViewerView: View {
 
     /// Rendered Markdown: the fetched (possibly still partial) text rendered
     /// as Markdown. Never executes embedded HTML/scripts — `AttributedString`
-    /// markdown parsing produces text attributes only, and malformed input
-    /// falls back to the source text verbatim.
+    /// markdown parsing produces text attributes only — and only web links
+    /// stay tappable (`MarkdownRendering`). Malformed input falls back to
+    /// the source text verbatim.
     private var renderedMarkdownSection: some View {
         Section("Rendered") {
             if let text = viewer.content?.text {
-                if let rendered = try? AttributedString(
-                    markdown: text,
-                    options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-                ) {
+                if let rendered = MarkdownRendering.attributed(text) {
                     Text(rendered)
                 } else {
                     Text(text)
