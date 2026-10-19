@@ -30,8 +30,12 @@ public enum W15Requests {
     /// host to connect this server for the RUNTIME. It never writes a
     /// persisted enabled flag, and 204 is ADMISSION: only the
     /// refetched inventory decides which status is shown
-    /// (api-contract.md W15). The server path segment is raw-
-    /// interpolated like `sessionID`; URL building path-encodes it.
+    /// (api-contract.md W15). The server NAME is a config key that
+    /// may contain `/`, `?`, `%` or spaces, so it is pre-encoded as
+    /// ONE path component here — the transport's per-segment encoder
+    /// preserves those escapes, so the name can never become extra
+    /// path structure (api-contract.md Line 14: every path component
+    /// percent-encoded on its own, exactly once).
     public static func mcpConnect(
         server: String,
         directory: String? = nil,
@@ -40,7 +44,7 @@ public enum W15Requests {
         APIRequest(
             operationID: "experimental.mcp.connect",
             method: .post,
-            path: "/api/experimental/mcp/\(server)/connect",
+            path: "/api/experimental/mcp/\(PercentCoding.encode(server))/connect",
             query: directory.map { [QueryPair(key: "location[directory]", value: $0)] } ?? [],
             credential: credential
         )
@@ -48,7 +52,8 @@ public enum W15Requests {
 
     /// `POST /api/experimental/mcp/{server}/disconnect` → 204 — the
     /// runtime counterpart of `mcpConnect` (same admission rule:
-    /// refetch the inventory for the shown status).
+    /// refetch the inventory for the shown status; same one-segment
+    /// encoding of the server name).
     public static func mcpDisconnect(
         server: String,
         directory: String? = nil,
@@ -57,7 +62,7 @@ public enum W15Requests {
         APIRequest(
             operationID: "experimental.mcp.disconnect",
             method: .post,
-            path: "/api/experimental/mcp/\(server)/disconnect",
+            path: "/api/experimental/mcp/\(PercentCoding.encode(server))/disconnect",
             query: directory.map { [QueryPair(key: "location[directory]", value: $0)] } ?? [],
             credential: credential
         )

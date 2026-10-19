@@ -26,6 +26,25 @@ final class EncodingTests: XCTestCase {
         XCTAssertEqual(PercentCoding.encode("unreserved-._~ABC123"), "unreserved-._~ABC123")
     }
 
+    func testEncodePathPreservesValidEscapesButStillEncodesRawContent() {
+        // A pre-encoded path PARAMETER (one segment that needed
+        // escaping, e.g. an MCP server name containing `/`) survives
+        // as-is: idempotent per segment, never `%252F`…
+        XCTAssertEqual(
+            PercentCoding.encodePath("/api/experimental/mcp/org%2Fdocs/connect"),
+            "/api/experimental/mcp/org%2Fdocs/connect"
+        )
+        XCTAssertEqual(PercentCoding.encodePath("/api/mcp/50%25off"), "/api/mcp/50%25off")
+        // …raw content is still encoded exactly once…
+        XCTAssertEqual(
+            PercentCoding.encodePath("/a b/c?d#e"),
+            "/a%20b/c%3Fd%23e"
+        )
+        // …and a `%` that is not a valid escape is raw content (→ %25).
+        XCTAssertEqual(PercentCoding.encodePath("/100%"), "/100%25")
+        XCTAssertEqual(PercentCoding.encodePath("/%zz"), "/%25zz")
+    }
+
     func testDeepObjectLocationQueryEncoding() throws {
         let base = try XCTUnwrap(URL(string: "https://host.example:4097"))
         let request = APIRequest(

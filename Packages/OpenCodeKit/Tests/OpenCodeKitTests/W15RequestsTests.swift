@@ -49,6 +49,33 @@ final class W15RequestsTests: XCTestCase {
         XCTAssertTrue(W15Requests.mcpDisconnect(server: "demo-docs").query.isEmpty)
     }
 
+    /// The server NAME is a user-chosen config key: `/` must not
+    /// become extra path structure, and `?`/`#`/`%`/spaces must not
+    /// truncate or misroute — each name travels as ONE
+    /// percent-encoded segment in the BUILT URL, exactly once
+    /// (api-contract.md Line 14), plain names unchanged.
+    func testServerNamesTravelAsOneEncodedPathSegment() throws {
+        let base = try XCTUnwrap(URL(string: "https://host.example"))
+        for (server, expectedPath) in [
+            ("demo-docs", "/api/experimental/mcp/demo-docs/connect"),
+            ("org/docs", "/api/experimental/mcp/org%2Fdocs/connect"),
+            ("a b", "/api/experimental/mcp/a%20b/connect"),
+            ("50%off", "/api/experimental/mcp/50%25off/connect"),
+            ("x?y#z", "/api/experimental/mcp/x%3Fy%23z/connect"),
+        ] {
+            let url = try W15Requests.mcpConnect(server: server).url(baseURL: base)
+            XCTAssertEqual(
+                url.absoluteString, "https://host.example" + expectedPath,
+                "server name \"\(server)\" must stay one path segment"
+            )
+        }
+        let disconnect = try W15Requests.mcpDisconnect(server: "org/docs").url(baseURL: base)
+        XCTAssertEqual(
+            disconnect.absoluteString,
+            "https://host.example/api/experimental/mcp/org%2Fdocs/disconnect"
+        )
+    }
+
     private func decodeList(_ json: String) throws -> LocationEnvelope<[McpServer]> {
         try JSONDecoder().decode(LocationEnvelope.self, from: Data(json.utf8))
     }
