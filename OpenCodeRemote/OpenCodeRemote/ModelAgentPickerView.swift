@@ -109,7 +109,7 @@ struct ModelAgentPickerView: View {
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("S10.models.empty")
                     } else {
-                        ForEach(filteredModels) { model in
+                        ForEach(filteredModels, id: \.selectionKey) { model in
                             modelRow(model)
                         }
                     }
@@ -206,7 +206,7 @@ struct ModelAgentPickerView: View {
                     if isSelected(model) {
                         Image(systemName: "checkmark")
                             .font(.caption.weight(.semibold))
-                            .accessibilityIdentifier("S10.model.\(model.id).selected")
+                            .accessibilityIdentifier("S10.model.\(model.selectionKey).selected")
                     }
                     if isDefault(model) {
                         Text("Default")
@@ -243,13 +243,13 @@ struct ModelAgentPickerView: View {
                     Text(model.enabled ? "Deprecated — not selectable" : "Unavailable on this host")
                         .font(.caption2)
                         .foregroundStyle(.orange)
-                        .accessibilityIdentifier("S10.model.\(model.id).unavailable")
+                        .accessibilityIdentifier("S10.model.\(model.selectionKey).unavailable")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .disabled(!model.isSelectable || selection.isSwitching)
-        .accessibilityIdentifier("S10.model.\(model.id)")
+        .accessibilityIdentifier("S10.model.\(model.selectionKey)")
     }
 
     private func agentRow(_ agent: AgentInfo) -> some View {
@@ -368,4 +368,13 @@ struct ModelAgentPickerView: View {
             ? "\(model.limit.context / 1000)K context"
             : "\(model.limit.context) context"
     }
+}
+
+private extension ModelInfo {
+    /// Provider-qualified row identity: bare model IDs repeat across
+    /// providers (`id` is the wire's model id, equal to `modelID` in the
+    /// fixtures), so ForEach identities and accessibility identifiers
+    /// must carry the provider or SwiftUI reuses the wrong row's
+    /// checkmark/badge state and the S10 identifiers collide.
+    var selectionKey: String { "\(providerID)/\(id)" }
 }

@@ -370,6 +370,10 @@ private struct PatchDetailView: View {
             .onChange(of: scrollTarget) { _, target in
                 guard let target else { return }
                 withAnimation { proxy.scrollTo(target, anchor: .center) }
+                // Re-arm: onChange fires only on a VALUE change, so a
+                // repeat tap on the same target (one hit, one change, or
+                // a row the user scrolled away from) must still scroll.
+                scrollTarget = nil
             }
         }
         .navigationTitle((file.file as NSString).lastPathComponent)

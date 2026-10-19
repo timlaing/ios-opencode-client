@@ -242,6 +242,13 @@ final class AttachmentLibrary {
         drafts[index].task?.cancel()
         drafts[index].routeToken = nil
         drafts[index].state = .preparing
+        // A question asked about the PREVIOUS copy no longer applies —
+        // and if the new mode needs no question, `start` routes directly
+        // and the stale one would later re-route a ready draft (a second
+        // staged upload) or Cancel would remove a good draft. `enqueue`
+        // removes same-id entries itself, so the re-prepare can safely
+        // re-ask if it still needs to.
+        confirmationQueue.removeAll { $0.id == draftID }
         loadThenPrepare(draftID: draftID, host: host)
     }
 
