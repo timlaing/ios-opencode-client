@@ -830,10 +830,10 @@ final class ConversationLibraryTests: XCTestCase {
 
     func testLoadUsageWithoutCredentialReportsRePairAndSendsNoRequest() async {
         let recorder = Recorder()
-        let library = conversation(recorder: recorder, credentials: [:]) { _ in
+        let library = conversation(recorder: recorder, handler: { _ in
             XCTFail("no request may be sent without a credential")
             return Fixtures.response("{}")
-        }
+        }, credentials: [:])
 
         await library.loadUsage(host: one, sessionID: "ses_a")
 
@@ -901,10 +901,10 @@ final class ConversationLibraryTests: XCTestCase {
 
     func testCompactWithoutCredentialIsRejected() async {
         let recorder = Recorder()
-        let library = conversation(recorder: recorder, credentials: [:]) { _ in
+        let library = conversation(recorder: recorder, handler: { _ in
             XCTFail("no request may be sent without a credential")
             return Fixtures.response("{}")
-        }
+        }, credentials: [:])
 
         await library.compact(host: one, sessionID: "ses_a")
 
