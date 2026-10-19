@@ -147,6 +147,9 @@ final class SessionsLibrary {
 
     /// Server-side title search across the visible hosts. Results replace
     /// neither the inventory nor each other per host — one term at a time.
+    /// Parallel for the reason `load(_:)` gives: the shared session allows
+    /// 60 s per request, so one unreachable host must not delay every later
+    /// host's results until its timeout expires.
     func search(_ term: String, entries: [HostLibrary.Entry]) async {
         let needle = term.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !needle.isEmpty else {
@@ -156,28 +159,46 @@ final class SessionsLibrary {
             return
         }
         activeSearch = needle
-        for entry in entries {
-            guard let credentialProvider, let credential = credentialProvider(entry.id) else { continue }
-            do {
-                let page = try await service.sessions(
-                    at: entry.host.address, credential: credential, search: needle
-                )
-                // Overlapping searches: only the CURRENT term may write —
-                // a slower earlier request must not overwrite newer
-                // results, and a cancelled task must not surface errors.
-                guard activeSearch == needle, !Task.isCancelled else { return }
-                searchResultsByHost[entry.id] = page.data
-                // Only the SEARCH error clears here — a successful search
-                // is no evidence the inventory exists.
-                searchErrorsByHost[entry.id] = nil
-            } catch {
-                guard activeSearch == needle, !Task.isCancelled else { return }
-                // A failed host shows no stale results from the previous
-                // term — its own error is surfaced instead, in search
-                // wording, never painted as a listing failure.
-                searchResultsByHost[entry.id] = nil
-                searchErrorsByHost[entry.id] = Self.searchMessage(for: error)
+        await withTaskGroup(of: Void.self) { group in
+            for entry in entries {
+                guard let credentialProvider, let credential = credentialProvider(entry.id) else {
+                    // No credential means the host is SKIPPED, not searched:
+                    // without this clear, rows() would keep presenting the
+                    // previous term's sessions under the new activeSearch —
+                    // silently, with no error. The re-pair cause is recorded
+                    // as a SEARCH failure, mirroring load(host:)'s own
+                    // credential guard.
+                    searchResultsByHost[entry.id] = nil
+                    searchErrorsByHost[entry.id] = "Re-pair this host to search its sessions."
+                    continue
+                }
+                group.addTask {
+                    await self.searchOne(credential: credential, entry: entry, needle: needle)
+                }
             }
+        }
+    }
+
+    /// One host's title search. Writes only while `needle` is still the
+    /// current term — a slower overlapping request must not overwrite newer
+    /// results, and a cancelled task must not surface errors.
+    private func searchOne(credential: BasicCredential, entry: HostLibrary.Entry, needle: String) async {
+        do {
+            let page = try await service.sessions(
+                at: entry.host.address, credential: credential, search: needle
+            )
+            guard activeSearch == needle, !Task.isCancelled else { return }
+            searchResultsByHost[entry.id] = page.data
+            // Only the SEARCH error clears here — a successful search
+            // is no evidence the inventory exists.
+            searchErrorsByHost[entry.id] = nil
+        } catch {
+            guard activeSearch == needle, !Task.isCancelled else { return }
+            // A failed host shows no stale results from the previous
+            // term — its own error is surfaced instead, in search
+            // wording, never painted as a listing failure.
+            searchResultsByHost[entry.id] = nil
+            searchErrorsByHost[entry.id] = Self.searchMessage(for: error)
         }
     }
 

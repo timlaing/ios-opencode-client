@@ -269,6 +269,85 @@ final class SessionsLibraryTests: XCTestCase {
         XCTAssertNil(library.searchErrorsByHost[one.id])
     }
 
+    func testSearchWithoutCredentialClearsStaleResultsAndReportsRePair() async throws {
+        let one = host("host_one", name: "Mock A")
+        let two = host("host_two", name: "Mock B")
+        // Credentials are late-bound, so the test can drop ONE host's
+        // between searches the way a Keychain eviction or credential
+        // deletion would — the other host stays paired throughout.
+        let twoPaired = Flag(true)
+        let library = SessionsLibrary(
+            service: SessionService(makeTransport: { _ in StubTransport(handler: { request in
+                if request.query.contains(where: { $0.key == "search" }) {
+                    return Fixtures.response(Fixtures.page([Fixtures.session("ses_match")]))
+                }
+                return Fixtures.response(Fixtures.page([Fixtures.session("ses_a")]))
+            }) }),
+            credentialProvider: { id in
+                (id == two.id && !twoPaired.value) ? nil : BasicCredential(secret: "t")
+            }
+        )
+
+        await library.search("deployment", entries: [entry(one), entry(two)])
+        XCTAssertEqual(library.searchResultsByHost[one.id]?.count, 1)
+        XCTAssertEqual(library.searchResultsByHost[two.id]?.count, 1, "both hosts hold the first term")
+
+        twoPaired.value = false
+        await library.search("gone", entries: [entry(one), entry(two)])
+
+        XCTAssertNil(library.searchResultsByHost[two.id],
+                     "a credential-less host keeps no previous term's rows under the new activeSearch")
+        XCTAssertEqual(library.searchErrorsByHost[two.id], "Re-pair this host to search its sessions.",
+                       "the actual cause is recorded — never a silent skip")
+        XCTAssertEqual(library.searchResultsByHost[one.id]?.count, 1,
+                       "the still-paired host searches the new term normally")
+        XCTAssertNil(library.searchErrorsByHost[one.id])
+    }
+
+    func testSearchRunsHostsInParallel() async throws {
+        let one = host("host_one", name: "Mock A")
+        let two = host("host_two", name: "Mock B")
+        let releaseSlow = DispatchSemaphore(value: 0)
+        let library = library(
+            handler: { request in
+                if request.query.contains(where: { $0.key == "search" }) {
+                    // host_one's credential rides on the request: block ONLY
+                    // its search until the test releases it (the shared
+                    // session's real 60 s timeout stands in for the
+                    // semaphore in production).
+                    if request.credential?.secret == "s1" {
+                        _ = releaseSlow.wait(timeout: .now() + 10)
+                    }
+                    return Fixtures.response(Fixtures.page([Fixtures.session("ses_match")]))
+                }
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            },
+            credentials: [
+                "host_one": BasicCredential(secret: "s1"),
+                "host_two": BasicCredential(secret: "s2"),
+            ]
+        )
+
+        let searching = Task { await library.search("deployment", entries: [entry(one), entry(two)]) }
+
+        // host_one is the FIRST entry and still blocked mid-request: a
+        // sequential search would never even ask host_two until the slow
+        // host gave up. Only a parallel structure produces host_two's
+        // results by now.
+        for _ in 0..<10_000 where library.searchResultsByHost[two.id] == nil {
+            await Task.yield()
+        }
+        XCTAssertNotNil(library.searchResultsByHost[two.id],
+                        "the second host's results arrive while the first host is still in flight")
+        XCTAssertNil(library.searchResultsByHost[one.id], "the blocked host has not written yet")
+
+        releaseSlow.signal()
+        await searching.value
+        XCTAssertEqual(library.searchResultsByHost[one.id]?.count, 1)
+        XCTAssertEqual(library.searchResultsByHost[two.id]?.count, 1)
+        XCTAssertTrue(library.searchErrorsByHost.isEmpty, "no host failed")
+    }
+
     // MARK: - Rows, scopes, markers
 
     func testRowsApplyProjectScopeHiddenFilterAndMarkers() async throws {
