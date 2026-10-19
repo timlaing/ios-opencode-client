@@ -55,12 +55,22 @@ final class HostLibrary {
         reload()
     }
 
-    /// Re-reads persisted hosts. Connection state resets to `checking`; call
-    /// `refreshStates()` to probe each host.
+    /// Re-reads persisted hosts. Hosts still present KEEP their known
+    /// connection state — an add or remove reload must not blank every
+    /// other row back to a spinner (the Servers tab only probes in its
+    /// task/pull-to-refresh, so a reset would stick until then). Hosts
+    /// with no previous state start at `checking`; call `refreshStates()`
+    /// to probe them.
     func reload() {
         guard let hostStore else { return }
+        let previous = Dictionary(
+            entries.map { ($0.id, $0.connection) },
+            uniquingKeysWith: { first, _ in first }
+        )
         do {
-            entries = try hostStore.hosts().map { Entry(host: $0, connection: .checking) }
+            entries = try hostStore.hosts().map {
+                Entry(host: $0, connection: previous[$0.id] ?? .checking)
+            }
         } catch {
             storageError = "Hosts could not be read from device storage."
         }

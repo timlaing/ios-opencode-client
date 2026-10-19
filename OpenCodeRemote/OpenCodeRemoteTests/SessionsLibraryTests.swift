@@ -442,10 +442,13 @@ final class SessionsLibraryTests: XCTestCase {
     // MARK: - Local state
 
     func testFollowedSessionIDsFlowFromLocalState() async throws {
-        let library = library { _ in
+        // Isolated defaults: the test bundle runs inside the app host, so
+        // .standard would carry every follow the app has ever saved on this
+        // simulator into the exact-equality assertions below.
+        let library = library(handler: { _ in
             XCTFail("no server calls")
             throw TransportError.connectionFailed("should not run")
-        }
+        }, defaults: freshDefaults)
         let key = SessionKey(hostID: HostID(rawValue: "host_one"), sessionID: "ses_a")
 
         XCTAssertTrue(library.localState.toggleFollowed(key))

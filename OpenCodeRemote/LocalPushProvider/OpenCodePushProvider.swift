@@ -36,6 +36,12 @@ final class OpenCodePushProvider: NEAppPushProvider {
 
     private var generation = 0
     private var supervisors: [String: HostEventSupervisor] = [:]
+    /// The secret each supervisor was BUILT with (memory-only, never
+    /// logged): a re-pair can keep the same host ID, so no configuration
+    /// diff ever arrives for it — comparing the freshly read Keychain
+    /// secret against this is the only way to notice the old observer is
+    /// presenting a credential the host now rejects.
+    private var secretsByHost: [String: String] = [:]
     private var ledger: NotificationLedger?
     private var hostStore: HostStore?
     private let credentials = KeychainCredentialStore()
@@ -76,6 +82,7 @@ final class OpenCodePushProvider: NEAppPushProvider {
             configurationObservation = nil
             let stopping = supervisors.values
             supervisors = [:]
+            secretsByHost = [:]
             Task { @Sendable in
                 for supervisor in stopping {
                     await supervisor.stop()
@@ -93,7 +100,8 @@ final class OpenCodePushProvider: NEAppPushProvider {
             // A host whose observer could not start — most importantly a
             // Keychain read that failed while the device was locked
             // (errSecInteractionNotAllowed) — is retried here; startObservers
-            // skips hosts that already have a supervisor, so healthy streams
+            // skips hosts whose supervisor already holds the CURRENT secret
+            // (and replaces one whose secret changed), so healthy streams
             // are untouched.
             if let configuration = try? decodeConfiguration() {
                 startObservers(for: configuration, generation: generation)
@@ -126,6 +134,7 @@ final class OpenCodePushProvider: NEAppPushProvider {
             let desired = Set(configuration.hostIDs)
             for (hostID, supervisor) in supervisors where !desired.contains(hostID) {
                 supervisors.removeValue(forKey: hostID)
+                secretsByHost.removeValue(forKey: hostID)
                 Task { await supervisor.stop() }
                 logger.info("stopped removed host observer")
             }
@@ -180,7 +189,10 @@ final class OpenCodePushProvider: NEAppPushProvider {
         let followed = Set(configuration.followedSessions)
         let hosts = (try? hostStore.hosts()) ?? []
         for host in hosts where configuration.hostIDs.contains(host.id.rawValue) {
-            guard supervisors[host.id.rawValue] == nil else { continue } // never a second stream per host
+            // Keychain FIRST: the existing-supervisor check below must be
+            // able to compare secrets, and a re-pair under the same host ID
+            // produces no configuration diff (hostIDs unchanged → no KVO),
+            // so this read is the only chance to notice the change.
             let secret: String?
             do {
                 secret = try credentials.secret(for: host.id.rawValue)
@@ -188,13 +200,24 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 // A Keychain READ failure (a locked device returns
                 // errSecInteractionNotAllowed) is not "no credential":
                 // leave this host unsupervised so handleTimerEvent retries
-                // it instead of logging a misleading absence.
+                // it instead of logging a misleading absence. An existing
+                // supervisor keeps running on the secret it was built with.
                 logger.error("keychain read failed for host; observer deferred: \(String(describing: error))")
                 continue
             }
             guard let secret else {
                 logger.warning("host has no stored credential; observer not started")
                 continue
+            }
+            if let existing = supervisors[host.id.rawValue] {
+                // Never a second stream per host — but a changed secret
+                // (re-pair) must REPLACE the observer built with the old
+                // one: its credential closure captured the rejected secret
+                // and it would keep it until the system restarts the
+                // provider, leaving the host silently unsupervised.
+                guard secretsByHost[host.id.rawValue] != secret else { continue }
+                logger.info("credential changed for host; replacing observer")
+                Task { await existing.stop() }
             }
             let supervisor = makeSupervisor(
                 host: host,
@@ -204,6 +227,7 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 generation: generation
             )
             supervisors[host.id.rawValue] = supervisor
+            secretsByHost[host.id.rawValue] = secret
             Task { await supervisor.start() }
         }
     }
