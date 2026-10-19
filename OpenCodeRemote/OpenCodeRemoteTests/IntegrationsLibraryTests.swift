@@ -49,6 +49,10 @@ final class IntegrationsLibraryTests: XCTestCase {
         /// target — the schema guarantees no relationship between
         /// them, so the row join must not assume one.
         static let pluginListIDDiffers = #"{"location":{"directory":"/srv/demo"},"data":[{"id":"pkg-123","source":{"type":"package","target":"demo.audit","version":"1.0.0"},"features":{"server":true},"state":{"status":"active"}}]}"#
+
+        /// The host answers under a DIFFERENT location than the one
+        /// the session asked for.
+        static let pluginListOtherLocation = #"{"location":{"directory":"/srv/other"},"data":[]}"#
     }
 
     /// Captured-var mutation is not allowed in `@Sendable` handlers.
@@ -177,6 +181,13 @@ final class IntegrationsLibraryTests: XCTestCase {
         XCTAssertEqual(library.editableDocument?.relativePath, "opencode.jsonc")
         XCTAssertEqual(
             Set(recorder.requests.map(\.operationID)), ["plugin.list", "config.get"]
+        )
+        // The runtime inventory is requested FOR THE SESSION'S
+        // LOCATION — combining another scope's runtime with these
+        // directives would render half-truth rows.
+        let pluginRequest = recorder.requests.first { $0.operationID == "plugin.list" }
+        XCTAssertEqual(
+            pluginRequest?.query.first { $0.key == "location[directory]" }?.value, "/srv/demo"
         )
 
         // Declared positive + running: active with its declared scope.
@@ -506,5 +517,92 @@ final class IntegrationsLibraryTests: XCTestCase {
         XCTAssertEqual(audit?.statusText, "Active")
         XCTAssertEqual(audit?.canDisable, true)
         XCTAssertNil(library.rows.first { $0.id == "pkg-123" })
+    }
+
+    /// The host answers the inventory under a DIFFERENT location than
+    /// the session's: combining those runtime facts with the session's
+    /// directives would render half-truth rows, so the load refuses.
+    func testLoadRefusesARuntimeInventoryFromAnotherLocation() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginListOtherLocation)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertEqual(
+            library.loadError,
+            "The host reports its plugins for a different location than this session's directory."
+        )
+        XCTAssertTrue(library.rows.isEmpty, "no rows are built from mismatched scopes")
+    }
+
+    /// The write LANDED when the reload fails: the notice must never
+    /// report the save as failed — the change is on disk, merely
+    /// unapplied, and stays visible as such.
+    func testApplyToggleReloadFailureReportsSavedNotApplied() async throws {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write": return Fixtures.noContent
+            case "location.reload": throw TransportError.http(status: 500, envelope: nil)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+
+        await library.applyToggle(host: one, plan: plan)
+
+        XCTAssertNil(library.toggleError, "the save itself succeeded")
+        XCTAssertEqual(library.notice, "Saved, but the host could not reload the location.")
+        XCTAssertEqual(library.unreflected, ["demo.audit"], "an unapplied change stays visible")
+        XCTAssertNil(library.pendingPlan, "the plan is spent — the bytes are on the host")
+        XCTAssertTrue(recorder.requests.contains { $0.operationID == "experimental.fs.write" })
+    }
+
+    /// Write and reload succeed, but the readback READ fails: the
+    /// outcome is UNKNOWN — never "not saved", and "not applied" is
+    /// equally over-claimed.
+    func testApplyToggleReadbackFailureReportsSavedUnverified() async throws {
+        let recorder = Recorder()
+        let runtimeCalls = Counter()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list":
+                // Load: inventory answers. Readback: the read fails.
+                if runtimeCalls.next() == 0 {
+                    return Fixtures.response(Fixtures.pluginList)
+                }
+                throw TransportError.http(status: 500, envelope: nil)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write", "location.reload":
+                return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+
+        await library.applyToggle(host: one, plan: plan)
+
+        XCTAssertNil(library.toggleError, "the save itself succeeded")
+        XCTAssertEqual(
+            library.notice, "Saved, but the host's runtime inventory could not be read."
+        )
+        XCTAssertFalse(
+            library.unreflected.contains("demo.audit"),
+            "unknown is not \"not applied\" — the marker claims a fact we do not have"
+        )
     }
 }

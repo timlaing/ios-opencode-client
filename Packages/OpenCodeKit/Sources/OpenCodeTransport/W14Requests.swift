@@ -9,14 +9,22 @@ import Foundation
 /// `fs.read`/`experimental.fs.write` (W02 builders).
 public enum W14Requests {
     /// `GET /api/plugin` — the RUNTIME plugin inventory, location-
-    /// wrapped like every inventory route. Absence from this list is
+    /// wrapped like every inventory route. `directory` scopes the
+    /// inventory (`location[directory]`, optional per the baseline) so
+    /// runtime facts are never combined with directives from a
+    /// different location — the caller compares the answer's
+    /// `location` against what it asked for. Absence from this list is
     /// NOT proof a plugin is disabled: declared directives and runtime
     /// sources must be combined (docs/api-contract.md W14).
-    public static func pluginList(credential: BasicCredential? = nil) -> APIRequest {
+    public static func pluginList(
+        directory: String? = nil,
+        credential: BasicCredential? = nil
+    ) -> APIRequest {
         APIRequest(
             operationID: "plugin.list",
             method: .get,
             path: "/api/plugin",
+            query: directory.map { [QueryPair(key: "location[directory]", value: $0)] } ?? [],
             credential: credential
         )
     }

@@ -8,19 +8,19 @@ All project names, paths, prompts, credentials, tokens, files, outputs and error
 
 ## Artefacts and repeatable commands
 
-| Artefact | Purpose |
-| --- | --- |
-| [OpenAPI snapshot](../contracts/opencode-v2.0.25.openapi.json) | Authoritative pinned wire definitions |
-| [Source manifest](../contracts/source-manifest.json) | Version/commit, hash, operation counts, upstream licence |
-| [Mobile scope](../contracts/mobile-scope.json) | Workflow → screen → operation bindings and initial/later scope |
-| [Route catalog](../contracts/route-catalog.json) | All operations, schemas, parameters, status codes, mock coverage |
-| [Generated demo fixture](../fixtures/generated/demo.json) | Deterministic read models and fictional file content |
-| [Generated HTTP cases](../fixtures/generated/http-cases.json) | Example requests and expected responses/statuses validated through HTTP tests |
+| Artefact                                                                                                       | Purpose                                                                                    |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| [OpenAPI snapshot](../contracts/opencode-v2.0.25.openapi.json)                                                 | Authoritative pinned wire definitions                                                      |
+| [Source manifest](../contracts/source-manifest.json)                                                           | Version/commit, hash, operation counts, upstream licence                                   |
+| [Mobile scope](../contracts/mobile-scope.json)                                                                 | Workflow → screen → operation bindings and initial/later scope                             |
+| [Route catalog](../contracts/route-catalog.json)                                                               | All operations, schemas, parameters, status codes, mock coverage                           |
+| [Generated demo fixture](../fixtures/generated/demo.json)                                                      | Deterministic read models and fictional file content                                       |
+| [Generated HTTP cases](../fixtures/generated/http-cases.json)                                                  | Example requests and expected responses/statuses validated through HTTP tests              |
 | [Generated SSE frames](../fixtures/generated/events.sse) / [decoded trace](../fixtures/generated/events.jsonl) | Deterministic streaming fixtures for native decoder/reducer tests without a running server |
-| [Fixture generator](../mock/fixtures.py) | Repeatable seed-based generation |
-| [Mock server](../mock/server.py) | Stateful JSON/binary/SSE behavior and scenario controls |
-| [Contract guards](../mock/contract.py) | Snapshot-derived route and schema checks; source-derived event subset guard |
-| [Automated tests](../tests/test_mock.py) | Contract and loopback HTTP integration checks |
+| [Fixture generator](../mock/fixtures.py)                                                                       | Repeatable seed-based generation                                                           |
+| [Mock server](../mock/server.py)                                                                               | Stateful JSON/binary/SSE behavior and scenario controls                                    |
+| [Contract guards](../mock/contract.py)                                                                         | Snapshot-derived route and schema checks; source-derived event subset guard                |
+| [Automated tests](../tests/test_mock.py)                                                                       | Contract and loopback HTTP integration checks                                              |
 
 From the workspace root:
 
@@ -53,16 +53,16 @@ Use an actual trusted certificate for the chosen hostname, and network access un
 
 ## Generated session fixtures
 
-| Session | Generated content/state | Screen assertions |
-| --- | --- | --- |
-| `ses_demo_001` | Rich Markdown, Unicode, reasoning/tool card, completed response, changed file | S08 text selection/copy/source; S13 file preview; S14 usage; S15 diff |
-| `ses_demo_002` | Pending `per_demo` shell approval | S11 Once/Always/Reject and stale second reply |
-| `ses_demo_003` | Pending `frm_demo`, options/multiselect/boolean/conditions/integer/external reference | S12 typed answers, visibility/validation, external browser, already-settled recovery |
-| `ses_demo_004` | Assistant retry state | S08 retry presentation; generated timestamps are fixed, so use an injected demo clock for countdown snapshots |
-| `ses_demo_005` | Failed execution/provider error | S08 terminal failure presentation, recoverable draft state |
-| `ses_demo_006` | 120 generated chronological messages | S08 pagination, prepend position preservation, limits and duplicate prevention |
-| `ses_demo_007` | Empty session | Empty transcript and first-send flow |
-| `ses_demo_008` | Existing transcript available for queue tests | Submit `resume:false,delivery:"queue"`, inspect/edit/cancel inbox |
+| Session        | Generated content/state                                                               | Screen assertions                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `ses_demo_001` | Rich Markdown, Unicode, reasoning/tool card, completed response, changed file         | S08 text selection/copy/source; S13 file preview; S14 usage; S15 diff                                         |
+| `ses_demo_002` | Pending `per_demo` shell approval                                                     | S11 Once/Always/Reject and stale second reply                                                                 |
+| `ses_demo_003` | Pending `frm_demo`, options/multiselect/boolean/conditions/integer/external reference | S12 typed answers, visibility/validation, external browser, already-settled recovery                          |
+| `ses_demo_004` | Assistant retry state                                                                 | S08 retry presentation; generated timestamps are fixed, so use an injected demo clock for countdown snapshots |
+| `ses_demo_005` | Failed execution/provider error                                                       | S08 terminal failure presentation, recoverable draft state                                                    |
+| `ses_demo_006` | 120 generated chronological messages                                                  | S08 pagination, prepend position preservation, limits and duplicate prevention                                |
+| `ses_demo_007` | Empty session                                                                         | Empty transcript and first-send flow                                                                          |
+| `ses_demo_008` | Existing transcript available for queue tests                                         | Submit `resume:false,delivery:"queue"`, inspect/edit/cancel inbox                                             |
 
 There are two projects, native-capable synthetic model/agent records, a connected MCP and an authentication-required MCP, plugin inventory/config JSONC, a real patch string, a valid tiny PNG and generated one-page PDF, generated text and a large text file. Agent/model names explicitly identify demo content.
 
@@ -72,15 +72,15 @@ Use `generate(seed=..., long_count=...)` in Python for stress fixtures; do not g
 
 These `/__mock/*` URLs do not exist in OpenCode and must be excluded from the production adapter. Controls are not advertised as server capabilities.
 
-| Request | Effect |
-| --- | --- |
-| `GET /__mock/status` | Scenario, recent redacted operation/status list, recent generated events, and modelled operation IDs |
-| `POST /__mock/reset` with `{}` | Recreate seed data, discard synthetic codes/state, close streams; running generation threads stop through generation identity |
-| `POST /__mock/scenario` with `{name}` | Set the next prompt scenario listed below |
-| `POST /__mock/latency` with `{milliseconds:0..5000}` | Add request latency for loading/cancellation tests |
-| `POST /__mock/disconnect` with `{}` | Close live SSE subscriptions; subsequent connections open a fresh non-replaying stream |
-| `POST /__mock/password` with `{password}` | Rotate synthetic password; existing tokens fail authorization |
-| `POST /__mock/emit` with `{type:"rpc.demo.<name>",data:{...}}` | Inject a synthetic extension event for forward-compatibility handling |
+| Request                                                        | Effect                                                                                                                        |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `GET /__mock/status`                                           | Scenario, recent redacted operation/status list, recent generated events, and modelled operation IDs                          |
+| `POST /__mock/reset` with `{}`                                 | Recreate seed data, discard synthetic codes/state, close streams; running generation threads stop through generation identity |
+| `POST /__mock/scenario` with `{name}`                          | Set the next prompt scenario listed below                                                                                     |
+| `POST /__mock/latency` with `{milliseconds:0..5000}`           | Add request latency for loading/cancellation tests                                                                            |
+| `POST /__mock/disconnect` with `{}`                            | Close live SSE subscriptions; subsequent connections open a fresh non-replaying stream                                        |
+| `POST /__mock/password` with `{password}`                      | Rotate synthetic password; existing tokens fail authorization                                                                 |
+| `POST /__mock/emit` with `{type:"rpc.demo.<name>",data:{...}}` | Inject a synthetic extension event for forward-compatibility handling                                                         |
 
 Example:
 
@@ -92,16 +92,16 @@ curl -u opencode:mock-password -H 'Content-Type: application/json' \
   http://127.0.0.1:4097/api/session/ses_demo_007/prompt
 ```
 
-| Scenario | State transitions / expected app behavior |
-| --- | --- |
-| `normal` | Admit prompt → execution/step start → reasoning/text chunks → ended/full-value boundaries → succeeded/idle; one completed response |
-| `approval` | Admit/start → permission.asked → wait for exact session/request reply; stale repeat becomes 404 |
-| `question` | Admit/start → form.created → wait; invalid answer stays pending, valid answer settles, stale second answer becomes 409 |
-| `failure` | Stream representative content then terminal step/execution failure; no success notification |
-| `retry` | Emit retry status, then continue; display retry without creating another user message |
-| `timeout-after-commit` | Admit input then close HTTP without acknowledgement; reconcile stable ID against inbox/message; do not resend |
-| `duplicate-events` | Repeat identical event IDs on delta frames; reducer must not append twice |
-| `unknown-event` | Inject `rpc.demo.future` during normal execution; unknown extension data must not crash the chat |
+| Scenario               | State transitions / expected app behavior                                                                                          |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `normal`               | Admit prompt → execution/step start → reasoning/text chunks → ended/full-value boundaries → succeeded/idle; one completed response |
+| `approval`             | Admit/start → permission.asked → wait for exact session/request reply; stale repeat becomes 404                                    |
+| `question`             | Admit/start → form.created → wait; invalid answer stays pending, valid answer settles, stale second answer becomes 409             |
+| `failure`              | Stream representative content then terminal step/execution failure; no success notification                                        |
+| `retry`                | Emit retry status, then continue; display retry without creating another user message                                              |
+| `timeout-after-commit` | Admit input then close HTTP without acknowledgement; reconcile stable ID against inbox/message; do not resend                      |
+| `duplicate-events`     | Repeat identical event IDs on delta frames; reducer must not append twice                                                          |
+| `unknown-event`        | Inject `rpc.demo.future` during normal execution; unknown extension data must not crash the chat                                   |
 
 Set `resume:false` to keep a prompt visibly in inbox and test cancellation/delivery edits deterministically. Queue-versus-steering scheduling boundaries are simplified by the mock and must also be tested against the real server.
 
@@ -120,7 +120,7 @@ Test fixture validity, authentication/challenge, one-time pairing, expiry/rotati
 - Pending inbox work is simplified. Steering during an active provider/tool step, interrupted control items, rejected tool continuation, multi-agent drains, child ownership and session moves require real-server checks. `resume=true` interrupt semantics are not fully reproduced; the initial Stop action uses resume=false.
 - Locations/projects derive from virtual paths; file listing/find/VCS responses are synthetic, and project filesystem permissions/symlinks/platform differences are not emulated. File-find directories, every query filter/subpath, full contextual diff generation and binary VCS are not complete. Diff fixtures do not recalculate from modified in-memory files. Context returns the fixture transcript rather than reproducing compaction boundaries.
 - Raw files support representative single ranges/ETag handling, not complete HTTP conditional/precondition behavior. Last-Modified, If-Range and Content-Type detection differ from a real host. The mock has a 64 MiB request-body limit for test-process protection; it is explicitly not an OpenCode limit. Uploads are buffered by the mock, so mock memory figures are not upload-performance evidence.
-- Prompt fixtures accept inline data and already-staged file URIs only; arbitrary HTTP attachment fetching, file conversion/media limits, and model-native/tool-access distinctions need native server tests. Protected plugin policy, discovery precedence, config watcher/reload ordering, MCP processes/auth and runtime reconfiguration are simplified. A raw JSONC write is retained exactly, but the mock is not an implementation of the app's JSONC editor.
+- Prompt fixtures accept inline data and already-staged file URIs only; arbitrary HTTP attachment fetching, file conversion/media limits, and model-native/tool-access distinctions need native server tests. Protected plugin policy, discovery precedence, config watcher/reload ordering, `location[directory]` scoping on `/api/plugin` (the mock answers its own fixed inventory location regardless of the query), MCP processes/auth and runtime reconfiguration are simplified. A raw JSONC write is retained exactly, but the mock is not an implementation of the app's JSONC editor.
 - Auth reproduces Basic/password/token and main pair flow. It is not a complete browser security reference: cross-origin cookie checks, every proxy-prefix case, service restarts and passwordless server behavior require real-host verification. The mock's cookie helper assumes its local port and is not an app authorization design.
 - Events are live-only and have representative frames/heartbeats; there is no durable-log replay implementation. Duplicate and unknown events are intentional scenarios. Actual queue overflow framing, all event inventories and long-lived proxy behavior require real-server tests.
 - App lock, Keychain, iCloud, camera/photo permissions, backup protection, multi-window ownership, native rendering/accessibility, background transfers, Local Push Connectivity entitlement and Live Activities need Swift/device tests. Passing Python tests is not evidence that these iOS features work.
@@ -129,17 +129,17 @@ Test fixture validity, authentication/challenge, one-time pairing, expiry/rotati
 
 Inject repositories/transport, clock and connection status at the app composition root. Production code cannot enable `/__mock/*`; a separate development/demo configuration selects mock endpoints or in-process fixtures. Native preview/unit tests should load generated JSON using the same DTO decoders as real responses.
 
-| Test group | Cases / pass condition |
-| --- | --- |
-| Navigation | Every S01–S20 destination reachable; Back preserves origin/draft; host switching never mixes IDs; notification tap refetches pending state |
-| Transcript | Both-role Markdown, partial fences, Unicode/RTL, copy/select, external tap-to-load, source mode, long history and stable prepend |
-| Execution | Working before text, retry timing, reasoning/tool phases, stop, stale disconnected state, duplicate event suppression, ended full-value replacement |
-| Writes/recovery | Project folder succeeds/session fails, prompt admitted/response lost, already-settled interaction, concurrent config read/change/write; no automatic replay |
-| Files/changes | Large file expansion, range reads, binary preview, missing file, session-turn versus workspace scope, diff context and null base |
-| Attachments | File/photo/camera, cancellation, unsupported input, staged URI, balanced/original image, missing restored attachment, pending background upload without auto-send |
-| Privacy/storage | 30-day boundary using injected clock; cache budget eviction preserves drafts; backup exclusions and restoration; diagnostic redaction; no secrets in URLs/sync |
-| iPad/accessibility | Two scenes on different/same drafts, Edit Here handoff, process/window restoration, VoiceOver, large text, reduced motion, keyboard focus |
-| Local delivery | Signed physical-device eligible Wi-Fi, main app suspended/locked, first unlock after reboot, VPN loss, token expiry/rotation, follow scope/dedup, stale activity |
+| Test group         | Cases / pass condition                                                                                                                                            |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Navigation         | Every S01–S20 destination reachable; Back preserves origin/draft; host switching never mixes IDs; notification tap refetches pending state                        |
+| Transcript         | Both-role Markdown, partial fences, Unicode/RTL, copy/select, external tap-to-load, source mode, long history and stable prepend                                  |
+| Execution          | Working before text, retry timing, reasoning/tool phases, stop, stale disconnected state, duplicate event suppression, ended full-value replacement               |
+| Writes/recovery    | Project folder succeeds/session fails, prompt admitted/response lost, already-settled interaction, concurrent config read/change/write; no automatic replay       |
+| Files/changes      | Large file expansion, range reads, binary preview, missing file, session-turn versus workspace scope, diff context and null base                                  |
+| Attachments        | File/photo/camera, cancellation, unsupported input, staged URI, balanced/original image, missing restored attachment, pending background upload without auto-send |
+| Privacy/storage    | 30-day boundary using injected clock; cache budget eviction preserves drafts; backup exclusions and restoration; diagnostic redaction; no secrets in URLs/sync    |
+| iPad/accessibility | Two scenes on different/same drafts, Edit Here handoff, process/window restoration, VoiceOver, large text, reduced motion, keyboard focus                         |
+| Local delivery     | Signed physical-device eligible Wi-Fi, main app suspended/locked, first unlock after reboot, VPN loss, token expiry/rotation, follow scope/dedup, stale activity  |
 
 Release requires testing against actual OpenCode macOS/Linux hosts and signed iOS devices, then recording results per workflow. The mock supplies reproducible development coverage; it cannot close external entitlement or platform-runtime gates.
 

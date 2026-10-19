@@ -17,13 +17,16 @@ public struct IntegrationsService: Sendable {
     }
 
     /// `GET /api/plugin` — runtime inventory with the location the host
-    /// answered under.
+    /// actually answered under. `directory` scopes the query; the
+    /// RETURNED directory is authoritative — combine it with
+    /// directives from the same location only.
     public func plugins(
         at host: URL,
-        credential: BasicCredential?
+        credential: BasicCredential?,
+        directory: String? = nil
     ) async throws -> (directory: String, plugins: [PluginInfo]) {
         let envelope = try await makeTransport(host)
-            .perform(W14Requests.pluginList(credential: credential))
+            .perform(W14Requests.pluginList(directory: directory, credential: credential))
             .decodedJSON(LocationEnvelope<[PluginInfo]>.self)
         return (envelope.location.directory, envelope.data)
     }

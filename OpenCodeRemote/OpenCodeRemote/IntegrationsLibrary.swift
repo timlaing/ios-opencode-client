@@ -116,22 +116,56 @@ final class IntegrationsLibrary {
         isLoading = true
         defer { isLoading = false }
         do {
-            async let runtime = service.plugins(at: host.address, credential: credential)
-            async let documents = service.configDocuments(at: host.address, credential: credential)
-            let (_, plugins) = try await runtime
-            let entries = try await documents
+            let inventory = try await fetchInventory(
+                host: host, credential: credential, sessionDirectory: sessionDirectory
+            )
             guard generation == loadGeneration else { return }
-            let editable = Self.editableDocument(in: entries, sessionDirectory: sessionDirectory)
+            let editable = Self.editableDocument(
+                in: inventory.entries, sessionDirectory: sessionDirectory
+            )
             editableDocument = editable
-            rows = Self.buildRows(plugins: plugins, entries: entries, editable: editable)
+            rows = Self.buildRows(
+                plugins: inventory.plugins, entries: inventory.entries, editable: editable
+            )
             // Prune ineffective markers for rows no longer present;
             // row IDs cover declared (== target) and runtime keys alike.
             unreflected = unreflected.intersection(rows.map(\.id))
             loadError = nil
         } catch {
             guard generation == loadGeneration else { return }
-            if !Self.isSilent(error) { loadError = Self.message(for: error) }
+            if case InventoryError.locationMismatch = error {
+                loadError = "The host reports its plugins for a different location than this session's directory."
+            } else if !Self.isSilent(error) {
+                loadError = Self.message(for: error)
+            }
         }
+    }
+
+    private enum InventoryError: Error {
+        case locationMismatch(requested: String, answered: String)
+    }
+
+    /// One inventory read: the runtime plugins scoped to
+    /// `sessionDirectory` and the ordered configuration documents, in
+    /// parallel. THROWS when the host answers the plugin inventory
+    /// under a different location than the one requested — combining
+    /// runtime facts with directives from another scope would render
+    /// half-truth rows and lie about what is running.
+    private func fetchInventory(
+        host: OpenCodeDomain.Host,
+        credential: BasicCredential?,
+        sessionDirectory: String?
+    ) async throws -> (plugins: [PluginInfo], entries: [ConfigEntry]) {
+        async let runtime = service.plugins(
+            at: host.address, credential: credential, directory: sessionDirectory
+        )
+        async let documents = service.configDocuments(at: host.address, credential: credential)
+        let (answeredDirectory, plugins) = try await runtime
+        let entries = try await documents
+        if let requested = sessionDirectory, answeredDirectory != requested {
+            throw InventoryError.locationMismatch(requested: requested, answered: answeredDirectory)
+        }
+        return (plugins, entries)
     }
 
     /// Plans a toggle against the CURRENT document bytes. The plan is
@@ -223,25 +257,57 @@ final class IntegrationsLibrary {
                 directory: plan.directory, path: plan.path,
                 bytes: Data(plan.resultingText.utf8)
             )
-            try await service.reload(at: host.address, credential: credential)
+            // The bytes are on the host now: the plan is spent, and
+            // nothing after this point may offer it again.
             pendingPlan = nil
-            // Authoritative readback: the runtime inventory decides
-            // whether the saved directive is actually in effect.
-            let directory = plan.directory
-            let target = plan.target
-            let enable = plan.enable
-            await load(host: host, sessionDirectory: directory)
-            // Joined by row ID: runtime-present rows carry the runtime
-            // key (their `target` is nil when nothing declares them).
-            let runningAfter = rows.contains { $0.id == target && $0.runtime != nil }
-            if enable ? runningAfter : !runningAfter {
-                unreflected.remove(target)
-                notice = "Saved — the host reloaded the location."
-            } else {
-                unreflected.insert(target)
-                notice = "Saved, but the host's runtime inventory has not applied it yet."
+            do {
+                try await service.reload(at: host.address, credential: credential)
+            } catch {
+                if Self.isSilent(error) { return }
+                // The WRITE landed — a reload failure is an apply
+                // failure, never a save failure ("not saved" after a
+                // successful write would be a lie).
+                unreflected.insert(plan.target)
+                notice = "Saved, but the host could not reload the location."
+                return
             }
-            toggleError = nil
+            // Authoritative readback — fetched DIRECTLY, never through
+            // load: a concurrent refresh holds load's single-flight
+            // guard, and a silently skipped readback would claim an
+            // outcome from stale rows.
+            do {
+                let inventory = try await fetchInventory(
+                    host: host, credential: credential, sessionDirectory: plan.directory
+                )
+                editableDocument = Self.editableDocument(
+                    in: inventory.entries, sessionDirectory: plan.directory
+                )
+                rows = Self.buildRows(
+                    plugins: inventory.plugins, entries: inventory.entries,
+                    editable: editableDocument
+                )
+                unreflected = unreflected.intersection(rows.map(\.id))
+                // Joined by row ID: runtime-present rows carry the
+                // runtime key (their `target` is nil when nothing
+                // declares them).
+                let runningAfter = rows.contains { $0.id == plan.target && $0.runtime != nil }
+                if plan.enable ? runningAfter : !runningAfter {
+                    unreflected.remove(plan.target)
+                    notice = "Saved — the host reloaded the location."
+                } else {
+                    unreflected.insert(plan.target)
+                    notice = "Saved, but the host's runtime inventory has not applied it yet."
+                }
+                toggleError = nil
+            } catch {
+                if Self.isSilent(error) { return }
+                // Saved AND reloaded — only the verification failed.
+                if case InventoryError.locationMismatch = error {
+                    notice = "Saved, but the host reports its plugins for a different location."
+                } else {
+                    notice = "Saved, but the host's runtime inventory could not be read."
+                }
+            }
         } catch {
             if !Self.isSilent(error) { toggleError = Self.toggleErrorMessage(for: error) }
         }

@@ -16,8 +16,19 @@ final class W14RequestsTests: XCTestCase {
             XCTAssertEqual(request.operationID, operationID)
             XCTAssertEqual(request.method, method)
             XCTAssertEqual(request.path, path)
-            XCTAssertTrue(request.query.isEmpty, "these routes carry no query parameters")
+            XCTAssertTrue(request.query.isEmpty, "no location asked for, no query sent")
         }
+    }
+
+    func testPluginListScopesTheInventoryToALocation() {
+        // Asked for a directory, plugin.list carries the deep-object
+        // location like every location-scoped route (the baseline's
+        // `location` parameter is optional — without it, no query).
+        let scoped = W14Requests.pluginList(directory: "/srv/demo")
+        XCTAssertEqual(
+            scoped.query, [QueryPair(key: "location[directory]", value: "/srv/demo")]
+        )
+        XCTAssertTrue(W14Requests.pluginList().query.isEmpty)
     }
 
     private func decodePlugin(_ json: String) throws -> PluginInfo {

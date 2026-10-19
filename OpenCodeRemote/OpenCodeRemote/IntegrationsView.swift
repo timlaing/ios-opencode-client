@@ -58,23 +58,22 @@ struct IntegrationsView: View {
             await library.load(host: host, sessionDirectory: sessionDirectory)
         }
         .confirmationDialog(
-            library.pendingPlan?.description ?? "",
+            "Apply the plugin change?",
             isPresented: Binding(
                 get: { library.pendingPlan != nil },
                 set: { if !$0 { library.cancelPendingPlan() } }
             ),
-            titleVisibility: .visible
-        ) {
+            titleVisibility: .visible,
+            presenting: library.pendingPlan
+        ) { plan in
+            // The plan arrives BY VALUE from the presenting overload —
+            // never re-read from state the dismissal write clears.
             Button("Apply Change") {
-                // Captured BEFORE the dismissal write: dismissing the
-                // dialog clears pendingPlan before this Task runs, so
-                // the plan travels in by value (never re-read).
-                guard let plan = library.pendingPlan else { return }
                 Task { await library.applyToggle(host: host, plan: plan) }
             }
             Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The document is re-read before writing; a changed file aborts the save.")
+        } message: { plan in
+            Text("The document is re-read before writing; a changed file aborts the save. (\(plan.description))")
         }
         .navigationTitle("Integrations")
     }

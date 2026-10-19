@@ -68,6 +68,7 @@ enum PluginDirectives {
             switch character {
             case "\\": out += "\\\\"
             case "\"": out += "\\\""
+            case "\r\n": out += "\\r\\n"
             case "\n": out += "\\n"
             case "\r": out += "\\r"
             case "\t": out += "\\t"
@@ -215,8 +216,7 @@ enum PluginDirectives {
                 index = raw.index(after: index)
                 continue
             }
-            if depth == 0, elementStart == nil, char != " ", char != "\t", char != "\n",
-               char != "\r" {
+            if depth == 0, elementStart == nil, !char.isWhitespace {
                 elementStart = index
                 commaAfterLast = false
             }
@@ -286,12 +286,15 @@ enum PluginDirectives {
     }
 
     /// Advances past whitespace and comments; returns the first
-    /// significant index.
+    /// significant index. Whitespace is tested via `isWhitespace`
+    /// because CRLF is ONE Character in Swift — a config written on a
+    /// Windows host uses it and explicit `"\n"`/`"\r"` comparisons
+    /// would never match the grapheme cluster.
     private static func skipTrivia(from start: String.Index, in raw: String) -> String.Index {
         var index = start
         while index < raw.endIndex {
             let char = raw[index]
-            if char == " " || char == "\t" || char == "\n" || char == "\r" {
+            if char.isWhitespace {
                 index = raw.index(after: index)
             } else if char == "/", let end = triviaEnd(from: index, in: raw), end != index {
                 index = end
@@ -312,7 +315,9 @@ enum PluginDirectives {
         guard next < raw.endIndex else { return nil }
         if raw[next] == "/" {
             var index = next
-            while index < raw.endIndex, raw[index] != "\n" {
+            // isNewline, not "\n": a CRLF document's break is ONE
+            // Character and must still end the comment.
+            while index < raw.endIndex, !raw[index].isNewline {
                 index = raw.index(after: index)
             }
             return index

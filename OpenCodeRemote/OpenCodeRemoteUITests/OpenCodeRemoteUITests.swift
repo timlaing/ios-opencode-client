@@ -95,6 +95,30 @@ final class OpenCodeRemoteUITests: XCTestCase {
         }
     }
 
+    /// The device orientation a test sets is NOT evidence the app
+    /// rotated — only the app's WINDOW is. Landscape means the window
+    /// is wider than tall; portrait the reverse. This is what would
+    /// catch landscape disappearing from Info.plist.
+    private func assertInterface(
+        landscape: Bool, in app: XCUIApplication,
+        file: StaticString = #filePath, line: UInt = #line
+    ) {
+        let frame = app.windows.firstMatch.frame
+        if landscape {
+            XCTAssertGreaterThan(
+                frame.width, frame.height,
+                "the app interface did not rotate to landscape — check the supported orientations in Info.plist",
+                file: file, line: line
+            )
+        } else {
+            XCTAssertGreaterThan(
+                frame.height, frame.width,
+                "the app interface did not rotate to portrait — check the supported orientations in Info.plist",
+                file: file, line: line
+            )
+        }
+    }
+
     /// Taps through every tab and asserts each root screen — never a
     /// blank shell.
     private func assertEachTabLands(
@@ -129,35 +153,30 @@ final class OpenCodeRemoteUITests: XCTestCase {
         )
     }
 
-    /// Portrait: the launch orientation, asserted explicitly so the
-    /// check never silently runs in whatever orientation was left over.
+    /// Portrait: the launch orientation, proven by the app's window
+    /// (not the device setting a test controls) and asserted explicitly
+    /// so the check never silently runs in whatever was left over.
     @MainActor
     func testPortraitRootShellOffersEveryTab() throws {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launch()
         waitForRotationToSettle(in: app)
-        XCTAssertEqual(
-            XCUIDevice.shared.orientation, .portrait,
-            "the device did not report portrait after launch"
-        )
+        assertInterface(landscape: false, in: app)
         assertTabsExist(in: app)
         assertEachTabLands(in: app)
     }
 
-    /// Landscape: same shell, rotated BEFORE launch — this is the run
-    /// that proves the orientation support declared in Info.plist, not
-    /// just a live re-rotation.
+    /// Landscape: same shell, rotated BEFORE launch — the window
+    /// assertion proves the orientation support declared in
+    /// Info.plist, not just a live re-rotation.
     @MainActor
     func testLandscapeRootShellOffersEveryTab() throws {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
         app.launch()
         waitForRotationToSettle(in: app)
-        XCTAssertEqual(
-            XCUIDevice.shared.orientation, .landscapeLeft,
-            "landscape did not stick — supported orientations come from Info.plist"
-        )
+        assertInterface(landscape: true, in: app)
         assertTabsExist(in: app)
         assertEachTabLands(in: app)
     }
@@ -172,10 +191,12 @@ final class OpenCodeRemoteUITests: XCTestCase {
         // A sibling test may have left the device rotated — the device
         // rotation races the launch until it settles.
         waitForRotationToSettle(in: app)
+        assertInterface(landscape: false, in: app)
         assertTabsExist(in: app)
 
         XCUIDevice.shared.orientation = .landscapeLeft
         waitForRotationToSettle(in: app)
+        assertInterface(landscape: true, in: app)
         assertTabsExist(in: app)
         requireTab("Settings", in: app)?.tap()
         XCTAssertTrue(
@@ -185,6 +206,7 @@ final class OpenCodeRemoteUITests: XCTestCase {
 
         XCUIDevice.shared.orientation = .portrait
         waitForRotationToSettle(in: app)
+        assertInterface(landscape: false, in: app)
         assertTabsExist(in: app)
         requireTab("Sessions", in: app)?.tap()
         XCTAssertTrue(

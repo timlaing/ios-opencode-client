@@ -21,12 +21,12 @@ This is an implementation contract derived from pinned source, not a claim of li
 
 ## W01: Pairing and host connection — S02/S03
 
-| Step | Native operation | Request and response |
-| --- | --- | --- |
-| Generate on already-authenticated host | `POST /api/pair` (`server.pair`) | No JSON body. Returns `{code, expires_in}`. Existing `opencode pair` invokes it and prints links/QR; the unpaired phone does not need permission to issue a code |
-| Parse existing link/QR | Local parser | `/auth/connect/<code>` URL or existing JSON `{code, urls:[...]}`; no new QR schema |
-| Redeem | `GET /auth/connect/{code}` (`server.connect`) | `Accept: application/json`; returns `{token}`. No prior Basic credential. HTML navigation instead sets a cookie and redirects |
-| Verify and save | `GET /api/info` (`server.info`) | Basic credential is returned token or manually entered password; response `{version,pid,urls,paths:{tmp},capabilities?}` |
+| Step                                   | Native operation                              | Request and response                                                                                                                                             |
+| -------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Generate on already-authenticated host | `POST /api/pair` (`server.pair`)              | No JSON body. Returns `{code, expires_in}`. Existing `opencode pair` invokes it and prints links/QR; the unpaired phone does not need permission to issue a code |
+| Parse existing link/QR                 | Local parser                                  | `/auth/connect/<code>` URL or existing JSON `{code, urls:[...]}`; no new QR schema                                                                               |
+| Redeem                                 | `GET /auth/connect/{code}` (`server.connect`) | `Accept: application/json`; returns `{token}`. No prior Basic credential. HTML navigation instead sets a cookie and redirects                                    |
+| Verify and save                        | `GET /api/info` (`server.info`)               | Basic credential is returned token or manually entered password; response `{version,pid,urls,paths:{tmp},capabilities?}`                                         |
 
 Pair codes are one-use, five-minute codes in this release. Token lifetime is 30 days. Rotating the host password revokes existing signed tokens; there is no independently verified per-device revoke/refresh API. Store the token in Keychain, never iCloud settings. A failed health check after redemption must reuse the token; consuming the code again is not a valid retry. Keep expired/spent links distinct from unreachable hosts. Follow web multi-address behavior within the agreed HTTPS/VPN trust policy; never replay credentials onto an unreviewed origin.
 
@@ -44,18 +44,18 @@ Check for an existing target/configuration before writing; offer Open Existing r
 
 ## W03/W04: Sessions and history — S07/S08
 
-| Action | Operation | Exact behavior |
-| --- | --- | --- |
-| List/search | `GET /api/session` (`session.list`) | Optional `directory`, `project`, `subpath`, `search`, `parentID`, `limit`, `order`, `cursor`; do not combine incompatible filter scopes. `parentID=null` filters root sessions. Response `{data:[Session.Info],cursor:{previous?,next?}}` |
-| Create | `POST /api/session` (`session.create`) | `{id?,title?,agent?,model?,location?:{directory},metadata?,permissions?,parentID?}` → `{data:Session.Info}` |
-| Read | `GET /api/session/{sessionID}` (`session.get`) | `{data:Session.Info}` with model/agent, cumulative cost/tokens, outcome, time, location |
-| Rename | `PATCH /api/session/{sessionID}` (`session.update`) | `{title}` → 204. Metadata/permissions may be patched only deliberately, preserving unrelated metadata |
-| Delete | `DELETE /api/session/{sessionID}` (`session.remove`) | 204; includes children. Explicit confirmation names the session and child impact |
-| Unread state | `POST /api/session/{sessionID}/view` (`session.view`) | `{idle:<observed-idle-epoch-ms>}` → 204. Do not substitute the current phone time |
-| Active sessions | `GET /api/session/active` (`session.active`) | `{data:{[sessionID]:{type:"running"}}}`; absence means not actively drained by this server process, not proof of successful completion |
-| History page | `GET /api/session/{sessionID}/message` (`session.message.list`) | `limit` 1..200, first-page `order=asc|desc`, optional type filter; response `{data:[Session.Message.Info],cursor:{previous?,next?}}` |
-| One message | `GET /api/session/{sessionID}/message/{messageID}` | `{data:Session.Message.Info}` |
-| Active model context | `GET /api/session/{sessionID}/context` (`session.context`) | `{data:[messages after last compaction]}`; distinct from full paged transcript |
+| Action               | Operation                                                       | Exact behavior                                                                                                                                                                                                                            |
+| -------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| List/search          | `GET /api/session` (`session.list`)                             | Optional `directory`, `project`, `subpath`, `search`, `parentID`, `limit`, `order`, `cursor`; do not combine incompatible filter scopes. `parentID=null` filters root sessions. Response `{data:[Session.Info],cursor:{previous?,next?}}` |
+| Create               | `POST /api/session` (`session.create`)                          | `{id?,title?,agent?,model?,location?:{directory},metadata?,permissions?,parentID?}` → `{data:Session.Info}`                                                                                                                               |
+| Read                 | `GET /api/session/{sessionID}` (`session.get`)                  | `{data:Session.Info}` with model/agent, cumulative cost/tokens, outcome, time, location                                                                                                                                                   |
+| Rename               | `PATCH /api/session/{sessionID}` (`session.update`)             | `{title}` → 204. Metadata/permissions may be patched only deliberately, preserving unrelated metadata                                                                                                                                     |
+| Delete               | `DELETE /api/session/{sessionID}` (`session.remove`)            | 204; includes children. Explicit confirmation names the session and child impact                                                                                                                                                          |
+| Unread state         | `POST /api/session/{sessionID}/view` (`session.view`)           | `{idle:<observed-idle-epoch-ms>}` → 204. Do not substitute the current phone time                                                                                                                                                         |
+| Active sessions      | `GET /api/session/active` (`session.active`)                    | `{data:{[sessionID]:{type:"running"}}}`; absence means not actively drained by this server process, not proof of successful completion                                                                                                    |
+| History page         | `GET /api/session/{sessionID}/message` (`session.message.list`) | `limit` 1..200, first-page `order=asc                                                                                                                                                                                                     | desc`, optional type filter; response `{data:[Session.Message.Info],cursor:{previous?,next?}}` |
+| One message          | `GET /api/session/{sessionID}/message/{messageID}`              | `{data:Session.Message.Info}`                                                                                                                                                                                                             |
+| Active model context | `GET /api/session/{sessionID}/context` (`session.context`)      | `{data:[messages after last compaction]}`; distinct from full paged transcript                                                                                                                                                            |
 
 Default mobile list/page size is 50. Consume cursors as opaque values. History explicitly forbids combining cursor and order; preserve the type filter when paging. Avoid duplicating overlapping records across refreshes/pages. The mock's cursor contents are synthetic and must not be decoded by the app.
 
@@ -96,7 +96,10 @@ Authorization: Basic <credential>
 Follow the web routing rule: supported native images/PDFs up to the client's 20 MiB inline threshold use a data URI; other/larger content is staged on the host and referenced by file URI. This threshold is not a general upload cap. The `PromptInput.FileAttachment` request is `{uri,name?,description?,mention?}`. The projected user message uses the different `Prompt.FileAttachment` shape with base64 `data`, `mime`, and `source`; do not reuse one DTO for both.
 
 ```json
-{"text":"Explain this image","files":[{"uri":"data:image/png;base64,<bytes>","name":"diagram.png"}]}
+{
+  "text": "Explain this image",
+  "files": [{ "uri": "data:image/png;base64,<bytes>", "name": "diagram.png" }]
+}
 ```
 
 For staging, obtain `paths.tmp` from `/api/info`, choose a unique upload directory, and send raw bytes to `POST /api/experimental/fs/write?location[directory]=...&path=<tmp>/uploads/<UUID>/<filename>`. Response is `{location,data:{path:<resolved-absolute-path>}}`. Use that returned path to construct a properly escaped `file:` URI in the prompt. Do not send an iOS sandbox URL as a host reference. Preserve progress, cancel/retry, pending state, and failed-draft attachment references.
@@ -120,7 +123,7 @@ For staging, obtain `paths.tmp` from `/api/info`, choose a unique upload directo
 
 ## W14/W15: Plugin/MCP controls — S16
 
-`GET /api/config` returns ordered configuration entries from low to high precedence. Document entries have `{type:"document",path?,info}`; directory discoveries have `{type:"directory",path}`. Show effective inventory from `/api/plugin` and `/api/mcp` alongside source/scope and pending/error state. Do not infer a disabled plugin from its absence in runtime inventory alone: combine declared directives and discovered/runtime sources.
+`GET /api/config` returns ordered configuration entries from low to high precedence. Document entries have `{type:"document",path?,info}`; directory discoveries have `{type:"directory",path}`. Show effective inventory from `/api/plugin` and `/api/mcp` alongside source/scope and pending/error state. Do not infer a disabled plugin from its absence in runtime inventory alone: combine declared directives and discovered/runtime sources. `GET /api/plugin` accepts the optional `location` query: request the session's directory and verify the response's `location` answers under it — when it does not, show the scope mismatch rather than combining runtime facts with directives from another location. After a successful write, report a reload or readback failure as saved-but-not-applied/unverified, never as not-saved.
 
 For a project plugin toggle, identify the project JSONC document, read its raw bytes, parse/edit only the ordered `plugins` directives, preserve comments/options/unrelated keys, compare the latest read, then write bytes through `experimental.fs.write`. Negative strings such as `-demo.audit` remove a plugin; enabling must remove the relevant negative directive and preserve a recoverable positive target/options. Protected/built-in policy plugins may not be disabled. Verify runtime inventory after config.updated/reload and expose ineffective overrides. Use `/api/location/reload` only when its server-supported reload is needed, not as an unverified per-plugin endpoint.
 
@@ -132,21 +135,21 @@ MCP connect/disconnect is `POST /api/experimental/mcp/{server}/connect|disconnec
 
 `GET /api/event` is a volatile SSE stream covering all locations. Actual frames are `data: <JSON-object>\n\n`; there is no required SSE `event:` or `id:` line. The opening server.connected object has `{id,type,data:{}}`; other native events normally carry `id`, `created`, `type`, `data`, optional location/metadata, and a durable envelope on durable events. A heartbeat is `: heartbeat\n\n` approximately every 15 seconds. Ignore comments; handle UTF-8 and frames split across transport chunks.
 
-| Event family | Data needed by native reducers | UI/reconciliation |
-| --- | --- | --- |
-| `server.connected` | Empty data | Refresh active/visible/followed locations and sessions; never assume replay |
-| `session.execution.started/succeeded/failed/interrupted` | sessionID; error/reason where defined | Working/completed/failed/stopped state; canonical notification transitions |
-| `session.step.started/streamed/ended/failed` | sessionID, assistantMessageID; agent/model/start or usage/finish/error | Provider phase and last-step usage; refresh affected message |
-| `session.text.started/delta/ended` | sessionID, assistantMessageID, ordinal; delta/text | Incremental text keyed by message/ordinal; ended full value replaces accumulated text |
-| `session.reasoning.started/delta/ended` | Same keys; delta/text | Thinking phase; show only reasoning actually exposed by the server |
-| `session.tool.input.*`, `session.tool.called/progress/success/failed` | sessionID, assistantMessageID, tool ID; input/content/metadata/error | Tool cards; success/failure boundaries are authoritative; preserve unknown content |
-| `session.inbox.enqueued/delivered/cancelled/delivery.changed` | sessionID, inboxID; item/delivery where defined | Queue/steering chips and reconcile inbox |
-| `session.status` | sessionID, status idle/busy/retry with attempt/message/next | Working/retry indicator; do not treat transport disconnect as completion |
-| `permission.asked/replied` | Request fields / sessionID, requestID, reply | Pending dock and stale-answer reconciliation |
-| `form.created/replied/cancelled` | form / id, sessionID, answer | Question dock and settled detail |
-| `session.compaction.*`, `session.usage.updated` | Session-scoped native payload | Compaction state and usage refresh |
-| `config.updated`, plugin/MCP/model/agent changes | Definition-specific data | Refresh inventories/configuration; tolerate unknown extensions |
-| `rpc.*` | Plugin data plus location | Capability-scoped generic handling; never execute arbitrary payload instructions |
+| Event family                                                          | Data needed by native reducers                                         | UI/reconciliation                                                                     |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `server.connected`                                                    | Empty data                                                             | Refresh active/visible/followed locations and sessions; never assume replay           |
+| `session.execution.started/succeeded/failed/interrupted`              | sessionID; error/reason where defined                                  | Working/completed/failed/stopped state; canonical notification transitions            |
+| `session.step.started/streamed/ended/failed`                          | sessionID, assistantMessageID; agent/model/start or usage/finish/error | Provider phase and last-step usage; refresh affected message                          |
+| `session.text.started/delta/ended`                                    | sessionID, assistantMessageID, ordinal; delta/text                     | Incremental text keyed by message/ordinal; ended full value replaces accumulated text |
+| `session.reasoning.started/delta/ended`                               | Same keys; delta/text                                                  | Thinking phase; show only reasoning actually exposed by the server                    |
+| `session.tool.input.*`, `session.tool.called/progress/success/failed` | sessionID, assistantMessageID, tool ID; input/content/metadata/error   | Tool cards; success/failure boundaries are authoritative; preserve unknown content    |
+| `session.inbox.enqueued/delivered/cancelled/delivery.changed`         | sessionID, inboxID; item/delivery where defined                        | Queue/steering chips and reconcile inbox                                              |
+| `session.status`                                                      | sessionID, status idle/busy/retry with attempt/message/next            | Working/retry indicator; do not treat transport disconnect as completion              |
+| `permission.asked/replied`                                            | Request fields / sessionID, requestID, reply                           | Pending dock and stale-answer reconciliation                                          |
+| `form.created/replied/cancelled`                                      | form / id, sessionID, answer                                           | Question dock and settled detail                                                      |
+| `session.compaction.*`, `session.usage.updated`                       | Session-scoped native payload                                          | Compaction state and usage refresh                                                    |
+| `config.updated`, plugin/MCP/model/agent changes                      | Definition-specific data                                               | Refresh inventories/configuration; tolerate unknown extensions                        |
+| `rpc.*`                                                               | Plugin data plus location                                              | Capability-scoped generic handling; never execute arbitrary payload instructions      |
 
 Durable events include `{aggregateID,seq,version}` under `durable`; `seq` is per aggregate, not a global stream cursor. The global stream does not implement replay through Last-Event-ID. Slow consumers can overflow and lose the stream. Reconnect by fetching state, not replaying writes. An experimental session log with `after`/`follow` exists in the full catalog, but using it is not required for the initial app's global-event reconciliation and it is not behaviorally modelled by this mock.
 

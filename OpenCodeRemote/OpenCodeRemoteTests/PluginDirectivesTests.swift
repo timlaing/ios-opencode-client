@@ -177,5 +177,41 @@ final class PluginDirectivesTests: XCTestCase {
                 .resultingText,
             #"{"plugins":["x"]}"#
         )
+
+        // A target carrying a CRLF grapheme (one Character) escapes as
+        // the two JSON escapes and round-trips the same way.
+        let crlfTarget = "a\r\nb"
+        let crlfEdit = PluginDirectives.disable(crlfTarget, in: #"{"plugins":["x"]}"#)
+        XCTAssertEqual(crlfEdit?.resultingText, #"{"plugins":["x", "-a\r\nb"]}"#)
+        XCTAssertEqual(
+            PluginDirectives.enable(crlfTarget, in: crlfEdit?.resultingText ?? "")?
+                .resultingText,
+            #"{"plugins":["x"]}"#
+        )
+    }
+
+    /// Windows-written configs use CRLF line endings, which Swift
+    /// treats as ONE Character ("\r\n" equals neither "\n" nor "\r"):
+    /// the scanner must still end line comments, recognise element
+    /// starts and decode directives in such documents.
+    func testCRLFDocumentsScanLikeLFOnes() {
+        let crlf =
+            "// Windows endings\r\n{\"plugins\": [\r\n    \"a.pkg\", // keep\r\n    \"-b.pkg\"\r\n]}"
+
+        // The existing negative IS visible — never a duplicate append.
+        XCTAssertNil(PluginDirectives.disable("b.pkg", in: crlf))
+        // A fresh directive appends at the CLOSE BRACKET — the CRLF
+        // before it stays where it was.
+        XCTAssertEqual(
+            PluginDirectives.disable("c.pkg", in: crlf)?.resultingText,
+            "// Windows endings\r\n{\"plugins\": [\r\n    \"a.pkg\", // keep\r\n    \"-b.pkg\"\r\n, \"-c.pkg\"]}"
+        )
+        // Enable removes the LAST element as preceding-comma-through-
+        // chunk-end — the span owns the comment and CRLF between them;
+        // the leading comment survives.
+        XCTAssertEqual(
+            PluginDirectives.enable("b.pkg", in: crlf)?.resultingText,
+            "// Windows endings\r\n{\"plugins\": [\r\n    \"a.pkg\"]}"
+        )
     }
 }
