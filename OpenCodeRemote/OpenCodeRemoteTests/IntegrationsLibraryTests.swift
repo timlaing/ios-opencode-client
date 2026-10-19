@@ -261,6 +261,12 @@ final class IntegrationsLibraryTests: XCTestCase {
         await library.load(host: one, sessionDirectory: nil)
 
         XCTAssertNil(library.editableDocument)
+        // No document exists that planToggle could write, so NEITHER
+        // toggle may be offered: an action that could only fail is
+        // never shown (the Disable side of the canEnable rule).
+        let audit = library.rows.first { $0.id == "demo.audit" }
+        XCTAssertEqual(audit?.canDisable, false, "nothing could be written to")
+        XCTAssertEqual(audit?.canEnable, false)
         await library.planToggle(host: one, target: "demo.audit", enable: false)
         XCTAssertEqual(
             library.toggleError,

@@ -37,6 +37,10 @@ final class IntegrationsLibrary {
         /// `planToggle` writes only that document, so an Enable offered
         /// for a directive that lives elsewhere could only fail.
         var negativeIsEditable: Bool
+        /// Whether an editable document EXISTS that `planToggle` can
+        /// write — with none (no session directory, or no document
+        /// under it) both toggles could only fail.
+        var hasEditableDocument: Bool
         /// Built-in/SDK sources (host policy) may not be disabled.
         var isProtected: Bool
         var statusText: String
@@ -45,11 +49,13 @@ final class IntegrationsLibrary {
 
         /// Enable appears only for a negatively-declared target whose
         /// negative is in the EDITABLE document; Disable only when the
-        /// target is not already disabled and its source is host
-        /// policy-free. (The no-editable-document case falls out: the
-        /// negative cannot be editable.)
+        /// target is not already disabled, its source is host policy-
+        /// free, and an editable document exists to write — an action
+        /// that could only fail is never offered.
         var canEnable: Bool { target != nil && negativeIsEditable }
-        var canDisable: Bool { target != nil && !isProtected && disabledInPaths.isEmpty }
+        var canDisable: Bool {
+            target != nil && hasEditableDocument && !isProtected && disabledInPaths.isEmpty
+        }
     }
 
     /// A confirmed plan awaiting Apply: the exact edit plus the bytes it
@@ -422,6 +428,7 @@ final class IntegrationsLibrary {
             return PluginRow(
                 id: key, target: nil, runtime: nil,
                 declaredInPaths: [], disabledInPaths: [], negativeIsEditable: false,
+                hasEditableDocument: false,
                 isProtected: false, statusText: "", detailText: "", featuresText: nil
             )
         }
@@ -476,6 +483,7 @@ final class IntegrationsLibrary {
         // Finalise status/detail for every row.
         return order.compactMap { key in
             guard var row = rows[key] else { return nil }
+            row.hasEditableDocument = editable != nil
             let running = row.runtime != nil
             let disabled = !row.disabledInPaths.isEmpty
             let declared = !row.declaredInPaths.isEmpty || disabled
