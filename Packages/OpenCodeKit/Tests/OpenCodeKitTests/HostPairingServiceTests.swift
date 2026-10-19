@@ -102,6 +102,24 @@ final class HostPairingServiceTests: XCTestCase {
         }
     }
 
+    func testRedeemNonJSONSuccessBodyIsInvalidResponse() async {
+        // A reverse proxy's HTML page (or any 2xx non-JSON body) reaches
+        // decodedJSON as .bytes → emptyBody. The host WAS reached; it
+        // must never claim "The host couldn't be reached".
+        do {
+            _ = try await service(
+                recorder: Recorder(),
+                redeem: .success(APIResponse(
+                    statusCode: 200, payload: .bytes(Data("<html>proxy</html>".utf8))
+                )),
+                health: .success(json(#"{"version":"1"}"#))
+            ).redeem(code: "c", at: destination)
+            XCTFail("Expected failure")
+        } catch {
+            XCTAssertEqual(error as? HostPairingService.Failure, .invalidResponse)
+        }
+    }
+
     // MARK: - Complete pairing (health check)
 
     func testCompletePairingProvesTokenAndBuildsHost() async throws {
@@ -153,6 +171,22 @@ final class HostPairingServiceTests: XCTestCase {
             XCTFail("Expected failure")
         } catch {
             XCTAssertEqual(error as? HostPairingService.Failure, .unreachable)
+        }
+    }
+
+    func testCompletePairingNonJSONSuccessBodyIsInvalidResponse() async {
+        do {
+            _ = try await service(
+                recorder: Recorder(),
+                redeem: .success(json(#"{"token":"t"}"#)),
+                health: .success(APIResponse(
+                    statusCode: 200, payload: .bytes(Data("<html>not opencode</html>".utf8))
+                ))
+            ).completePairing(secret: "t", at: destination, displayName: "")
+            XCTFail("Expected failure")
+        } catch {
+            XCTAssertEqual(error as? HostPairingService.Failure, .invalidResponse,
+                           "the address answered — it is not an OpenCode server")
         }
     }
 

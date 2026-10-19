@@ -142,10 +142,20 @@ final class NEAppPushManagerAdapter: PushManagerAdapter {
         return managers
             .filter { $0.providerBundleIdentifier == providerBundleIdentifier }
             .compactMap { manager -> ManagedPushConfiguration? in
-                guard let ssid = manager.matchSSIDs.first,
-                      let data = manager.providerConfiguration["payload"] as? Data,
+                guard let ssid = manager.matchSSIDs.first else { return nil }
+                guard let data = manager.providerConfiguration["payload"] as? Data,
                       let payload = try? JSONDecoder().decode(PushProviderConfiguration.self, from: data)
-                else { return nil }
+                else {
+                    // Unreadable payload (missing, another schema version, an
+                    // interrupted save): still SURFACE the manager. The plan
+                    // computes removals ONLY from `current`, so dropping it
+                    // here would strand an enabled manager that the extension
+                    // rejects on every start (missingConfiguration /
+                    // unsupportedSchema) forever. Empty hostIDs make the plan
+                    // rewrite it when the SSID is desired and remove it when
+                    // it is not.
+                    return ManagedPushConfiguration(ssid: ssid, hostIDs: [], revision: 0)
+                }
                 return ManagedPushConfiguration(
                     ssid: ssid,
                     hostIDs: payload.hostIDs,

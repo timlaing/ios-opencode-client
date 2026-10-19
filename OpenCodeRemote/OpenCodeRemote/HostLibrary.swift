@@ -90,7 +90,8 @@ final class HostLibrary {
     func add(_ paired: PairedHost) throws {
         guard let hostStore else { throw LibraryError.storageUnavailable }
         var paired = paired
-        if let existing = entries.first(where: { Self.isSameServer($0.host.address, paired.host.address) }) {
+        let existing = entries.first(where: { Self.isSameServer($0.host.address, paired.host.address) })
+        if let existing {
             // RE-PAIR of a known server: the host keeps its identity
             // (id + createdAt), so the new credential replaces the old
             // one under the same Keychain account, no duplicate row
@@ -113,7 +114,14 @@ final class HostLibrary {
         do {
             try hostStore.upsert(paired.host)
         } catch {
-            try? credentials.deleteSecret(for: paired.host.id.rawValue)
+            // Roll back ONLY a brand-new host's just-saved secret. A
+            // re-pair reuses the EXISTING row's id: the old secret was
+            // already replaced above, so deleting here would leave a
+            // credential-less row behind — and the secret being kept is
+            // the one this pairing just health-proved.
+            if existing == nil {
+                try? credentials.deleteSecret(for: paired.host.id.rawValue)
+            }
             throw LibraryError.storageUnavailable
         }
         reload()

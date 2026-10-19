@@ -61,7 +61,11 @@ public struct HostPairingService: Sendable {
             switch error {
             case .http(let status, _) where status == 401 || status == 403:
                 throw Failure.expiredCode
-            case .decodingFailed:
+            // A 2xx whose body is NOT JSON (a reverse proxy's HTML page,
+            // a redirect target) answers decodedJSON with emptyBody — the
+            // host WAS reached; claiming unreachable would send the user
+            // hunting for a network problem that does not exist.
+            case .decodingFailed, .emptyBody:
                 throw Failure.invalidResponse
             default:
                 throw Failure.unreachable
@@ -113,7 +117,9 @@ public struct HostPairingService: Sendable {
             switch error {
             case .http(let status, _) where status == 401 || status == 403:
                 throw Failure.rejectedCredential
-            case .decodingFailed:
+            // Same as redeem: a 2xx with a non-JSON body was REACHED —
+            // it just is not an OpenCode server payload.
+            case .decodingFailed, .emptyBody:
                 throw Failure.invalidResponse
             default:
                 throw Failure.unreachable
