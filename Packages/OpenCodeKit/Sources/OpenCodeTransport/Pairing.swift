@@ -121,8 +121,11 @@ public enum PairingParser {
 
     /// Pinned `pairingLink` for the JSON QR payload: `{"code","urls"}`. The
     /// code must match the pinned shape, duplicate addresses collapse in order,
-    /// and one invalid address rejects the whole payload — the same
-    /// all-or-nothing behavior as the web client.
+    /// and one INVALID address rejects the whole payload — the same
+    /// all-or-nothing behavior as the web client. The cleartext gate is a
+    /// different animal: it filters destinations (release profile) instead of
+    /// judging them, so a plain-HTTP sibling never costs a payload its usable
+    /// HTTPS destination.
     private static func parseJSONPayload(_ value: String, allowsInsecureHTTP: Bool = false) throws -> PairingPayload {
         struct QR: Decodable {
             var code: String
@@ -138,9 +141,20 @@ public enum PairingParser {
         var seen = Set<String>()
         let uniqueURLs = payload.urls.filter { seen.insert($0).inserted }
         guard !uniqueURLs.isEmpty else { throw PairingParseError.noDestinations }
+        // Release profile: drop cleartext destinations FIRST, then apply the
+        // pinned all-or-nothing validation to what could actually be used. A
+        // QR may offer a plain-HTTP LAN address beside an HTTPS tunnel;
+        // rejecting the payload for the http sibling would refuse the
+        // address this build CAN use. Only a payload with nothing left to
+        // use is an unsupportedScheme failure.
+        let usable = allowsInsecureHTTP ? uniqueURLs : uniqueURLs.filter { raw in
+            URL(string: raw.trimmingCharacters(in: .whitespacesAndNewlines))?
+                .scheme?.lowercased() != "http"
+        }
+        guard !usable.isEmpty else { throw PairingParseError.unsupportedScheme }
         return PairingPayload(
             code: payload.code,
-            destinations: try uniqueURLs.map { try validatedAddress($0, allowsInsecureHTTP: allowsInsecureHTTP) }
+            destinations: try usable.map { try validatedAddress($0, allowsInsecureHTTP: allowsInsecureHTTP) }
         )
     }
 

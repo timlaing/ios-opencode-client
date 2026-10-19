@@ -168,7 +168,14 @@ struct ConnectHostView: View {
             scannerMessage = nil
             showScanner = false
         } catch {
-            scannerMessage = "That isn't an OpenCode pairing code. Point at the QR shown by opencode pair."
+            // The cleartext gate is a REAL cause with its own guidance;
+            // "isn't an OpenCode pairing code" would misdirect — the code
+            // parsed fine, this build refuses its plain-http destinations.
+            // Shape errors keep the scanner-appropriate generic copy
+            // (message(for:)'s default says "paste the link").
+            scannerMessage = (error as? PairingParseError) == .unsupportedScheme
+                ? message(for: error)
+                : "That isn't an OpenCode pairing code. Point at the QR shown by opencode pair."
         }
     }
 

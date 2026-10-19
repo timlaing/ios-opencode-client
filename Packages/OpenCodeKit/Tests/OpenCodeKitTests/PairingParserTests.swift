@@ -100,6 +100,25 @@ final class PairingParserTests: XCTestCase {
         XCTAssertEqual(try PairingParser.parse(qr).code, "x1")
     }
 
+    func testJSONPayloadKeepsHTTPSDestinationBesideCleartextSiblings() throws {
+        // A QR can offer a plain-HTTP LAN address beside an HTTPS tunnel:
+        // the cleartext gate is a PROFILE filter, so the usable https
+        // destination must survive it — only a payload with nothing left
+        // to use is rejected (release profile = allowsInsecureHTTP false).
+        let qr = #"{"code":"x1","urls":["http://lan.example:4097","https://tunnel.example"]}"#
+        let payload = try PairingParser.parse(qr)
+        XCTAssertEqual(payload.destinations.map(\.absoluteString), ["https://tunnel.example"],
+                       "the http sibling is filtered, not fatal")
+    }
+
+    func testJSONPayloadKeepsCleartextDestinationWhenInsecureProfileAllowed() throws {
+        let qr = #"{"code":"x1","urls":["http://lan.example:4097","https://tunnel.example"]}"#
+        let payload = try PairingParser.parse(qr, allowsInsecureHTTP: true)
+        XCTAssertEqual(payload.destinations.map(\.absoluteString),
+                       ["http://lan.example:4097", "https://tunnel.example"],
+                       "mock/debug profile: no filter, order intact")
+    }
+
     func testOneInvalidAddressRejectsWholeJSONPayload() {
         for (value, expected) in [
             (#"{"code":"x1","urls":["https://ok.example","ftp://bad.example"]}"#, PairingParseError.unsupportedScheme),
