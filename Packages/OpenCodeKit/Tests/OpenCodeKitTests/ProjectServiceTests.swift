@@ -155,6 +155,29 @@ final class ProjectServiceTests: XCTestCase {
         XCTAssertEqual(recorder.requests.first?.headers["Range"], "bytes=0-9", "the Range rides on the request")
     }
 
+    func testReadFileRecoversETagAndContentRangeFromAnyHeaderCasing() async throws {
+        // HTTP header field names are case-insensitive (RFC 9110 §5.1) and
+        // URLSession delivers them in the casing the server or proxy sent
+        // (HTTP/2 is lower-case on the wire). A miss here loses the
+        // revalidation ETag and the preview's total size SILENTLY — the
+        // request still succeeds, so nothing else would ever say so.
+        let response = APIResponse(
+            statusCode: 206,
+            headers: ["etag": "W/\"v1\"", "content-RANGE": "bytes 0-9/4096"],
+            payload: .bytes(Data("alpha\nbeta".utf8))
+        )
+        let file = try await service([
+            "fs.read": .success(response),
+        ]).readFile(
+            at: host, credential: credential,
+            directory: "/srv/demo", path: "big.txt",
+            range: "bytes=0-9"
+        )
+
+        XCTAssertEqual(file.totalByteCount, 4096, "a miscased Content-Range still yields the total")
+        XCTAssertEqual(file.etag, "W/\"v1\"", "a miscased ETag still rides If-None-Match")
+    }
+
     func testReadFileWholeFile200IsCompleteWithoutContentRange() async throws {
         let response = APIResponse(
             statusCode: 200,

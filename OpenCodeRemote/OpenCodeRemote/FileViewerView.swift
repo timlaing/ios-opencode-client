@@ -157,7 +157,7 @@ struct FileViewerView: View {
             if let line = pendingScrollLine {
                 pendingScrollLine = nil
                 DispatchQueue.main.async { [scrollProxy] in
-                    scrollProxy?.scrollTo(line, anchor: .top)
+                    scrollProxy?.scrollTo("line-\(line)", anchor: .top)
                 }
             }
         }
@@ -378,7 +378,7 @@ struct FileViewerView: View {
                 .font(.system(.footnote, design: .monospaced))
                 .textSelection(.enabled)
         }
-        .id(number)
+        .id("line-\(number)")
     }
 
     /// Rendered Markdown: the fetched (possibly still partial) text rendered
@@ -633,7 +633,7 @@ struct FileViewerView: View {
         if viewer.renderedLineBudget == budgetBefore {
             pendingScrollLine = nil
             DispatchQueue.main.async { [scrollProxy] in
-                scrollProxy?.scrollTo(line, anchor: .top)
+                scrollProxy?.scrollTo("line-\(line)", anchor: .top)
             }
         } else {
             pendingScrollLine = line

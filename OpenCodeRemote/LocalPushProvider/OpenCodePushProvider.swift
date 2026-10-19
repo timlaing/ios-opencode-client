@@ -103,10 +103,16 @@ final class OpenCodePushProvider: NEAppPushProvider {
             // skips hosts whose supervisor already holds the CURRENT secret
             // (and replaces one whose secret changed), so healthy streams
             // are untouched.
+            var justStarted: Set<String> = []
             if let configuration = try? decodeConfiguration() {
-                startObservers(for: configuration, generation: generation)
+                justStarted = startObservers(for: configuration, generation: generation)
             }
-            for supervisor in supervisors.values {
+            // Nudge every supervisor EXCEPT the ones this pass just created:
+            // their start is already queued in startObservers' ordered task,
+            // and handleTimerEvent() on a still-.stopped supervisor calls
+            // start() from a SECOND task — racing the stop of the replaced
+            // stream and recreating the two-stream window.
+            for (hostID, supervisor) in supervisors where !justStarted.contains(hostID) {
                 Task { await supervisor.handleTimerEvent() }
             }
         }
@@ -184,14 +190,21 @@ final class OpenCodePushProvider: NEAppPushProvider {
         ledger = try NotificationLedger(writingAt: directory)
     }
 
-    private func startObservers(for configuration: ConfigurationPayload, generation: Int) {
-        guard let hostStore, let ledger else { return }
+    /// Reconciles observers against the store and configuration. Returns the
+    /// host IDs this pass CREATED (fresh or replaced) so the timer nudge can
+    /// skip them: their start is already queued, and a second task calling
+    /// `handleTimerEvent()` → `start()` would race the ordered
+    /// stop-then-start below.
+    @discardableResult
+    private func startObservers(for configuration: ConfigurationPayload, generation: Int) -> Set<String> {
+        guard let hostStore, let ledger else { return [] }
+        var justStarted: Set<String> = []
         let followed = Set(configuration.followedSessions)
         // A failed read must not look like "every host was removed" — an
         // empty result from `?? []` would stop every supervisor below.
         guard let hosts = try? hostStore.hosts() else {
             logger.error("host store read failed; observers unchanged")
-            return
+            return []
         }
         // Hosts REMOVED from the store produce no configuration diff (the
         // app deletes the host row, not the push configuration), so this
@@ -267,7 +280,9 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 await replaced?.stop()
                 await supervisor.start()
             }
+            justStarted.insert(host.id.rawValue)
         }
+        return justStarted
     }
 
     private func makeSupervisor(
