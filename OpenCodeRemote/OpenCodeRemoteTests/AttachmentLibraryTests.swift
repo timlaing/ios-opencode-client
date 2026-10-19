@@ -293,6 +293,9 @@ final class AttachmentLibraryTests: XCTestCase {
 
         let confirmation = try XCTUnwrap(library.pendingConfirmation)
         XCTAssertEqual(confirmation.kind, .oversized(byteCount: 22))
+        XCTAssertTrue(confirmation.preLoad, "the question is asked from metadata, before any read")
+        XCTAssertNil(library.drafts[0].bytes,
+                     "a multi-gigabyte pick must never be loaded just to warn about its size")
         XCTAssertEqual(library.drafts.count, 1, "the draft waits, un-routed")
 
         library.answerConfirmation(true, host: host)

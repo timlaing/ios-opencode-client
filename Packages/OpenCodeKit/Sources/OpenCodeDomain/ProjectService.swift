@@ -125,7 +125,15 @@ public struct ProjectService: Sendable {
         let siblings = try await listDirectory(
             at: host, credential: credential, directory: parent, path: "."
         )
-        if siblings.contains(where: { ($0.path as NSString).lastPathComponent == name }) {
+        // Case-insensitively: most host file systems ignore case, so an
+        // exact match would let `demo` overwrite `Demo/opencode.jsonc`
+        // — the exact harm this check exists to prevent. On a
+        // case-sensitive host this errs toward "open it instead", the
+        // safe failure.
+        if siblings.contains(where: {
+            ($0.path as NSString).lastPathComponent
+                .compare(name, options: [.caseInsensitive]) == .orderedSame
+        }) {
             throw CreateProjectError.alreadyExists(targetDirectory)
         }
         _ = try await makeTransport(host)

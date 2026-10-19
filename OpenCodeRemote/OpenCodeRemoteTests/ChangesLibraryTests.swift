@@ -136,7 +136,7 @@ final class ChangesLibraryTests: XCTestCase {
 
     func testParsePatchNumbersLinesFromHunkHeaders() {
         let lines = ChangesLibrary.parsePatch(
-            "--- a/src/main.py\n+++ b/src/main.py\n@@ -1 +1 @@\n-print(\"Hello\")\n+print(\"Hi\")\n tail\n"
+            "--- a/src/main.py\n+++ b/src/main.py\n@@ -1,2 +1,2 @@\n-print(\"Hello\")\n+print(\"Hi\")\n tail\n"
         )
         XCTAssertEqual(lines.map(\.kind), [.fileHeader, .fileHeader, .hunkHeader, .deletion, .addition, .context])
         XCTAssertEqual(lines[3].oldLine, 1)
@@ -157,6 +157,50 @@ final class ChangesLibraryTests: XCTestCase {
     func testParsePatchHandlesCRLFAndNoteLines() {
         let lines = ChangesLibrary.parsePatch("--- a/x\r\n+++ b/x\r\n@@ -1 +1 @@\r\n-old\r\n\\ No newline at end of file\r\n")
         XCTAssertEqual(lines.map(\.kind), [.fileHeader, .fileHeader, .hunkHeader, .deletion, .note])
+    }
+
+    func testParsePatchKeepsDashContentInsideAHunkAsADeletion() {
+        // `--- old comment` is a deletion whose CONTENT starts with
+        // `-- ` (SQL/Lua/Markdown style) — inside a hunk it must never
+        // be mistaken for a file header, or the number after it drifts.
+        let lines = ChangesLibrary.parsePatch(
+            "--- a/notes.sql\n+++ b/notes.sql\n@@ -1,2 +1,2 @@\n--- old comment\n+++ keep\n tail\n"
+        )
+        XCTAssertEqual(
+            lines.map(\.kind),
+            [.fileHeader, .fileHeader, .hunkHeader, .deletion, .addition, .context]
+        )
+        XCTAssertEqual(lines[3].oldLine, 1, "`--- …` inside a hunk stays a deletion")
+        XCTAssertEqual(lines[3].text, "-- old comment", "only the change marker is stripped")
+        XCTAssertEqual(lines[4].newLine, 1)
+        XCTAssertEqual(lines[5].oldLine, 2, "numbering continues correctly after it")
+        XCTAssertEqual(lines[5].newLine, 2)
+    }
+
+    func testParsePatchStartsASecondFileFresh() {
+        let patch = """
+        diff --git a/one.txt b/one.txt
+        --- a/one.txt
+        +++ b/one.txt
+        @@ -1 +1 @@
+        -a
+        +b
+        diff --git a/two.txt b/two.txt
+        --- a/two.txt
+        +++ b/two.txt
+        @@ -1 +1 @@
+        -c
+        +d
+        """
+        let lines = ChangesLibrary.parsePatch(patch)
+        XCTAssertEqual(
+            lines.map(\.kind),
+            [.fileHeader, .fileHeader, .fileHeader, .hunkHeader, .deletion, .addition,
+             .fileHeader, .fileHeader, .fileHeader, .hunkHeader, .deletion, .addition],
+            "the first file's exhausted hunk ends exactly — the second file's metadata never consumes numbers"
+        )
+        XCTAssertEqual(lines[10].oldLine, 1, "the second hunk renumbers from its own header")
+        XCTAssertEqual(lines[11].newLine, 1)
     }
 
     func testSideBySidePairsRunsAndMapsLinesToRows() {
@@ -411,5 +455,79 @@ final class ChangesLibraryTests: XCTestCase {
 
         library.reload(inputs())
         await waitUntil { recorder.requests.count == 2 }
+    }
+
+    func testScopeSwitchDuringInFlightSessionLoadNeverStrandsAFlag() async {
+        let latch = Latch()
+        let library = makeLibrary(
+            hook: { request in
+                if request.operationID == "session.diff" {
+                    await latch.wait() // hold the session load open
+                }
+            },
+            handler: { request in
+                if request.operationID == "session.diff" {
+                    return Self.json(Self.filesBody(file: "held.py"))
+                }
+                switch request.operationID {
+                case "vcs.get": return Self.json(Self.infoBody)
+                case "vcs.status": return Self.json(Self.statusBody)
+                case "vcs.base": return Self.json(Self.baseNullBody)
+                default: return Self.json(Self.vcsDiffBody)
+                }
+            }
+        )
+        library.reload(inputs())
+        library.setScope(.workspace, inputs())
+        await waitUntil { library.diffFiles != nil && library.branchInfo != nil }
+
+        // Release the session load only AFTER the workspace finished: its
+        // section was never superseded, so it adopts normally and its
+        // flag must clear. With a shared token this load would have been
+        // discarded and `.sessionTurn` stranded in `loading`, hanging
+        // every later `settle()`.
+        await latch.signal()
+        await waitUntil { library.sessionFiles != nil }
+        XCTAssertEqual(library.sessionFiles?.first?.file, "held.py",
+                       "a cross-section switch never invalidates another section's work")
+        XCTAssertTrue(library.loading.isEmpty, "no section flag can be stranded by a scope switch")
+    }
+
+    func testModeChangeDuringWorkspaceLoadKeepsHeaderResults() async {
+        let latch = Latch()
+        let library = makeLibrary(
+            hook: { request in
+                // Hold ONLY the load-start (working-mode) diff; the
+                // mode=branch answer must pass through untouched.
+                if request.operationID == "vcs.diff",
+                   request.query.contains(where: { $0.key == "mode" && $0.value == "working" }) {
+                    await latch.wait()
+                }
+            },
+            handler: { request in
+                switch request.operationID {
+                case "vcs.get": return Self.json(Self.infoBody)
+                case "vcs.status": return Self.json(Self.statusBody)
+                case "vcs.base": return Self.json(Self.baseNullBody)
+                default:
+                    let working = request.query.contains { $0.key == "mode" && $0.value == "working" }
+                    let file = working ? "held.py" : "branch.py"
+                    let body = #"{"location":{"directory":"/srv/demo"},"data":[{"file":"\#(file)","patch":"+x\n","additions":1,"deletions":0,"status":"added"}]}"#
+                    return Self.json(body)
+                }
+            }
+        )
+        library.setScope(.workspace, inputs()) // diff captured as mode=working, held open
+        library.setMode(.branch, inputs()) // supersedes ONLY the diff section
+        await waitUntil { library.diffFiles?.first?.file == "branch.py" }
+
+        await latch.signal()
+        await waitUntil { library.branchInfo != nil }
+
+        XCTAssertEqual(library.branchInfo?.branch.current, "demo-feature",
+                       "a diff-section supersession never discards the header answers")
+        XCTAssertEqual(library.diffFiles?.first?.file, "branch.py",
+                       "the superseded working-mode diff is discarded after its await")
+        XCTAssertTrue(library.loading.isEmpty, "both sections' flags clear")
     }
 }

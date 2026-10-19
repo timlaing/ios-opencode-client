@@ -280,6 +280,31 @@ final class ProjectServiceTests: XCTestCase {
                        "an existing project's opencode.jsonc is never replaced with {}")
     }
 
+    func testExistingTargetIsRejectedCaseInsensitively() async throws {
+        let recorder = Recorder()
+        let listBody = #"{"location":{"directory":"/srv/demo"},"data":[{"path":"telescope","type":"directory"}]}"#
+        let writeBody = #"{"location":{"directory":"/srv/demo"},"data":{"path":"/srv/demo/Telescope/opencode.jsonc"}}"#
+        let service = service([
+            "fs.list": .success(json(listBody)),
+            "experimental.fs.write": .success(json(writeBody)), // never reached
+        ], recorder: recorder)
+
+        do {
+            _ = try await service.createProject(
+                at: host, credential: credential, parentDirectory: "/srv/demo", name: "Telescope"
+            )
+            XCTFail("a case-variant sibling names the same directory on most host file systems")
+        } catch let error as ProjectService.CreateProjectError {
+            XCTAssertEqual(
+                error, .alreadyExists("/srv/demo/Telescope"),
+                "`telescope` IS `Telescope` where the host ignores case — overwriting is the harm"
+            )
+        }
+
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["fs.list"],
+                       "no write may reach the case-variant directory")
+    }
+
     func testFolderNameAcceptsOrdinaryUnicode() throws {
         XCTAssertEqual(try FolderName.validate("  Café ünïcode  "), "Café ünïcode")
         XCTAssertEqual(try FolderName.validate("プロジェクト"), "プロジェクト")

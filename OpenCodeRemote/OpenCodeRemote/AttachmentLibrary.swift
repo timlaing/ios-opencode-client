@@ -65,6 +65,10 @@ final class AttachmentLibrary {
         /// Identity of the routing attempt in flight; a cancelled or
         /// superseded attempt's late completion lands nowhere.
         var routeToken: UUID?
+        /// The oversized question for this draft has already been
+        /// answered with "send anyway" — the pre-read size check must
+        /// not ask it a second time once the bytes are finally loaded.
+        var oversizedAccepted = false
     }
 
     /// A confirmation the user must answer before a pick is routed: over
@@ -78,6 +82,10 @@ final class AttachmentLibrary {
         let id: UUID
         let name: String
         var kind: Kind
+        /// Asked BEFORE any bytes were read (a picked FILE's size comes
+        /// from metadata): accepting must start the read, not route
+        /// bytes that do not exist yet.
+        var preLoad = false
     }
 
     /// Default copy mode for NEW photo/camera picks; each photo row can
@@ -239,11 +247,18 @@ final class AttachmentLibrary {
 
     /// Answers the HEAD confirmation: accepting routes the held bytes,
     /// declining removes the draft entirely. The next queued question —
-    /// if any — becomes the pending one immediately.
+    /// if any — becomes the pending one immediately. A pre-load
+    /// oversized answer (a picked FILE's size was asked from metadata
+    /// before any read) starts the read now instead of routing bytes
+    /// that were deliberately never loaded.
     func answerConfirmation(_ accepted: Bool, host: OpenCodeDomain.Host) {
         guard !confirmationQueue.isEmpty else { return }
         let confirmation = confirmationQueue.removeFirst()
-        if accepted {
+        if accepted, confirmation.preLoad {
+            guard let index = drafts.firstIndex(where: { $0.id == confirmation.id }) else { return }
+            drafts[index].oversizedAccepted = true
+            loadThenPrepare(draftID: confirmation.id, host: host)
+        } else if accepted {
             route(confirmation.id, host: host)
         } else {
             remove(confirmation.id)
@@ -291,6 +306,22 @@ final class AttachmentLibrary {
     private func loadThenPrepare(draftID: UUID, host: OpenCodeDomain.Host) {
         guard let index = drafts.firstIndex(where: { $0.id == draftID }) else { return }
         let source = drafts[index].source
+        // A picked FILE's size is known from metadata before any read:
+        // the 50 MB warning is explicitly "not a hard limit", and loading
+        // a multi-gigabyte pick just to ask about it can get the app
+        // terminated for memory first. Photos keep their
+        // post-preparation check — their size only exists once
+        // re-encoded. An unreadable size falls through to the normal
+        // read path and warns afterwards, exactly as before.
+        if case .file(let url) = source, !drafts[index].oversizedAccepted,
+           let size = Self.fileSize(of: url), size > warningThresholdBytes {
+            drafts[index].byteCount = size
+            enqueue(PendingConfirmation(
+                id: draftID, name: drafts[index].name,
+                kind: .oversized(byteCount: size), preLoad: true
+            ))
+            return
+        }
         drafts[index].task = Task { [weak self] in
             do {
                 let (bytes, sniffed) = try await Self.loadBytes(from: source)
@@ -360,7 +391,11 @@ final class AttachmentLibrary {
             ))
             return
         }
-        if prepared.count > warningThresholdBytes {
+        // Pre-read oversized questions already cleared this draft; only
+        // sources whose size was never asked about (photos, prepared
+        // data, unstattable files) get the question here — after the
+        // bytes exist, which `answerConfirmation` can then route.
+        if prepared.count > warningThresholdBytes, !drafts[index].oversizedAccepted {
             enqueue(PendingConfirmation(
                 id: draftID, name: drafts[index].name, kind: .oversized(byteCount: prepared.count)
             ))
@@ -431,6 +466,15 @@ final class AttachmentLibrary {
     }
 
     // MARK: - Sources
+
+    /// The picked FILE's size straight from metadata — no bytes read.
+    /// nil when the URL cannot be stat'd (the caller then falls back to
+    /// the full read and warns afterwards, exactly as before).
+    nonisolated private static func fileSize(of url: URL) -> Int? {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        return (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize
+    }
 
     /// Off the main actor: a picked file can be far larger than the 50 MB
     /// warning (which is explicitly "not a hard limit"), and this

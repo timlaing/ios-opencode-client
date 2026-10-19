@@ -8,10 +8,12 @@ import OpenCodeTransport
 /// and a workspace scope (`vcs.get`/`status`/`base`/`diff` over the
 /// location). The view renders decisions made here.
 ///
-/// Load invariants: one generation token per load — every selector
-/// change bumps it and a completion that no longer matches is discarded
-/// AFTER its await, including its error and its loading-flag bookkeeping,
-/// which the newer load owns. Revisited scopes keep their adopted state
+/// Load invariants: PER-SECTION stale tokens — a load bumps only the
+/// sections it covers, and a completion that no longer matches its
+/// section is discarded AFTER its await. The newer load of THAT section
+/// owns the adopted state and the loading flag, so a superseded task can
+/// never strand a flag and a cross-section switch never invalidates
+/// another section's work. Revisited scopes keep their adopted state
 /// while reloading; `loadIfNeeded` never refetches a scope already
 /// loaded (back-navigation from a detail view is free).
 @MainActor
@@ -91,8 +93,20 @@ final class ChangesLibrary {
     private(set) var loading: Set<Section> = []
     private(set) var loadedScopes: Set<Scope> = []
 
-    /// Single stale-result token (see the type doc).
-    private var generation = 0
+    /// Per-section stale tokens (see the type doc). A section's flag is
+    /// inserted only by a load that just bumped that section's token,
+    /// and every completion removes its flag only while its token is
+    /// still current — the chain always ends with the newest load of a
+    /// section, so flags always clear and `settle()` always terminates.
+    private var tokens: [Section: Int] = [:]
+
+    private func bump(_ sections: Section...) {
+        for section in sections { tokens[section, default: 0] += 1 }
+    }
+
+    private func isCurrent(_ section: Section, _ token: Int) -> Bool {
+        tokens[section] == token
+    }
 
     init(
         historyService: SessionHistoryService? = nil,
@@ -117,22 +131,19 @@ final class ChangesLibrary {
     func setTurn(from: String?, to: String?, _ inputs: Inputs) {
         turnFrom = from
         turnTo = to
-        generation += 1
-        loadSessionDiff(generation, inputs)
+        loadSessionDiff(inputs)
     }
 
     func setMode(_ mode: Vcs.Mode, _ inputs: Inputs) {
         diffMode = mode
-        generation += 1
-        loadWorkspaceDiff(generation, inputs)
+        loadWorkspaceDiff(inputs)
     }
 
     func setFullFile(_ fullFile: Bool, _ inputs: Inputs) {
         self.fullFile = fullFile
-        generation += 1
         switch scope {
-        case .sessionTurn: loadSessionDiff(generation, inputs)
-        case .workspace: loadWorkspaceDiff(generation, inputs)
+        case .sessionTurn: loadSessionDiff(inputs)
+        case .workspace: loadWorkspaceDiff(inputs)
         }
     }
 
@@ -148,25 +159,31 @@ final class ChangesLibrary {
     /// appearance). Adopted state survives the reload.
     func reload(_ inputs: Inputs) {
         loadedScopes.insert(scope)
-        generation += 1
-        let token = generation
         switch scope {
-        case .sessionTurn: loadSessionDiff(token, inputs)
-        case .workspace: loadWorkspace(token, inputs)
+        case .sessionTurn: loadSessionDiff(inputs)
+        case .workspace: loadWorkspace(inputs)
         }
     }
 
-    /// Waits for the in-flight loads (newest generation) to settle so
-    /// pull-to-refresh keeps its spinner honest.
+    /// Waits for the in-flight loads to settle so pull-to-refresh keeps
+    /// its spinner honest. A cancelled waiter (the refreshable's task
+    /// dying with the view) leaves at once instead of spinning on a
+    /// sleep that now throws immediately.
     func settle() async {
-        while !loading.isEmpty {
-            try? await Task.sleep(nanoseconds: 50_000_000)
+        while !loading.isEmpty, !Task.isCancelled {
+            do {
+                try await Task.sleep(nanoseconds: 50_000_000)
+            } catch {
+                return
+            }
         }
     }
 
     // MARK: Loads
 
-    private func loadSessionDiff(_ token: Int, _ inputs: Inputs) {
+    private func loadSessionDiff(_ inputs: Inputs) {
+        bump(.sessionTurn)
+        let myToken = tokens[.sessionTurn] ?? 0
         loading.insert(.sessionTurn)
         errors[.sessionTurn] = nil
         let from = turnFrom
@@ -183,21 +200,32 @@ final class ChangesLibrary {
                     to: to,
                     context: context
                 )
-                guard generation == token else { return } // stale
+                // Stale: the newer session-turn load owns the state AND
+                // this flag.
+                guard isCurrent(.sessionTurn, myToken) else { return }
                 sessionFiles = files
             } catch {
-                guard generation == token else { return }
+                guard isCurrent(.sessionTurn, myToken) else { return }
                 errors[.sessionTurn] = Self.message(for: error)
             }
             loading.remove(.sessionTurn)
         }
     }
 
-    private func loadWorkspace(_ token: Int, _ inputs: Inputs) {
+    private func loadWorkspace(_ inputs: Inputs) {
         guard let directory = inputs.directory, !directory.isEmpty else {
+            // No bump: the directory never changes within a presentation,
+            // so nothing was ever in flight for this guard to invalidate.
             errors[.workspaceHeader] = "This session has no workspace directory to inspect."
             return
         }
+        bump(.workspaceHeader, .workspaceDiff)
+        let headerToken = tokens[.workspaceHeader] ?? 0
+        let diffToken = tokens[.workspaceDiff] ?? 0
+        // Captured at load start — the in-flight load reflects the
+        // selector state when it BEGAN, not whenever its task runs.
+        let mode = diffMode
+        let context = fullFile ? nil : "3"
         loading.insert(.workspaceHeader)
         loading.insert(.workspaceDiff)
         errors[.workspaceHeader] = nil
@@ -215,7 +243,7 @@ final class ChangesLibrary {
             ) }
             async let diff = attempt { try await self.vcsService.diff(
                 at: inputs.host.address, credential: inputs.credential, directory: directory,
-                mode: self.diffMode, context: self.fullFile ? nil : "3"
+                mode: mode, context: context
             ) }
 
             let branchResult = await branch
@@ -223,46 +251,53 @@ final class ChangesLibrary {
             let baseResult = await base
             let diffResult = await diff
 
-            // Stale results are discarded AFTER every await — including
-            // their error and loading-flag bookkeeping below.
-            guard generation == token else { return }
-
-            switch branchResult {
-            case .success(let info):
-                branchInfo = info
-            case .failure(let error):
-                errors[.workspaceHeader] = errors[.workspaceHeader] ?? Self.message(for: error)
+            // Sections own their results and flags INDEPENDENTLY: a
+            // mode/full-file change mid-flight supersedes only the diff
+            // section, so the header answers still adopt (and a scope
+            // never strands another section's flag). Discard happens
+            // only after every await.
+            if isCurrent(.workspaceHeader, headerToken) {
+                switch branchResult {
+                case .success(let info):
+                    branchInfo = info
+                case .failure(let error):
+                    errors[.workspaceHeader] = errors[.workspaceHeader] ?? Self.message(for: error)
+                }
+                switch statusResult {
+                case .success(let files):
+                    statusFiles = files
+                case .failure(let error):
+                    errors[.workspaceHeader] = errors[.workspaceHeader] ?? Self.message(for: error)
+                }
+                switch baseResult {
+                case .success(let base):
+                    // A host that has no inferable base answers null — a
+                    // distinct unavailable state, not a failure.
+                    baseState = base.map { .available($0) } ?? .unavailable
+                case .failure(let error):
+                    errors[.workspaceHeader] = errors[.workspaceHeader] ?? Self.message(for: error)
+                }
+                loading.remove(.workspaceHeader)
             }
-            switch statusResult {
-            case .success(let files):
-                statusFiles = files
-            case .failure(let error):
-                errors[.workspaceHeader] = errors[.workspaceHeader] ?? Self.message(for: error)
+            if isCurrent(.workspaceDiff, diffToken) {
+                switch diffResult {
+                case .success(let files):
+                    diffFiles = files
+                case .failure(let error):
+                    errors[.workspaceDiff] = Self.message(for: error)
+                }
+                loading.remove(.workspaceDiff)
             }
-            switch baseResult {
-            case .success(let base):
-                // A host that has no inferable base answers null — a
-                // distinct unavailable state, not a failure.
-                baseState = base.map { .available($0) } ?? .unavailable
-            case .failure(let error):
-                errors[.workspaceHeader] = errors[.workspaceHeader] ?? Self.message(for: error)
-            }
-            switch diffResult {
-            case .success(let files):
-                diffFiles = files
-            case .failure(let error):
-                errors[.workspaceDiff] = Self.message(for: error)
-            }
-            loading.remove(.workspaceHeader)
-            loading.remove(.workspaceDiff)
         }
     }
 
-    private func loadWorkspaceDiff(_ token: Int, _ inputs: Inputs) {
+    private func loadWorkspaceDiff(_ inputs: Inputs) {
         guard let directory = inputs.directory, !directory.isEmpty else {
             errors[.workspaceDiff] = "This session has no workspace directory to inspect."
             return
         }
+        bump(.workspaceDiff)
+        let myToken = tokens[.workspaceDiff] ?? 0
         loading.insert(.workspaceDiff)
         errors[.workspaceDiff] = nil
         let mode = diffMode
@@ -274,10 +309,12 @@ final class ChangesLibrary {
                     at: inputs.host.address, credential: inputs.credential,
                     directory: directory, mode: mode, context: context
                 )
-                guard generation == token else { return } // stale
+                // Stale: the newer diff-section load owns the state AND
+                // this flag.
+                guard isCurrent(.workspaceDiff, myToken) else { return }
                 diffFiles = files
             } catch {
-                guard generation == token else { return }
+                guard isCurrent(.workspaceDiff, myToken) else { return }
                 errors[.workspaceDiff] = Self.message(for: error)
             }
             loading.remove(.workspaceDiff)
@@ -339,41 +376,114 @@ final class ChangesLibrary {
         var lines: [PatchLine] = []
         var oldLine: Int?
         var newLine: Int?
+        // `--- `/`+++ ` count as FILE headers only OUTSIDE a hunk: inside
+        // one, a deletion whose content starts with `-- ` serialises as
+        // `--- …` (SQL/Lua/Markdown comments) and must stay a deletion
+        // with its number. Each hunk's declared old/new counts end it
+        // exactly, so a following file's headers and metadata never
+        // consume line numbers either.
+        var inHunk = false
+        var oldRemaining = 0
+        var newRemaining = 0
+
         for line in components {
-            if line.hasPrefix("--- ") || line.hasPrefix("+++ ") {
-                lines.append(PatchLine(kind: .fileHeader, text: line, oldLine: nil, newLine: nil))
-            } else if line.hasPrefix("@@") {
+            let kind: PatchLine.Kind
+            if line.hasPrefix("@@") {
+                kind = .hunkHeader
+            } else if !inHunk,
+                      line.hasPrefix("--- ") || line.hasPrefix("+++ ")
+                        || line.hasPrefix("diff --git") {
+                kind = .fileHeader
+            } else if line.hasPrefix("+") {
+                kind = .addition
+            } else if line.hasPrefix("-") {
+                kind = .deletion
+            } else if line.hasPrefix("\\") {
+                kind = .note
+            } else {
+                kind = .context
+            }
+
+            // Headers and notes keep their raw text and are never
+            // numbered; content lines take the marker off and (inside a
+            // hunk only) their numbers from the running counters.
+            let text: String
+            var old: Int?
+            var new: Int?
+            switch kind {
+            case .addition, .deletion:
+                text = String(line.dropFirst())
+            case .context:
+                // The marker is a single leading space (dropped); a bare
+                // empty line is context too.
+                text = line.hasPrefix(" ") ? String(line.dropFirst()) : line
+            case .fileHeader, .hunkHeader, .note:
+                text = line
+            }
+            switch kind {
+            case .addition:
+                old = nil
+                new = newLine
+                if inHunk { newLine = newLine.map { $0 + 1 } }
+            case .deletion:
+                old = oldLine
+                new = nil
+                if inHunk { oldLine = oldLine.map { $0 + 1 } }
+            case .context:
+                old = oldLine
+                new = newLine
+                if inHunk {
+                    oldLine = oldLine.map { $0 + 1 }
+                    newLine = newLine.map { $0 + 1 }
+                }
+            case .fileHeader, .hunkHeader, .note:
+                old = nil
+                new = nil
+            }
+            lines.append(PatchLine(kind: kind, text: text, oldLine: old, newLine: new))
+
+            switch kind {
+            case .hunkHeader:
                 if let start = parseHunkHeader(line) {
                     oldLine = start.old
                     newLine = start.new
+                    oldRemaining = start.oldCount
+                    newRemaining = start.newCount
+                    inHunk = true
+                } else {
+                    // Malformed: numbering cannot continue — stay
+                    // unnumbered rather than guessing.
+                    oldLine = nil
+                    newLine = nil
+                    inHunk = false
                 }
-                lines.append(PatchLine(kind: .hunkHeader, text: line, oldLine: nil, newLine: nil))
-            } else if line.hasPrefix("+") {
-                lines.append(PatchLine(
-                    kind: .addition, text: String(line.dropFirst()), oldLine: nil, newLine: newLine
-                ))
-                newLine = newLine.map { $0 + 1 }
-            } else if line.hasPrefix("-") {
-                lines.append(PatchLine(
-                    kind: .deletion, text: String(line.dropFirst()), oldLine: oldLine, newLine: nil
-                ))
-                oldLine = oldLine.map { $0 + 1 }
-            } else if line.hasPrefix("\\") {
-                lines.append(PatchLine(kind: .note, text: line, oldLine: nil, newLine: nil))
-            } else {
-                // Context: the marker is a single leading space (dropped);
-                // a bare empty line is context too.
-                let text = line.hasPrefix(" ") ? String(line.dropFirst()) : line
-                lines.append(PatchLine(kind: .context, text: text, oldLine: oldLine, newLine: newLine))
-                oldLine = oldLine.map { $0 + 1 }
-                newLine = newLine.map { $0 + 1 }
+            case .context:
+                if inHunk {
+                    oldRemaining -= 1
+                    newRemaining -= 1
+                }
+            case .deletion:
+                if inHunk { oldRemaining -= 1 }
+            case .addition:
+                if inHunk { newRemaining -= 1 }
+            case .fileHeader, .note:
+                break
+            }
+            if inHunk, oldRemaining <= 0, newRemaining <= 0 {
+                // Hunk exhausted exactly: the next lines are outside it.
+                inHunk = false
+                oldLine = nil
+                newLine = nil
             }
         }
         return lines
     }
 
-    /// `@@ -old[,count] +new[,count] @@ optional section heading`.
-    static func parseHunkHeader(_ header: String) -> (old: Int, new: Int)? {
+    /// `@@ -old[,count] +new[,count] @@ optional section heading` — an
+    /// omitted count means 1.
+    static func parseHunkHeader(
+        _ header: String
+    ) -> (old: Int, new: Int, oldCount: Int, newCount: Int)? {
         let parts = header.split(separator: " ", maxSplits: 3, omittingEmptySubsequences: true)
         guard parts.count >= 3,
               parts[0] == "@@",
@@ -384,7 +494,11 @@ final class ChangesLibrary {
               let old = Int(oldField),
               let new = Int(newField)
         else { return nil }
-        return (old, new)
+        let oldParts = parts[1].dropFirst().split(separator: ",")
+        let newParts = parts[2].dropFirst().split(separator: ",")
+        let oldCount = oldParts.count > 1 ? Int(oldParts[1]) ?? 1 : 1
+        let newCount = newParts.count > 1 ? Int(newParts[1]) ?? 1 : 1
+        return (old, new, oldCount, newCount)
     }
 
     /// Pairs deletion/addition runs for side-by-side rendering; the
