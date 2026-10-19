@@ -374,6 +374,53 @@ final class SessionsLibraryTests: XCTestCase {
         XCTAssertNil(library.loadMoreErrorsByHost[one.id], "reload clears the stale paging error")
     }
 
+    func testRefreshSingleFlightsAgainstLoadMoreThroughTheLoadingFlag() async throws {
+        let one = host("host_one", name: "Mock A")
+        let blockRefresh = Flag(false)
+        let refreshInFetch = Flag(false)
+        let releaseFetch = DispatchSemaphore(value: 0)
+        let cursorRequested = Flag(false)
+        let library = library { request in
+            if Fixtures.query(request)["cursor"] != nil {
+                cursorRequested.value = true
+                return Fixtures.response(Fixtures.page([Fixtures.session("ses_page2")]))
+            }
+            if blockRefresh.value, !refreshInFetch.value {
+                refreshInFetch.value = true
+                blockRefresh.value = false
+                _ = releaseFetch.wait(timeout: .now() + 5)
+            }
+            return Fixtures.response(Fixtures.page([Fixtures.session("ses_a")], next: "opaque-1"))
+        }
+
+        // Establish hasMore, so loadMore's CURSOR precondition passes and
+        // only the loadingHosts flag can make it defer below.
+        await library.load([entry(one)])
+        XCTAssertEqual(library.hasMoreByHost[one.id], true)
+        XCTAssertTrue(library.loadingHosts.isEmpty)
+
+        // A refresh in flight: blocked inside its page-one fetch, holding
+        // the single-flight flag (this is what load(_:) adds and the
+        // refreshable path previously skipped by calling load(host:)).
+        blockRefresh.value = true
+        let refresh = Task { await library.load([entry(one)]) }
+        for _ in 0..<10_000 where !refreshInFetch.value { await Task.yield() }
+        XCTAssertTrue(refreshInFetch.value, "the refresh reached its fetch")
+        XCTAssertEqual(library.loadingHosts, [one.id], "load(_:) brackets the load with the flag")
+
+        // A Load More arriving now must defer — running it would append an
+        // old-cursor page over (or under) the page-one replacement.
+        await library.loadMore(host: one)
+        XCTAssertFalse(cursorRequested.value,
+                       "loadMore defers to the in-flight refresh instead of racing it")
+
+        releaseFetch.signal()
+        await refresh.value
+        XCTAssertTrue(library.loadingHosts.isEmpty, "the flag drops when the load finishes")
+        XCTAssertEqual(library.sessionsByHost[one.id]?.map(\.id), ["ses_a"], "the refresh result stands alone")
+        XCTAssertFalse(cursorRequested.value, "the interleaved page was never requested")
+    }
+
     // MARK: - Mutations
 
     func testRenameUpdatesLocalTitleOnlyAfterServerAccepts() async throws {

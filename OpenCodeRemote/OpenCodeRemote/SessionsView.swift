@@ -73,8 +73,12 @@ struct SessionsView: View {
             if let hostFilter, let entry = library.entries.first(where: { $0.id == hostFilter }) {
                 // Always the host-wide inventory: project scoping is
                 // applied client-side in rows(), so a scoped page never
-                // replaces the cache or its cursors.
-                await sessions.load(host: entry.host)
+                // replaces the cache or its cursors. Through load(_:) —
+                // not load(host:) — so the loadingHosts single-flight
+                // flag brackets it: a direct load(host:) never sets the
+                // flag, letting this refresh interleave with an in-flight
+                // Load More (page-one replace racing an old-cursor append).
+                await sessions.load([entry])
             } else {
                 await sessions.load(library.entries)
             }
