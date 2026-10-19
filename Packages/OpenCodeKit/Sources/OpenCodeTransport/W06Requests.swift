@@ -34,11 +34,21 @@ public struct ModelCost: Codable, Equatable, Sendable {
     public struct Tier: Codable, Equatable, Sendable {
         public var type: String
         public var size: Int
+
+        public init(type: String, size: Int) {
+            self.type = type
+            self.size = size
+        }
     }
 
     public struct Cache: Codable, Equatable, Sendable {
         public var read: Double
         public var write: Double
+
+        public init(read: Double, write: Double) {
+            self.read = read
+            self.write = write
+        }
     }
 
     public var tier: Tier?
@@ -63,6 +73,10 @@ public struct ModelCost: Codable, Equatable, Sendable {
 public struct ModelInfo: Codable, Equatable, Sendable, Identifiable {
     public struct Time: Codable, Equatable, Sendable {
         public var released: Double
+
+        public init(released: Double) {
+            self.released = released
+        }
     }
 
     /// `limit`: `context`/`output` are schema-required; `input` when the
@@ -71,6 +85,12 @@ public struct ModelInfo: Codable, Equatable, Sendable, Identifiable {
         public var context: Int
         public var input: Int?
         public var output: Int
+
+        public init(context: Int, input: Int? = nil, output: Int) {
+            self.context = context
+            self.input = input
+            self.output = output
+        }
     }
 
     public var id: String
@@ -167,6 +187,10 @@ public struct AgentInfo: Codable, Equatable, Sendable, Identifiable {
 public struct LocationEnvelope<T: Codable & Sendable>: Codable, Sendable {
     public struct LocationRef: Codable, Sendable, Equatable {
         public var directory: String
+
+        public init(directory: String) {
+            self.directory = directory
+        }
     }
 
     public var location: LocationRef

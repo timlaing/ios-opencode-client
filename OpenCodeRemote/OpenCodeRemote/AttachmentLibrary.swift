@@ -584,6 +584,11 @@ final class AttachmentLibrary {
 
     private static func timestampName() -> String {
         let formatter = DateFormatter()
+        // Pinned: the name becomes the staged HOST filename and the chip
+        // label — device-locale digits (Arabic-Indic) or a non-Gregorian
+        // year (Buddhist calendar) would be neither stable nor ASCII.
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
         formatter.dateFormat = "yyyy-MM-dd HHmmss"
         return formatter.string(from: Date())
     }

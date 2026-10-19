@@ -87,6 +87,13 @@ targets:
     platform: iOS
     sources:
       - path: OpenCodeRemoteTests
+    # The package products below are ALSO linked by the host app.
+    # Verified there is no duplicated library code in the test process:
+    # the build log carries no ld duplication warning, and the suite
+    # depends on cross-boundary casts working — a TransportError thrown
+    # by a test-bundle stub, caught and classified in app code (e.g.
+    # refresh 401 -> .reauthRequired, envelope messages in error text),
+    # which duplicated type metadata would silently break.
     settings:
       base:
         GENERATE_INFOPLIST_FILE: "YES"
