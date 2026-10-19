@@ -1,0 +1,430 @@
+import XCTest
+import OpenCodeDomain
+import OpenCodeTransport
+@testable import OpenCodeRemote
+
+/// W14 integrations state (S16, docs/api-contract.md W14): the effective
+/// inventory combines the RUNTIME plugins with the DECLARED directives,
+/// and a toggle is a PLAN over the raw JSONC bytes — read, edit,
+/// compare-latest-read, write, `location.reload`, authoritative
+/// readback. A failed or invalidated plan claims nothing.
+@MainActor
+final class IntegrationsLibraryTests: XCTestCase {
+    /// Non-isolated fixtures: transport handlers run off the main actor.
+    private enum Fixtures {
+        static func response(_ body: String, status: Int = 200) -> APIResponse {
+            APIResponse(statusCode: status, payload: .json(Data(body.utf8)))
+        }
+
+        static func file(_ text: String) -> APIResponse {
+            APIResponse(statusCode: 200, payload: .bytes(Data(text.utf8)))
+        }
+
+        static let noContent = APIResponse(statusCode: 204, payload: .empty)
+
+        /// Runtime inventory with the audit package active plus a
+        /// built-in (protected by host policy).
+        static let pluginList = #"{"location":{"directory":"/srv/demo"},"data":[{"id":"demo.audit","source":{"type":"package","target":"demo.audit","version":"1.0.0"},"features":{"server":true},"state":{"status":"active"}},{"source":{"type":"builtin"},"features":{},"state":{"status":"active"}}]}"#
+
+        /// The mock's own semantics: a negatively-declared plugin is
+        /// filtered OUT of the runtime inventory.
+        static let emptyPluginList = #"{"location":{"directory":"/srv/demo"},"data":[]}"#
+
+        /// config.get answers with a BARE array; the document declares
+        /// one positive and one negative directive.
+        static let configWithDirectives = #"[{"type":"document","path":"/srv/demo/opencode.jsonc","info":{"plugins":["demo.audit","-old.pkg"]}},{"type":"directory","path":"/srv/demo/.opencode"}]"#
+
+        /// After the negative is removed the readback config no longer
+        /// declares the target at all.
+        static let configAfterEnable = #"[{"type":"document","path":"/srv/demo/opencode.jsonc","info":{"plugins":[]}}]"#
+
+        /// The project document's raw JSONC bytes.
+        static let documentBytes = #"{"plugins": ["-demo.audit", "keep.pkg"]}"#
+
+        /// The plan's resulting text: only the negative directive and
+        /// its comma are gone — every other byte survives.
+        static let documentAfterEnable = #"{"plugins": [ "keep.pkg"]}"#
+    }
+
+    /// Captured-var mutation is not allowed in `@Sendable` handlers.
+    private final class Recorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var recorded: [APIRequest] = []
+        func record(_ request: APIRequest) {
+            lock.lock(); recorded.append(request); lock.unlock()
+        }
+        var requests: [APIRequest] {
+            lock.lock(); defer { lock.unlock() }; return recorded
+        }
+    }
+
+    /// A one-shot flip for handlers that must behave differently across
+    /// awaited calls.
+    private final class Flip: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func first() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            let wasFirst = !done
+            done = true
+            return wasFirst
+        }
+    }
+
+    /// A credential that can vanish between plan and apply — the
+    /// keychain item deleted mid-flow, which is the only way
+    /// `applyToggle` (already holding a plan) can meet a missing
+    /// credential.
+    private final class CredentialGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var present = true
+        func setPresent(_ value: Bool) {
+            lock.lock(); present = value; lock.unlock()
+        }
+        var isPresent: Bool {
+            lock.lock(); defer { lock.unlock() }; return present
+        }
+    }
+
+    /// A call counter (0-based) for readback-phase stubs.
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = 0
+        func next() -> Int {
+            lock.lock(); defer { lock.unlock() }
+            defer { value += 1 }
+            return value
+        }
+    }
+
+    private struct StubTransport: OpenCodeTransport {
+        var recorder: Recorder
+        var handler: @Sendable (APIRequest) throws -> APIResponse
+
+        func perform(_ request: APIRequest) async throws -> APIResponse {
+            recorder.record(request)
+            return try handler(request)
+        }
+
+        func events() -> AsyncThrowingStream<OpenCodeEvent, Error> {
+            AsyncThrowingStream { $0.finish() }
+        }
+    }
+
+    private func host(_ id: String, name: String) -> OpenCodeDomain.Host {
+        OpenCodeDomain.Host(
+            id: HostID(rawValue: id),
+            displayName: name,
+            address: URL(string: "http://\(id).local:4097")!,
+            createdAt: Date(timeIntervalSince1970: 0),
+            lastVersion: nil
+        )
+    }
+
+    private func library(
+        recorder: Recorder,
+        handler: @escaping @Sendable (APIRequest) throws -> APIResponse,
+        credentials: [String: BasicCredential?] = ["host_one": BasicCredential(secret: "t")]
+    ) -> IntegrationsLibrary {
+        library(recorder: recorder, handler: handler) { id in credentials[id.rawValue] ?? nil }
+    }
+
+    private func library(
+        recorder: Recorder,
+        handler: @escaping @Sendable (APIRequest) throws -> APIResponse,
+        provider: @escaping @MainActor (HostID) -> BasicCredential?
+    ) -> IntegrationsLibrary {
+        let stub: @Sendable () -> StubTransport = { StubTransport(recorder: recorder, handler: handler) }
+        return IntegrationsLibrary(
+            service: IntegrationsService(makeTransport: { _ in stub() }),
+            projectService: ProjectService(makeTransport: { _ in stub() }),
+            credentialProvider: provider
+        )
+    }
+
+    private let one = OpenCodeDomain.Host(
+        id: HostID(rawValue: "host_one"),
+        displayName: "One",
+        address: URL(string: "http://host_one.local:4097")!,
+        createdAt: Date(timeIntervalSince1970: 0),
+        lastVersion: nil
+    )
+
+    // MARK: - Load
+
+    func testLoadBuildsEffectiveRowsFromRuntimeAndDeclarations() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertNil(library.loadError)
+        XCTAssertEqual(
+            library.editableDocument?.path, "/srv/demo/opencode.jsonc",
+            "the session's own document is the editable one"
+        )
+        XCTAssertEqual(library.editableDocument?.relativePath, "opencode.jsonc")
+        XCTAssertEqual(
+            Set(recorder.requests.map(\.operationID)), ["plugin.list", "config.get"]
+        )
+
+        // Declared positive + running: active with its declared scope.
+        let audit = library.rows.first { $0.id == "demo.audit" }
+        XCTAssertEqual(audit?.target, "demo.audit")
+        XCTAssertEqual(audit?.statusText, "Active")
+        XCTAssertEqual(audit?.declaredInPaths, ["/srv/demo/opencode.jsonc"])
+        XCTAssertEqual(audit?.canDisable, true)
+        XCTAssertNotNil(audit?.runtime, "the runtime facts join the declared ones")
+
+        // Declared negative + absent from runtime: disabled in config,
+        // never merely "missing".
+        let old = library.rows.first { $0.id == "old.pkg" }
+        XCTAssertEqual(old?.statusText, "Disabled in config")
+        XCTAssertEqual(old?.canEnable, true, "the negative directive is what enable removes")
+
+        // Built-in: protected, never offers a disable.
+        let builtin = library.rows.first { $0.id == "built-in" }
+        XCTAssertEqual(builtin?.isProtected, true)
+        XCTAssertEqual(builtin?.canDisable, false)
+        XCTAssertTrue(builtin?.statusText.contains("(protected)") ?? false)
+    }
+
+    func testLoadWithoutCredentialReportsRePairAndSendsNoRequest() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder, handler: { _ in
+            XCTFail("no request may be sent without a credential")
+            return Fixtures.noContent
+        }, credentials: [:])
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertEqual(library.loadError, "Re-pair this host to read its integrations.")
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    func testLoadWithoutSessionDirectoryOffersNoToggle() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: nil)
+
+        XCTAssertNil(library.editableDocument)
+        await library.planToggle(host: one, target: "demo.audit", enable: false)
+        XCTAssertEqual(
+            library.toggleError,
+            "This location reports no editable configuration document."
+        )
+        XCTAssertFalse(recorder.requests.contains { $0.operationID == "fs.read" })
+    }
+
+    // MARK: - Plan
+
+    func testPlanToggleReadsTheDocumentAndPlansTheExactEdit() async throws {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+
+        XCTAssertNil(library.toggleError)
+        let plan = try XCTUnwrap(library.pendingPlan)
+        XCTAssertEqual(plan.enable, true)
+        XCTAssertEqual(plan.resultingText, Fixtures.documentAfterEnable)
+        XCTAssertEqual(
+            plan.description, "Remove \"-demo.audit\" from the plugins directives."
+        )
+        // The document is read location-relative: directory in the
+        // query, the relative path in the URL itself (`fs.read` builds
+        // /api/fs/read/<path>, never a `path` query key).
+        let read = recorder.requests.first { $0.operationID == "fs.read" }
+        XCTAssertEqual(read?.query.first { $0.key == "location[directory]" }?.value, "/srv/demo")
+        XCTAssertEqual(read?.path, "/api/fs/read/opencode.jsonc")
+    }
+
+    func testPlanToggleReportsHonestlyWhenThereIsNothingToChange() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        // Nothing negative exists to remove.
+        await library.planToggle(host: one, target: "keep.pkg", enable: true)
+        XCTAssertEqual(
+            library.toggleError,
+            "No \"-keep.pkg\" directive exists to remove."
+        )
+        XCTAssertNil(library.pendingPlan)
+    }
+
+    // MARK: - Apply
+
+    func testApplyToggleComparesWritesReloadsAndReadsBack() async throws {
+        let recorder = Recorder()
+        let runtimeCalls = Counter()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list":
+                // First load: filtered out (negative directive);
+                // readback: the host now runs it.
+                return Fixtures.response(
+                    runtimeCalls.next() == 0 ? Fixtures.emptyPluginList : Fixtures.pluginList
+                )
+            case "config.get":
+                return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read":
+                return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write":
+                return Fixtures.noContent
+            case "location.reload":
+                return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        XCTAssertNotNil(library.pendingPlan)
+
+        await library.applyToggle(host: one)
+
+        XCTAssertNil(library.pendingPlan)
+        XCTAssertNil(library.toggleError)
+        XCTAssertEqual(
+            library.notice, "Saved — the host reloaded the location.",
+            "the readback runtime shows the plugin running — the change is in effect"
+        )
+        XCTAssertTrue(library.unreflected.isEmpty)
+
+        let ids = recorder.requests.map(\.operationID)
+        XCTAssertEqual(ids.filter { $0 == "fs.read" }.count, 2, "plan read + compare-latest-read")
+        let writeIndex = try XCTUnwrap(ids.firstIndex(of: "experimental.fs.write"))
+        let reloadIndex = try XCTUnwrap(ids.firstIndex(of: "location.reload"))
+        XCTAssertLessThan(writeIndex, reloadIndex, "the location reloads AFTER the bytes land")
+        let write = recorder.requests[writeIndex]
+        XCTAssertEqual(write.body, Data(Fixtures.documentAfterEnable.utf8))
+        XCTAssertEqual(
+            write.query.first { $0.key == "path" }?.value, "/srv/demo/opencode.jsonc",
+            "fs.write takes the ABSOLUTE document path"
+        )
+        XCTAssertEqual(
+            Set(ids.suffix(2)), ["plugin.list", "config.get"],
+            "the authoritative readback follows the reload"
+        )
+    }
+
+    func testApplyToggleAbortsWhenTheDocumentChangedUnderThePlan() async {
+        let recorder = Recorder()
+        let flip = Flip()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read":
+                // The plan is computed against the first read; the
+                // compare-latest read answers differently.
+                return Fixtures.file(
+                    flip.first() ? Fixtures.documentBytes : #"{"plugins": ["other"]}"#
+                )
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+
+        await library.applyToggle(host: one)
+
+        XCTAssertNil(library.pendingPlan, "an invalidated plan is discarded")
+        XCTAssertEqual(
+            library.notice,
+            "The document changed on the host — review the current plugins directives and retry."
+        )
+        let ids = recorder.requests.map(\.operationID)
+        XCTAssertFalse(ids.contains("experimental.fs.write"), "nothing is written on a mismatch")
+        XCTAssertFalse(ids.contains("location.reload"), "no reload follows an aborted plan")
+    }
+
+    func testApplyToggleExposesAnIneffectiveOverride() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list":
+                // The readback still does NOT run the plugin — the
+                // saved directive is not (yet) in effect.
+                return Fixtures.response(Fixtures.emptyPluginList)
+            case "config.get":
+                return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write", "location.reload":
+                return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+
+        await library.applyToggle(host: one)
+
+        XCTAssertNil(library.toggleError, "the save itself succeeded")
+        XCTAssertEqual(library.unreflected, ["demo.audit"])
+        XCTAssertEqual(
+            library.notice,
+            "Saved, but the host's runtime inventory has not applied it yet."
+        )
+    }
+
+    func testApplyToggleRejectsWhenTheCredentialDisappearsAfterPlanning() async {
+        let recorder = Recorder()
+        let gate = CredentialGate()
+        let library = library(
+            recorder: recorder,
+            handler: { request in
+                switch request.operationID {
+                case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+                case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+                case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+                default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+                }
+            },
+            provider: { _ in gate.isPresent ? BasicCredential(secret: "t") : nil }
+        )
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        XCTAssertNotNil(library.pendingPlan, "the plan exists while the credential does")
+
+        gate.setPresent(false) // the keychain item is deleted mid-flow
+        await library.applyToggle(host: one)
+
+        XCTAssertEqual(library.toggleError, "Re-pair this host to change plugins.")
+        XCTAssertEqual(
+            library.pendingPlan?.target, "demo.audit",
+            "nothing was written — the plan survives for a retry after re-pairing"
+        )
+        let ids = recorder.requests.map(\.operationID)
+        XCTAssertFalse(ids.contains("experimental.fs.write"))
+        XCTAssertFalse(ids.contains("location.reload"))
+    }
+}

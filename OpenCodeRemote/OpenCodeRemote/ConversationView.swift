@@ -48,6 +48,10 @@ struct ConversationView: View {
     /// W12 Changes inspector (S15): session-turn/workspace diffs over
     /// the session's location; opens from the trailing toolbar button.
     @State private var showingChanges = false
+    /// W14 Integrations inspector (S16): effective plugin inventory
+    /// over the session's location; the MCP segment arrives with W15.
+    @State private var showingIntegrations = false
+    @State private var integrations = IntegrationsLibrary()
     /// Which queued confirmation is on screen. The library's queue is
     /// the source of truth; the sequencer gives each question its own
     /// presentation cycle (SwiftUI ignores presented-data swaps on a
@@ -105,6 +109,14 @@ struct ConversationView: View {
                     Label("Changes", systemImage: "arrow.left.arrow.right")
                 }
                 .accessibilityIdentifier("S15.changes")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingIntegrations = true
+                } label: {
+                    Label("Integrations", systemImage: "puzzlepiece.extension")
+                }
+                .accessibilityIdentifier("S16.integrations")
             }
         }
         .sheet(isPresented: $showingSelection) {
@@ -207,6 +219,20 @@ struct ConversationView: View {
                 }
             }
         }
+        .sheet(isPresented: $showingIntegrations) {
+            NavigationStack {
+                IntegrationsView(
+                    host: host,
+                    sessionDirectory: session.location?.directory,
+                    library: integrations
+                )
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showingIntegrations = false }
+                    }
+                }
+            }
+        }
         .fullScreenCover(isPresented: $showingCamera) {
             CameraPickerView { image in
                 attachments.addCameraImage(image, host: host)
@@ -283,6 +309,7 @@ struct ConversationView: View {
             attachments.attach(hosts: library)
             approvals.attach(hosts: library)
             forms.attach(hosts: library)
+            integrations.attach(hosts: library)
             await openTranscript()
             await loadApprovals()
             await loadForms()

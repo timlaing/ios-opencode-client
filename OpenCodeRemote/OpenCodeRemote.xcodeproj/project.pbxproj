@@ -40,6 +40,7 @@
 		60F482270C83E3E5C10A8ACA /* OpenCodeRemoteUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6885A35810D9F55D83E34804 /* OpenCodeRemoteUITests.swift */; };
 		693521C95B13D5A003EB7042 /* FileViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 365CC0CF1809551759169679 /* FileViewerView.swift */; };
 		75A82154C186C6FBCCEB83B1 /* AttachmentLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1455773B6233F4959A4315B6 /* AttachmentLibrary.swift */; };
+		855A4FD5CD70BB298E43B5DB /* IntegrationsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75AAB7B7891E5FA7B62DDD13 /* IntegrationsView.swift */; };
 		87D98AEEBD24C31DB58820EE /* ChangesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 494C56D60F446CA200462C99 /* ChangesView.swift */; };
 		8BF10003B067FC69B9D7035F /* AttachmentTrayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2834D866E29CC098EC90F677 /* AttachmentTrayView.swift */; };
 		8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */; };
@@ -47,6 +48,7 @@
 		93C3984B18F0A6352D809934 /* FormSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D544CC0D1391BC960867BE0C /* FormSheetView.swift */; };
 		956AD484621E9D738EC88D0D /* ApprovalLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F9544C2B69C997D117186AA /* ApprovalLibraryTests.swift */; };
 		95A10F74E73445C83D72738D /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86AB16C65ED59D9FC9A77E57 /* WelcomeView.swift */; };
+		95B799B3C2D697B016D94181 /* PluginDirectivesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D4C276F718FFAF2ACFF80E7 /* PluginDirectivesTests.swift */; };
 		95F8BCCCA82D4D19AA466FB9 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = EB4EF03F4434199B28DE0C87 /* OpenCodeTransport */; };
 		A37D8A660177A84B37F3EF61 /* SelectionLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 547D33894F8710622BEEAAF9 /* SelectionLibrary.swift */; };
 		A73F651900612517D6F962C0 /* HostLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45806627CE3F3195AAF1D97E /* HostLibrary.swift */; };
@@ -63,8 +65,11 @@
 		D6451336ED5676931929D181 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4B6A1B236A48CD201C014739 /* Assets.xcassets */; };
 		DF4BFEE166DA17E0E10C8EA9 /* ConversationLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F146FC21EC6901FCCF7028 /* ConversationLibraryTests.swift */; };
 		E095AF51CB275E0E401CB7A9 /* OpenCodeTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 072A738B11C02C6921C41986 /* OpenCodeTransport */; };
+		E11496F0130D2D58B948E3F4 /* IntegrationsLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7D041FE39CB8F3C2BFCB896 /* IntegrationsLibraryTests.swift */; };
+		E870C3A6E2546FD0D9498362 /* IntegrationsLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD299DF2E30F67BB7199D3B6 /* IntegrationsLibrary.swift */; };
 		E894116F7EC816179DFDBA14 /* ConversationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAF798B11E6898C192FB8751 /* ConversationView.swift */; };
 		EFE692B672A0BCFDD2478BC8 /* FormDraftTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A43F938A72E504E56D6476B /* FormDraftTests.swift */; };
+		F1D8B21BCF33AC020745A1C1 /* PluginDirectives.swift in Sources */ = {isa = PBXBuildFile; fileRef = D828DA2CD94DCBD223D8611D /* PluginDirectives.swift */; };
 		F6033C873F62D24273B74157 /* ApprovalLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 011D665A8B085778E8A2ABF6 /* ApprovalLibrary.swift */; };
 		FAFCA844E6C424603A12F3C6 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41CCFF7F3899E21E1A364102 /* QRScannerView.swift */; };
 		FC4F62AF7B6D3284C98EFAFD /* LocalPushConfigurationControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A97F76428C3F7698113221 /* LocalPushConfigurationControllerTests.swift */; };
@@ -125,6 +130,7 @@
 		307C9A540F238195FC376223 /* ChangesLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChangesLibraryTests.swift; sourceTree = "<group>"; };
 		30C09BA37961AAA99C961ADF /* FileViewerLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewerLibrary.swift; sourceTree = "<group>"; };
 		365CC0CF1809551759169679 /* FileViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileViewerView.swift; sourceTree = "<group>"; };
+		3D4C276F718FFAF2ACFF80E7 /* PluginDirectivesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginDirectivesTests.swift; sourceTree = "<group>"; };
 		3F9544C2B69C997D117186AA /* ApprovalLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalLibraryTests.swift; sourceTree = "<group>"; };
 		41CCFF7F3899E21E1A364102 /* QRScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QRScannerView.swift; sourceTree = "<group>"; };
 		4508FD00803E68C1319DD772 /* FormLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormLibrary.swift; sourceTree = "<group>"; };
@@ -145,6 +151,7 @@
 		692EB67452C2727316496982 /* SessionsLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsLibraryTests.swift; sourceTree = "<group>"; };
 		6D65D183486C0DE9CB0FE855 /* ModelAgentPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelAgentPickerView.swift; sourceTree = "<group>"; };
 		6EDD2A70ECC9BAF84BEFDE12 /* FormDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormDraft.swift; sourceTree = "<group>"; };
+		75AAB7B7891E5FA7B62DDD13 /* IntegrationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationsView.swift; sourceTree = "<group>"; };
 		76BB914BBC8F3B0BD8F43D9F /* SessionsLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionsLibrary.swift; sourceTree = "<group>"; };
 		7993BF3D9A63D9D450E4254F /* FolderNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderNavigationTests.swift; sourceTree = "<group>"; };
 		7A43F938A72E504E56D6476B /* FormDraftTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormDraftTests.swift; sourceTree = "<group>"; };
@@ -156,13 +163,16 @@
 		A92B0FB57EE5AD2C28D2B3F2 /* OpenCodeKit */ = {isa = PBXFileReference; lastKnownFileType = folder; name = OpenCodeKit; path = ../Packages/OpenCodeKit; sourceTree = SOURCE_ROOT; };
 		BA2341BA67C8B3947C411B46 /* OpenCodeRemoteTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = OpenCodeRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BAF798B11E6898C192FB8751 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
+		BD299DF2E30F67BB7199D3B6 /* IntegrationsLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationsLibrary.swift; sourceTree = "<group>"; };
 		C2A957884CCF9676C256BBF2 /* CameraPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPickerView.swift; sourceTree = "<group>"; };
 		C2F471708ABD498D52D76954 /* OpenCodeRemote.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = OpenCodeRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C33883AD144C6131A8F3B463 /* FormLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormLibraryTests.swift; sourceTree = "<group>"; };
 		C706802D2672E7FBB027B1F0 /* MarkdownRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendering.swift; sourceTree = "<group>"; };
+		C7D041FE39CB8F3C2BFCB896 /* IntegrationsLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationsLibraryTests.swift; sourceTree = "<group>"; };
 		CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsLibraryTests.swift; sourceTree = "<group>"; };
 		D544CC0D1391BC960867BE0C /* FormSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormSheetView.swift; sourceTree = "<group>"; };
 		D765A067EB12DEFAE6CA558A /* SelectionLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectionLibraryTests.swift; sourceTree = "<group>"; };
+		D828DA2CD94DCBD223D8611D /* PluginDirectives.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PluginDirectives.swift; sourceTree = "<group>"; };
 		DA34063BB50B17F6C8B8267B /* PhotoPreparation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoPreparation.swift; sourceTree = "<group>"; };
 		E1A97F76428C3F7698113221 /* LocalPushConfigurationControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPushConfigurationControllerTests.swift; sourceTree = "<group>"; };
 		E7232895D6FC3972F31C5C58 /* FolderBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderBrowserView.swift; sourceTree = "<group>"; };
@@ -226,10 +236,12 @@
 				7A43F938A72E504E56D6476B /* FormDraftTests.swift */,
 				C33883AD144C6131A8F3B463 /* FormLibraryTests.swift */,
 				557CD3B06333747A5958EEEA /* HostLibraryTests.swift */,
+				C7D041FE39CB8F3C2BFCB896 /* IntegrationsLibraryTests.swift */,
 				A3CCAF8F588A0B928A8D5102 /* KeychainCredentialStoreTests.swift */,
 				E1A97F76428C3F7698113221 /* LocalPushConfigurationControllerTests.swift */,
 				0BA338926676B245F6220991 /* MarkdownRenderingTests.swift */,
 				479777F928D13AFF3D1C33A4 /* OpenCodeRemoteTests.swift */,
+				3D4C276F718FFAF2ACFF80E7 /* PluginDirectivesTests.swift */,
 				CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */,
 				D765A067EB12DEFAE6CA558A /* SelectionLibraryTests.swift */,
 				4A94EE53AFEC0878CF834794 /* SessionLocalStateStoreTests.swift */,
@@ -261,12 +273,15 @@
 				4508FD00803E68C1319DD772 /* FormLibrary.swift */,
 				D544CC0D1391BC960867BE0C /* FormSheetView.swift */,
 				45806627CE3F3195AAF1D97E /* HostLibrary.swift */,
+				BD299DF2E30F67BB7199D3B6 /* IntegrationsLibrary.swift */,
+				75AAB7B7891E5FA7B62DDD13 /* IntegrationsView.swift */,
 				1BA2EB179D0D74E5233F1BB6 /* LocalPushConfigurationController.swift */,
 				C706802D2672E7FBB027B1F0 /* MarkdownRendering.swift */,
 				6D65D183486C0DE9CB0FE855 /* ModelAgentPickerView.swift */,
 				83BF9FAC0843B814B7183B2F /* NewProjectView.swift */,
 				FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */,
 				DA34063BB50B17F6C8B8267B /* PhotoPreparation.swift */,
+				D828DA2CD94DCBD223D8611D /* PluginDirectives.swift */,
 				4C466BAF460750530CE6C4B7 /* ProjectsLibrary.swift */,
 				41CCFF7F3899E21E1A364102 /* QRScannerView.swift */,
 				547D33894F8710622BEEAAF9 /* SelectionLibrary.swift */,
@@ -501,12 +516,15 @@
 				38E27308B0C17F7DF9C63A94 /* FormLibrary.swift in Sources */,
 				93C3984B18F0A6352D809934 /* FormSheetView.swift in Sources */,
 				A73F651900612517D6F962C0 /* HostLibrary.swift in Sources */,
+				E870C3A6E2546FD0D9498362 /* IntegrationsLibrary.swift in Sources */,
+				855A4FD5CD70BB298E43B5DB /* IntegrationsView.swift in Sources */,
 				54DDBF68BC53CB3F1F93834C /* LocalPushConfigurationController.swift in Sources */,
 				564C55CF10FD80851EB3D2C3 /* MarkdownRendering.swift in Sources */,
 				3E0B6F6FCB767690D722FA56 /* ModelAgentPickerView.swift in Sources */,
 				FDDA3D58718234DCE5C3A3C2 /* NewProjectView.swift in Sources */,
 				8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */,
 				4008004D825D380126F68A53 /* PhotoPreparation.swift in Sources */,
+				F1D8B21BCF33AC020745A1C1 /* PluginDirectives.swift in Sources */,
 				B89B7447BDCC8F810822DDDA /* ProjectsLibrary.swift in Sources */,
 				FAFCA844E6C424603A12F3C6 /* QRScannerView.swift in Sources */,
 				A37D8A660177A84B37F3EF61 /* SelectionLibrary.swift in Sources */,
@@ -539,10 +557,12 @@
 				EFE692B672A0BCFDD2478BC8 /* FormDraftTests.swift in Sources */,
 				565AEFEC1ED814A4EB8028B0 /* FormLibraryTests.swift in Sources */,
 				2CC62EE5E90DDE822EB9B6FD /* HostLibraryTests.swift in Sources */,
+				E11496F0130D2D58B948E3F4 /* IntegrationsLibraryTests.swift in Sources */,
 				FDFC4FEEEF10D1649CAB244D /* KeychainCredentialStoreTests.swift in Sources */,
 				FC4F62AF7B6D3284C98EFAFD /* LocalPushConfigurationControllerTests.swift in Sources */,
 				0E2F46A94CF32E3A43666950 /* MarkdownRenderingTests.swift in Sources */,
 				29C14B0551E936B987D1EFC2 /* OpenCodeRemoteTests.swift in Sources */,
+				95B799B3C2D697B016D94181 /* PluginDirectivesTests.swift in Sources */,
 				58BAF77E85BB89F2E0D829B3 /* ProjectsLibraryTests.swift in Sources */,
 				4EA3B4C2FBAB4ED9FBE467D8 /* SelectionLibraryTests.swift in Sources */,
 				55594B3DF9CFB129CE822E88 /* SessionLocalStateStoreTests.swift in Sources */,

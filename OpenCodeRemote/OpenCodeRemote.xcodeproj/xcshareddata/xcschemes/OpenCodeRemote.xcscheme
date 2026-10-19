@@ -50,6 +50,17 @@
                ReferencedContainer = "container:OpenCodeRemote.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "97E5AAF6D17E8412B321D091"
+               BuildableName = "OpenCodeRemoteUITests.xctest"
+               BlueprintName = "OpenCodeRemoteUITests"
+               ReferencedContainer = "container:OpenCodeRemote.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

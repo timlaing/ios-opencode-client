@@ -35,6 +35,19 @@ targets:
       path: OpenCodeRemote/Info.plist
       properties:
         CFBundleDisplayName: OpenCode Client
+        # Declared explicitly (not left to defaults): the UI suite runs
+        # portrait AND landscape on both device families, and an
+        # unsupported orientation would silently revert the rotation
+        # under test. iPad carries all four as standard.
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        "UISupportedInterfaceOrientations~ipad":
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         NSCameraUsageDescription: Scan the pairing QR code printed by opencode pair, and take photos to attach to your messages.
         # iOS 14+ local-network privacy: without this key a pairing attempt
         # at a LAN host can fail with NO prompt and no recovery path — the
@@ -127,4 +140,5 @@ schemes:
       config: Debug
       targets:
         - OpenCodeRemoteTests
+        - OpenCodeRemoteUITests # root shell on iPhone + iPad, portrait + landscape
         # OpenCodeKitTests (package) runs via `swift test --package-path ../Packages/OpenCodeKit`

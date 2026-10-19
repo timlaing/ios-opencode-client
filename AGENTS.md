@@ -28,7 +28,7 @@ swift test --package-path Packages/OpenCodeKit   # package tests (SSE/encoding/s
 
 - `OpenCodeRemote/project.yml` is the **source of truth** for the Xcode project (app + LocalPushProvider extension + test targets). Never hand-edit `project.pbxproj`; edit the YAML and regenerate. The MCP Xcode tools build/test/run the generated project.
 - `Packages/OpenCodeKit` is a local Swift package with products `OpenCodeTransport`, `OpenCodeDomain`, `OpenCodeStorage` (GRDB). GRDB is pinned exact in `Package.swift`; commit `Package.resolved`.
-- The package's test target (`OpenCodeKitTests`) is not in the Xcode scheme — run it with `swift test`. App tests run via the `OpenCodeRemote` scheme; the `OpenCodeRemoteUITests` target (template placeholder) is not in the scheme.
+- The package's test target (`OpenCodeKitTests`) is not in the Xcode scheme — run it with `swift test`. App unit and UI tests run via the `OpenCodeRemote` scheme; run it once per device family (an iPhone and an iPad destination) — the UI suite exercises portrait and landscape through in-test rotation, and an unsupported orientation would fail rather than silently pass.
 - `LocalPushProvider` is built **without the `app-push-provider` entitlement** (pending Apple approval per `docs/design-review.md`). Re-add entitlements files + `CODE_SIGN_ENTITLEMENTS` in `project.yml` only after approval; do not treat the extension as activatable on device until then.
 - Bundle IDs: app `uk.co.laingcorp.opencode-client.OpenCodeRemote`, extension `…OpenCodeRemote.LocalPushProvider`. Team `4C8FWEBR8F`.
 
