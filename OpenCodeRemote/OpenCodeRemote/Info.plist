@@ -27,6 +27,8 @@
 	</dict>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan the pairing QR code printed by opencode pair, and take photos to attach to your messages.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Connect to your self-hosted OpenCode server on your local network.</string>
 	<key>UILaunchScreen</key>
 	<dict/>
 </dict>

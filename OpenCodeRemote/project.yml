@@ -36,6 +36,11 @@ targets:
       properties:
         CFBundleDisplayName: OpenCode Client
         NSCameraUsageDescription: Scan the pairing QR code printed by opencode pair, and take photos to attach to your messages.
+        # iOS 14+ local-network privacy: without this key a pairing attempt
+        # at a LAN host can fail with NO prompt and no recovery path — the
+        # ATS exception below permits the connection but does not grant the
+        # privacy access. App plist only; extensions are exempt.
+        NSLocalNetworkUsageDescription: Connect to your self-hosted OpenCode server on your local network.
         UILaunchScreen: {}
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true

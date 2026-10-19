@@ -179,18 +179,23 @@ final class AttachmentLibrary {
 
     func addCameraImage(_ image: UIImage, host: OpenCodeDomain.Host) {
         // A camera capture has no on-disk original: the full-resolution
-        // JPEG becomes the source the copy modes re-prepare from.
-        guard let data = image.jpegData(compressionQuality: 1.0) else { return }
-        let draft = Draft(
-            name: "Photo \(Self.timestampName()).jpg",
-            mimeType: "image/jpeg",
-            byteCount: data.count,
-            source: .prepared(data: data, mimeType: "image/jpeg"),
-            isPhoto: true,
-            photoMode: photoCopy
-        )
-        drafts.append(draft)
-        start(draftID: draft.id, host: host, bytes: data, mimeType: "image/jpeg")
+        // JPEG becomes the source the copy modes re-prepare from. The
+        // encode runs off the main actor like the rest of the pipeline —
+        // a full-resolution capture is hundreds of milliseconds of CPU.
+        Task { [weak self] in
+            guard let data = await Self.cameraJPEG(image) else { return }
+            guard let self else { return }
+            let draft = Draft(
+                name: "Photo \(Self.timestampName()).jpg",
+                mimeType: "image/jpeg",
+                byteCount: data.count,
+                source: .prepared(data: data, mimeType: "image/jpeg"),
+                isPhoto: true,
+                photoMode: photoCopy
+            )
+            drafts.append(draft)
+            loadThenPrepare(draftID: draft.id, host: host)
+        }
     }
 
     // MARK: - Tray operations
@@ -344,59 +349,63 @@ final class AttachmentLibrary {
                 // without this check the cancelled task would still run the
                 // whole pipeline and route (duplicating a staged upload).
                 try Task.checkCancellation()
-                self?.start(draftID: draftID, host: host, bytes: bytes, mimeType: sniffed)
+                if let self, let draft = self.drafts.first(where: { $0.id == draftID }),
+                   draft.isPhoto {
+                    // The copy pipeline is the same class of CPU-bound
+                    // work as the read above, so it runs off the main
+                    // actor too (ImageIO decode, 2048px thumbnail, the
+                    // JPEG/PNG encode). A mode change cancels THIS task
+                    // and re-prepares under the new mode.
+                    let result = try await Self.preparePhoto(
+                        bytes, mode: draft.photoMode, includeLocation: self.includeLocation
+                    )
+                    try Task.checkCancellation()
+                    self.start(draftID: draftID, host: host, bytes: result.bytes, mimeType: result.mimeType)
+                } else {
+                    self?.start(draftID: draftID, host: host, bytes: bytes, mimeType: sniffed)
+                }
             } catch is CancellationError {
                 // remove/cancel/setPhotoCopy already decided the draft's fate.
+            } catch is PhotoPreparation.PipelineError {
+                self?.fail(draftID, message: "This photo could not be prepared.")
             } catch {
                 self?.fail(draftID, message: Self.readErrorMessage(for: error))
             }
         }
     }
 
-    /// Runs the copy pipeline for photo drafts, then duplicate detection,
-    /// the size warning, and the inline/stage routing decision.
+    /// Receives FINAL (already-prepared) bytes: duplicate detection, the
+    /// size warning, and the inline/stage routing decision. Photo copies
+    /// are prepared off the main actor in `loadThenPrepare` — only the
+    /// picker-photo extension claim stays here (it needs MainActor state).
     private func start(draftID: UUID, host: OpenCodeDomain.Host, bytes: Data, mimeType: String) {
         guard let index = drafts.firstIndex(where: { $0.id == draftID }) else { return }
-        var prepared = bytes
-        var mime = mimeType
-        if drafts[index].isPhoto {
-            do {
-                let result = try PhotoPreparation.prepare(
-                    data: bytes, mode: drafts[index].photoMode, includeLocation: includeLocation
-                )
-                prepared = result.bytes
-                mime = result.mimeType
-            } catch {
-                fail(draftID, message: "This photo could not be prepared.")
-                return
-            }
-            if drafts[index].name == "Photo" {
-                // Extension follows the REAL bytes: balanced mode always
-                // re-encodes to png/jpeg, but original mode returns the
-                // picked bytes untouched and MimeType.sniff has no HEIC
-                // case — falling back to jpg would name HEIC bytes .jpg.
-                let ext: String
-                switch mime {
-                case "image/png": ext = "png"
-                case "image/jpeg": ext = "jpg"
-                default:
-                    if case .photo(let item) = drafts[index].source,
-                       let picked = item.supportedContentTypes.first?.preferredFilenameExtension {
-                        ext = picked
-                    } else {
-                        ext = "bin"
-                    }
+        if drafts[index].isPhoto, drafts[index].name == "Photo" {
+            // Extension follows the REAL prepared bytes: balanced mode
+            // always re-encodes to png/jpeg, but original mode returns the
+            // picked bytes untouched and MimeType.sniff has no HEIC case —
+            // falling back to jpg would name HEIC bytes .jpg.
+            let ext: String
+            switch mimeType {
+            case "image/png": ext = "png"
+            case "image/jpeg": ext = "jpg"
+            default:
+                if case .photo(let item) = drafts[index].source,
+                   let picked = item.supportedContentTypes.first?.preferredFilenameExtension {
+                    ext = picked
+                } else {
+                    ext = "bin"
                 }
-                drafts[index].name = "Photo \(Self.timestampName()).\(ext)"
             }
+            drafts[index].name = "Photo \(Self.timestampName()).\(ext)"
         }
-        drafts[index].mimeType = mime
-        drafts[index].byteCount = prepared.count
-        drafts[index].bytes = prepared
+        drafts[index].mimeType = mimeType
+        drafts[index].byteCount = bytes.count
+        drafts[index].bytes = bytes
 
         // Duplicate detection: same name AND same size already in the tray.
         if drafts.contains(where: {
-            $0.id != draftID && $0.name == drafts[index].name && $0.byteCount == prepared.count
+            $0.id != draftID && $0.name == drafts[index].name && $0.byteCount == bytes.count
         }) {
             enqueue(PendingConfirmation(
                 id: draftID, name: drafts[index].name, kind: .duplicate
@@ -407,9 +416,9 @@ final class AttachmentLibrary {
         // sources whose size was never asked about (photos, prepared
         // data, unstattable files) get the question here — after the
         // bytes exist, which `answerConfirmation` can then route.
-        if prepared.count > warningThresholdBytes, !drafts[index].oversizedAccepted {
+        if bytes.count > warningThresholdBytes, !drafts[index].oversizedAccepted {
             enqueue(PendingConfirmation(
-                id: draftID, name: drafts[index].name, kind: .oversized(byteCount: prepared.count)
+                id: draftID, name: drafts[index].name, kind: .oversized(byteCount: bytes.count)
             ))
             return
         }
@@ -478,6 +487,23 @@ final class AttachmentLibrary {
     }
 
     // MARK: - Sources
+
+    /// Off the main actor, like `loadBytes`: the copy pipeline decodes
+    /// the full image, builds the 2048-pixel thumbnail and JPEG/PNG
+    /// encodes it — hundreds of milliseconds per pick that would freeze
+    /// the UI on the caller's actor. The result returns to the caller's
+    /// isolation at the `await`.
+    nonisolated private static func preparePhoto(
+        _ data: Data, mode: PhotoCopy, includeLocation: Bool
+    ) async throws -> (bytes: Data, mimeType: String) {
+        try PhotoPreparation.prepare(data: data, mode: mode, includeLocation: includeLocation)
+    }
+
+    /// Off the main actor for the same reason: encoding a
+    /// full-resolution camera capture to JPEG is CPU-bound.
+    nonisolated private static func cameraJPEG(_ image: UIImage) async -> Data? {
+        image.jpegData(compressionQuality: 1.0)
+    }
 
     /// The picked FILE's size straight from metadata — no bytes read.
     /// nil when the URL cannot be stat'd (the caller then falls back to
