@@ -853,6 +853,66 @@ final class IntegrationsLibraryTests: XCTestCase {
         )
     }
 
+    /// A write whose RESPONSE cannot be used (malformed body) is
+    /// response-less for the caller: the bytes may have landed, so it
+    /// reports the unknown outcome and drops the plan — never "could
+    /// not be saved".
+    func testAnUnusableWriteResponseReportsUnknownOutcomeAndDropsThePlan() async throws {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write":
+                throw TransportError.decodingFailed("write response was not decodable")
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+
+        await library.applyToggle(host: one, plan: plan)
+
+        XCTAssertEqual(
+            library.toggleError,
+            "The connection dropped during the save — pull to refresh to see whether the change landed."
+        )
+        XCTAssertNil(
+            library.pendingPlan,
+            "an unknown outcome must not leave a plan that may already be applied"
+        )
+    }
+
+    /// A cancelled write claims NOTHING (silent by convention) but
+    /// still drops the plan: its outcome is unknown like every other
+    /// response-less write failure.
+    func testACancelledWriteDropsThePlanWithoutClaimingAnything() async throws {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write":
+                throw TransportError.cancelled
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+
+        await library.applyToggle(host: one, plan: plan)
+
+        XCTAssertNil(library.toggleError, "a cancellation claims nothing")
+        XCTAssertNil(
+            library.pendingPlan,
+            "…but the plan must not survive an unknown outcome"
+        )
+    }
+
     // MARK: - Banner ownership across applies
 
     /// A new apply owns BOTH banners: the view renders notice and

@@ -304,15 +304,27 @@ final class IntegrationsLibrary {
                     directory: plan.directory, path: plan.path,
                     bytes: Data(plan.resultingText.utf8)
                 )
-            } catch TransportError.connectionFailed {
-                // The connection failed DURING the save: the bytes may
-                // already be on the host (a timeout or a drop after the
-                // request body). The outcome is UNKNOWN — never claim
-                // "not saved" (api-contract.md W14) — and the plan is
-                // dropped either way: it may already describe the
-                // change, and re-planning must re-read the document.
+            } catch {
+                if case TransportError.http(_, _) = error {
+                    // The host ANSWERED the write: an HTTP rejection is
+                    // definite — nothing landed — so the shared message is
+                    // true and the plan (computed against an unchanged
+                    // document) stays retryable.
+                    toggleError = Self.toggleErrorMessage(for: error)
+                    return
+                }
+                // No usable response — connection lost, timeout, a
+                // malformed body, or cancellation mid-save: the bytes
+                // may already be on the host. The outcome is UNKNOWN —
+                // never claim "not saved" (api-contract.md W14) — and
+                // the plan is dropped either way: it may already
+                // describe the change, and re-planning must re-read
+                // the document. A cancelled save claims nothing
+                // (silent by convention) but still drops it.
                 pendingPlan = nil
-                toggleError = "The connection dropped during the save — pull to refresh to see whether the change landed."
+                if !Self.isSilent(error) {
+                    toggleError = "The connection dropped during the save — pull to refresh to see whether the change landed."
+                }
                 return
             }
             // The bytes are on the host now: the plan is spent, and
@@ -609,10 +621,11 @@ final class IntegrationsLibrary {
         }
     }
 
-    /// Only the COMPARE-READ phase of applyToggle reaches this: the
-    /// write phase catches its own connection failure (unknown outcome
-    /// ≠ "not saved"), so every "not saved" here is emitted before any
-    /// write was attempted and is therefore true.
+    /// "Not saved" is only ever emitted where it is TRUE, from two
+    /// places: applyToggle's COMPARE-READ phase (nothing was written
+    /// yet) and the WRITE phase's HTTP clause (the host answered with
+    /// a rejection — nothing landed). Response-less write failures
+    /// never reach this — they are reported as an unknown outcome.
     private static func toggleErrorMessage(for error: Error) -> String {
         switch error {
         case TransportError.http(let status, _):

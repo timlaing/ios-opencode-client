@@ -67,9 +67,11 @@ final class OpenCodeRemoteUITests: XCTestCase {
     /// Rotations animate; evaluating hittability mid-flight can raise
     /// an infrastructure error ("Activation point invalid") on an
     /// element whose activation state has not caught up with its
-    /// frame — a test error, not a finding. Waits until the window
-    /// frame stops changing before anything is asserted or tapped.
-    private func waitForRotationToSettle(in app: XCUIApplication) {
+    /// frame — a test error, not a finding. Returns only when the
+    /// window frame matches the EXPECTED orientation and has stopped
+    /// changing: a frame equal to the pre-rotation one merely means
+    /// the animation has not started yet, never that it has landed.
+    private func waitForRotationToSettle(landscape: Bool, in app: XCUIApplication) {
         var previous = app.windows.firstMatch.frame
         let deadline = Date().addingTimeInterval(5)
         while Date() < deadline {
@@ -79,7 +81,10 @@ final class OpenCodeRemoteUITests: XCTestCase {
                 previous = .zero
                 continue
             }
-            if current == previous { return }
+            let matches = landscape
+                ? current.width > current.height
+                : current.height > current.width
+            if matches, current == previous { return }
             previous = current
         }
     }
@@ -161,7 +166,7 @@ final class OpenCodeRemoteUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launch()
-        waitForRotationToSettle(in: app)
+        waitForRotationToSettle(landscape: false, in: app)
         assertInterface(landscape: false, in: app)
         assertTabsExist(in: app)
         assertEachTabLands(in: app)
@@ -175,7 +180,7 @@ final class OpenCodeRemoteUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         let app = XCUIApplication()
         app.launch()
-        waitForRotationToSettle(in: app)
+        waitForRotationToSettle(landscape: true, in: app)
         assertInterface(landscape: true, in: app)
         assertTabsExist(in: app)
         assertEachTabLands(in: app)
@@ -190,12 +195,12 @@ final class OpenCodeRemoteUITests: XCTestCase {
         app.launch()
         // A sibling test may have left the device rotated — the device
         // rotation races the launch until it settles.
-        waitForRotationToSettle(in: app)
+        waitForRotationToSettle(landscape: false, in: app)
         assertInterface(landscape: false, in: app)
         assertTabsExist(in: app)
 
         XCUIDevice.shared.orientation = .landscapeLeft
-        waitForRotationToSettle(in: app)
+        waitForRotationToSettle(landscape: true, in: app)
         assertInterface(landscape: true, in: app)
         assertTabsExist(in: app)
         requireTab("Settings", in: app)?.tap()
@@ -205,7 +210,7 @@ final class OpenCodeRemoteUITests: XCTestCase {
         )
 
         XCUIDevice.shared.orientation = .portrait
-        waitForRotationToSettle(in: app)
+        waitForRotationToSettle(landscape: false, in: app)
         assertInterface(landscape: false, in: app)
         assertTabsExist(in: app)
         requireTab("Sessions", in: app)?.tap()
