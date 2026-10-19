@@ -237,6 +237,7 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 }
                 continue
             }
+            var replaced: HostEventSupervisor?
             if let existing = supervisors[host.id.rawValue] {
                 // Never a second stream per host — but a changed secret
                 // (re-pair) must REPLACE the observer built with the old
@@ -245,7 +246,7 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 // provider, leaving the host silently unsupervised.
                 guard secretsByHost[host.id.rawValue] != secret else { continue }
                 logger.info("credential changed for host; replacing observer")
-                Task { await existing.stop() }
+                replaced = existing
             }
             let supervisor = makeSupervisor(
                 host: host,
@@ -256,7 +257,16 @@ final class OpenCodePushProvider: NEAppPushProvider {
             )
             supervisors[host.id.rawValue] = supervisor
             secretsByHost[host.id.rawValue] = secret
-            Task { await supervisor.start() }
+            // ONE task, stop FIRST: two separate Tasks target different
+            // actors and carry no ordering, so the new stream could
+            // connect before the old was cancelled — two live streams
+            // for one host, both feeding schedule(…), breaking the
+            // one-stream-per-host invariant above. A fresh start has
+            // `replaced == nil` and is unchanged.
+            Task {
+                await replaced?.stop()
+                await supervisor.start()
+            }
         }
     }
 

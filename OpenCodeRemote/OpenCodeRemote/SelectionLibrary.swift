@@ -359,6 +359,14 @@ final class SelectionLibrary {
     }
 
     private static func isSilent(_ error: Error) -> Bool {
-        error is CancellationError
+        // Same silence rule as ApprovalLibrary/FormLibrary/
+        // ConversationLibrary: a cancelled .task (S10 sheet dismissed
+        // mid-load) makes the transport report TransportError.cancelled,
+        // and a cancelled switch reports it after selectModel/selectAgent/
+        // invokeCommand — neither is a failure the user caused or can act
+        // on.
+        if error is CancellationError { return true }
+        if case TransportError.cancelled = error { return true }
+        return false
     }
 }

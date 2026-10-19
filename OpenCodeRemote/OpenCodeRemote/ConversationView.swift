@@ -289,7 +289,16 @@ struct ConversationView: View {
         }
         .onDisappear {
             // A dismissed conversation stops watching — its dock and
-            // attribution are gone; nothing polls on its behalf.
+            // attribution are gone; nothing polls on its behalf. The
+            // CAMERA COVER hides this view without dismissing it
+            // (fullScreenCover takes the presenter out of the hierarchy
+            // and fires onDisappear): stopping then would kill the
+            // bounded post-send watch mid-window, and the load that
+            // runs on return never restarts it — an approval or form
+            // created afterwards would never reach the dock. It is the
+            // only cover in this view; the sheets leave the presenter
+            // in the hierarchy.
+            guard !showingCamera else { return }
             approvals.stopPostSendWatch()
             forms.stopPostSendWatch()
         }
