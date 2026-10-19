@@ -16,6 +16,25 @@ private final class StubURLProtocol: URLProtocol {
         }
         do {
             let (response, data) = try handler(request)
+            // A 3xx with Location reports the redirect the way CFNetwork
+            // does — above the protocol layer, URLSession's redirect
+            // machinery (task delegate FIRST, automatic follow only if
+            // the delegate allows) takes over. The redirect request
+            // inherits the original headers, simulating the credential-
+            // riding follow-up the delegate exists to prevent.
+            if (300..<400).contains(response.statusCode),
+               let location = response.value(forHTTPHeaderField: "Location"),
+               let target = URL(string: location, relativeTo: request.url)?.absoluteURL {
+                var redirect = URLRequest(url: target)
+                request.allHTTPHeaderFields?.forEach { redirect.setValue($0.value, forHTTPHeaderField: $0.key) }
+                client.urlProtocol(self, wasRedirectedTo: redirect, redirectResponse: response)
+                // Terminate THIS protocol load — CFNetwork's redirect
+                // bookkeeping expects it (the standard OHHTTPStubs /
+                // Nocilla pattern); the session then consults the task
+                // delegate for the redirect decision.
+                client.urlProtocol(self, didFailWithError: URLError(.cancelled))
+                return
+            }
             client.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
             client.urlProtocol(self, didLoad: data)
             client.urlProtocolDidFinishLoading(self)
@@ -30,9 +49,10 @@ private final class StubURLProtocol: URLProtocol {
 final class URLSessionTransportTests: XCTestCase {
     private final class Seen: @unchecked Sendable {
         private let lock = NSLock()
-        private var request: URLRequest?
-        func capture(_ request: URLRequest) { lock.lock(); self.request = request; lock.unlock() }
-        var current: URLRequest? { lock.lock(); defer { lock.unlock() }; return request }
+        private var recorded: [URLRequest] = []
+        func capture(_ request: URLRequest) { lock.lock(); recorded.append(request); lock.unlock() }
+        var current: URLRequest? { lock.lock(); defer { lock.unlock() }; return recorded.last }
+        var all: [URLRequest] { lock.lock(); defer { lock.unlock() }; return recorded }
     }
 
     private var session: URLSession!
@@ -166,27 +186,86 @@ final class URLSessionTransportTests: XCTestCase {
         ))
         let originGuard = URLSessionTransport.OriginGuard()
 
-        // Each sentinel only survives if the completion handler never runs.
-        var followed: URLRequest? = URLRequest(url: original)
+        // Each sentinel only survives if the completion handler never
+        // runs. A reference box: the handler is `@Sendable` (matching
+        // the SDK), so it cannot mutate a captured local var.
+        final class Slot: @unchecked Sendable {
+            var value: URLRequest?
+        }
+        let slot = Slot()
+        slot.value = URLRequest(url: original)
         originGuard.urlSession(
             session, task: task, willPerformHTTPRedirection: response,
             newRequest: URLRequest(url: URL(string: "http://host.example:4096/api/info")!)
-        ) { followed = $0 }
-        XCTAssertNil(followed, "an https→http downgrade must not receive the credential")
+        ) { slot.value = $0 }
+        XCTAssertNil(slot.value, "an https→http downgrade must not receive the credential")
 
-        followed = URLRequest(url: original)
+        slot.value = URLRequest(url: original)
         originGuard.urlSession(
             session, task: task, willPerformHTTPRedirection: response,
             newRequest: URLRequest(url: URL(string: "https://evil.example:4096/api/info")!)
-        ) { followed = $0 }
-        XCTAssertNil(followed, "a host change must not receive the credential")
+        ) { slot.value = $0 }
+        XCTAssertNil(slot.value, "a host change must not receive the credential")
 
-        followed = nil
+        slot.value = nil
         originGuard.urlSession(
             session, task: task, willPerformHTTPRedirection: response,
             newRequest: URLRequest(url: URL(string: "https://host.example:4096/next")!)
-        ) { followed = $0 }
-        XCTAssertNotNil(followed, "same-origin redirects (path normalisation) still follow")
+        ) { slot.value = $0 }
+        XCTAssertNotNil(slot.value, "same-origin redirects (path normalisation) still follow")
+    }
+
+    func testCrossOriginRedirectIsRefusedEndToEndSoTheCredentialNeverRides() async {
+        // WIRING proof, not decision logic (review W13 r1): the
+        // direct-call test above exercises the guard's decision; this
+        // one drives the SAME guard through URLSession's redirect
+        // machinery exactly as `perform` attaches it (per-task
+        // delegate). If the delegate method failed to match the
+        // optional requirement, URLSession would follow the 302 on its
+        // own: the stub would see a second request — inheriting the
+        // hand-set Authorization header — and the outcome would be the
+        // follow-up's status, never the 302.
+        let seen = Seen()
+        StubURLProtocol.handler = { request in
+            seen.capture(request)
+            if request.url?.host == "evil.example" {
+                let ok = HTTPURLResponse(
+                    url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                    headerFields: ["Content-Type": "application/json"]
+                )!
+                return (ok, Data(#"{"data":{}}"#.utf8))
+            }
+            let redirect = HTTPURLResponse(
+                url: request.url!, statusCode: 302, httpVersion: "HTTP/1.1",
+                headerFields: ["Location": "http://evil.example:4096/api/info"]
+            )!
+            return (redirect, Data())
+        }
+
+        do {
+            _ = try await transport(credential: BasicCredential(secret: "stored"))
+                .perform(APIRequest(operationID: "test.get", method: .get, path: "/api/info"))
+            XCTFail("an unwired delegate would have FOLLOWED the redirect to a 200 — this means the 302 was delivered unfollowed")
+        } catch TransportError.cancelled {
+            // The refusal's observable outcome through a URLProtocol
+            // stub: CFNetwork cancels the original protocol load while
+            // processing the redirect decision, so the caller sees the
+            // cancellation rather than the 302 body. The decisive
+            // evidence is in the recorded requests below — an unwired
+            // delegate would have followed (second request, final 200).
+        } catch {
+            XCTFail("unexpected error: \(error)")
+        }
+
+        XCTAssertEqual(seen.all.count, 1, "nothing followed the cross-origin redirect")
+        XCTAssertNotNil(
+            seen.all.first?.value(forHTTPHeaderField: "Authorization"),
+            "the credential was in play on the refused request — the guard is what stopped it"
+        )
+        XCTAssertFalse(
+            seen.all.contains { $0.url?.host == "evil.example" },
+            "the host secret never reached the redirect target"
+        )
     }
 
     func testConnectionFailureMapsToConnectionFailed() async throws {

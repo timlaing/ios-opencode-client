@@ -39,6 +39,23 @@ struct ApprovalSheetView: View {
                     settledStatus
                 } else if let entry = presented {
                     detail(for: entry)
+                } else if approvals.entries.isEmpty, approvals.refreshError == nil {
+                    // Nothing pinned and nothing pending: the approval
+                    // settled (answered elsewhere, refreshed away) before
+                    // the sheet could adopt it — the spinner branch would
+                    // never resolve. Mirrors FormSheetView's `.empty`
+                    // scene; the refresh keeps entries on screen while in
+                    // flight, so an empty list here is a completed truth,
+                    // not a load in progress.
+                    VStack(spacing: 12) {
+                        ContentUnavailableView(
+                            "No Pending Approvals",
+                            systemImage: "checkmark.shield",
+                            description: Text("This approval is no longer pending.")
+                        )
+                        Button("Return to Chat") { dismiss() }
+                            .accessibilityIdentifier("S11.permission.return")
+                    }
                 } else if approvals.refreshError == nil {
                     ProgressView("Checking Pending Approvals…")
                 } else {

@@ -49,12 +49,15 @@ public struct URLSessionTransport: OpenCodeTransport {
     /// path) still follow; every hop is checked against the task's ORIGINAL
     /// url, so same-origin → cross-origin chains are caught too.
     final class OriginGuard: NSObject, URLSessionTaskDelegate {
+        // `@Sendable` matches the SDK's `NS_SWIFT_SENDABLE` block
+        // annotation exactly — the optional-requirement match is what
+        // makes URLSession route redirects through this method at all.
         func urlSession(
             _ session: URLSession,
             task: URLSessionTask,
             willPerformHTTPRedirection response: HTTPURLResponse,
             newRequest request: URLRequest,
-            completionHandler: @escaping (URLRequest?) -> Void
+            completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
             guard let original = task.originalRequest?.url,
                   let target = request.url,
