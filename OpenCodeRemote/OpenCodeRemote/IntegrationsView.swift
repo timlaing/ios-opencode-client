@@ -66,7 +66,11 @@ struct IntegrationsView: View {
             titleVisibility: .visible
         ) {
             Button("Apply Change") {
-                Task { await library.applyToggle(host: host) }
+                // Captured BEFORE the dismissal write: dismissing the
+                // dialog clears pendingPlan before this Task runs, so
+                // the plan travels in by value (never re-read).
+                guard let plan = library.pendingPlan else { return }
+                Task { await library.applyToggle(host: host, plan: plan) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {

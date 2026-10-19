@@ -152,4 +152,30 @@ final class PluginDirectivesTests: XCTestCase {
             PluginDirectives.enable("c.pkg", in: #"{"plugins":[{"package":"c.pkg"}]}"#)
         )
     }
+
+    /// A target may carry JSON-significant characters (a local plugin
+    /// path can): the splice escapes them so the written document
+    /// stays valid, and enable's DECODED comparison recognises the
+    /// escaped directive again — disable/enable round-trips.
+    func testDisableEscapesSpecialCharactersInTheTarget() {
+        let quotedTarget = #"C:\plug"ins"#
+        let edit = PluginDirectives.disable(quotedTarget, in: #"{"plugins":["x"]}"#)
+        XCTAssertEqual(
+            edit?.resultingText,
+            #"{"plugins":["x", "-C:\\plug\"ins"]}"#
+        )
+        XCTAssertEqual(
+            PluginDirectives.enable(quotedTarget, in: edit?.resultingText ?? "")?.resultingText,
+            #"{"plugins":["x"]}"#
+        )
+
+        let newlineTarget = "a\nb"
+        let newlineEdit = PluginDirectives.disable(newlineTarget, in: #"{"plugins":["x"]}"#)
+        XCTAssertEqual(newlineEdit?.resultingText, #"{"plugins":["x", "-a\nb"]}"#)
+        XCTAssertEqual(
+            PluginDirectives.enable(newlineTarget, in: newlineEdit?.resultingText ?? "")?
+                .resultingText,
+            #"{"plugins":["x"]}"#
+        )
+    }
 }

@@ -189,13 +189,19 @@ final class IntegrationsLibrary {
         pendingPlan = nil
     }
 
-    /// Applies the pending plan: RE-READS the document and only writes
+    /// Applies a confirmed plan: RE-READS the document and only writes
     /// when it is byte-identical to what the plan was computed against
     /// (the contract's compare-latest-read), then reloads the location
     /// and verifies the runtime inventory — an unreflected change stays
     /// visible as an ineffective override.
-    func applyToggle(host: OpenCodeDomain.Host) async {
-        guard let plan = pendingPlan, !isToggling else { return }
+    ///
+    /// The caller PASSES the plan it was shown: dismissing the
+    /// confirmation dialog clears `pendingPlan` through the
+    /// isPresented setter BEFORE the button's Task gets to run, so
+    /// reading state here would find nothing and silently do nothing
+    /// (the alert hazard documented in ConversationView).
+    func applyToggle(host: OpenCodeDomain.Host, plan: PendingPlan) async {
+        guard !isToggling else { return }
         guard let credential = credentialProvider?(host.id) else {
             toggleError = "Re-pair this host to change plugins."
             return
@@ -315,9 +321,18 @@ final class IntegrationsLibrary {
                 rows[target] = row
             }
         }
-        // Runtime plugins join by ID or package target.
+        // Runtime plugins join by ID, falling back to the package
+        // target when the ID names no row: the schema does NOT
+        // guarantee id == source.target, and a plugin that missed the
+        // join would show as two half-truths — declared-not-running
+        // beside active-without-toggle — with the readback reporting a
+        // successful enable as "not applied yet".
         for plugin in plugins {
-            let key = runtimeKey(plugin)
+            var key = runtimeKey(plugin)
+            if rows[key] == nil, case .package(let target, _, _, _) = plugin.source,
+               rows[target] != nil {
+                key = target
+            }
             var row = row(for: key)
             row.runtime = plugin
             if row.target == nil {

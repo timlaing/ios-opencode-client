@@ -44,6 +44,11 @@ final class IntegrationsLibraryTests: XCTestCase {
         /// The plan's resulting text: only the negative directive and
         /// its comma are gone — every other byte survives.
         static let documentAfterEnable = #"{"plugins": [ "keep.pkg"]}"#
+
+        /// Runtime inventory whose package id DIFFERS from its source
+        /// target — the schema guarantees no relationship between
+        /// them, so the row join must not assume one.
+        static let pluginListIDDiffers = #"{"location":{"directory":"/srv/demo"},"data":[{"id":"pkg-123","source":{"type":"package","target":"demo.audit","version":"1.0.0"},"features":{"server":true},"state":{"status":"active"}}]}"#
     }
 
     /// Captured-var mutation is not allowed in `@Sendable` handlers.
@@ -307,9 +312,9 @@ final class IntegrationsLibraryTests: XCTestCase {
         }
         await library.load(host: one, sessionDirectory: "/srv/demo")
         await library.planToggle(host: one, target: "demo.audit", enable: true)
-        XCTAssertNotNil(library.pendingPlan)
+        let plan = try XCTUnwrap(library.pendingPlan)
 
-        await library.applyToggle(host: one)
+        await library.applyToggle(host: one, plan: plan)
 
         XCTAssertNil(library.pendingPlan)
         XCTAssertNil(library.toggleError)
@@ -336,7 +341,7 @@ final class IntegrationsLibraryTests: XCTestCase {
         )
     }
 
-    func testApplyToggleAbortsWhenTheDocumentChangedUnderThePlan() async {
+    func testApplyToggleAbortsWhenTheDocumentChangedUnderThePlan() async throws {
         let recorder = Recorder()
         let flip = Flip()
         let library = library(recorder: recorder) { request in
@@ -354,8 +359,9 @@ final class IntegrationsLibraryTests: XCTestCase {
         }
         await library.load(host: one, sessionDirectory: "/srv/demo")
         await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
 
-        await library.applyToggle(host: one)
+        await library.applyToggle(host: one, plan: plan)
 
         XCTAssertNil(library.pendingPlan, "an invalidated plan is discarded")
         XCTAssertEqual(
@@ -367,7 +373,7 @@ final class IntegrationsLibraryTests: XCTestCase {
         XCTAssertFalse(ids.contains("location.reload"), "no reload follows an aborted plan")
     }
 
-    func testApplyToggleExposesAnIneffectiveOverride() async {
+    func testApplyToggleExposesAnIneffectiveOverride() async throws {
         let recorder = Recorder()
         let library = library(recorder: recorder) { request in
             switch request.operationID {
@@ -385,8 +391,9 @@ final class IntegrationsLibraryTests: XCTestCase {
         }
         await library.load(host: one, sessionDirectory: "/srv/demo")
         await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
 
-        await library.applyToggle(host: one)
+        await library.applyToggle(host: one, plan: plan)
 
         XCTAssertNil(library.toggleError, "the save itself succeeded")
         XCTAssertEqual(library.unreflected, ["demo.audit"])
@@ -396,7 +403,7 @@ final class IntegrationsLibraryTests: XCTestCase {
         )
     }
 
-    func testApplyToggleRejectsWhenTheCredentialDisappearsAfterPlanning() async {
+    func testApplyToggleRejectsWhenTheCredentialDisappearsAfterPlanning() async throws {
         let recorder = Recorder()
         let gate = CredentialGate()
         let library = library(
@@ -414,9 +421,10 @@ final class IntegrationsLibraryTests: XCTestCase {
         await library.load(host: one, sessionDirectory: "/srv/demo")
         await library.planToggle(host: one, target: "demo.audit", enable: true)
         XCTAssertNotNil(library.pendingPlan, "the plan exists while the credential does")
+        let plan = try XCTUnwrap(library.pendingPlan)
 
         gate.setPresent(false) // the keychain item is deleted mid-flow
-        await library.applyToggle(host: one)
+        await library.applyToggle(host: one, plan: plan)
 
         XCTAssertEqual(library.toggleError, "Re-pair this host to change plugins.")
         XCTAssertEqual(
@@ -426,5 +434,77 @@ final class IntegrationsLibraryTests: XCTestCase {
         let ids = recorder.requests.map(\.operationID)
         XCTAssertFalse(ids.contains("experimental.fs.write"))
         XCTAssertFalse(ids.contains("location.reload"))
+    }
+
+    // MARK: - Review-round fixes
+
+    /// The confirmation dialog clears `pendingPlan` through its
+    /// isPresented setter the moment it dismisses — BEFORE the Apply
+    /// button's Task runs (the alert hazard documented in
+    /// ConversationView). The plan therefore travels into applyToggle
+    /// BY VALUE, and a cleared state must not stop the write.
+    func testApplyToggleUsesTheCapturedPlanAfterDismissalClearsTheState() async throws {
+        let recorder = Recorder()
+        let runtimeCalls = Counter()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list":
+                return Fixtures.response(
+                    runtimeCalls.next() == 0 ? Fixtures.emptyPluginList : Fixtures.pluginList
+                )
+            case "config.get":
+                return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write", "location.reload":
+                return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+
+        // The dismissal write lands before the Task — exactly what the
+        // dialog's setter does.
+        library.cancelPendingPlan()
+        XCTAssertNil(library.pendingPlan)
+
+        await library.applyToggle(host: one, plan: plan)
+
+        XCTAssertNil(library.toggleError)
+        XCTAssertEqual(library.notice, "Saved — the host reloaded the location.")
+        XCTAssertTrue(
+            recorder.requests.contains { $0.operationID == "experimental.fs.write" },
+            "the captured plan still writes the document"
+        )
+        XCTAssertNil(library.pendingPlan)
+    }
+
+    /// id and source.target are independent schema fields: when they
+    /// differ, the runtime plugin must still join its DECLARED row by
+    /// the package target — one truth must not become two half-truths
+    /// (declared-not-running beside active-without-toggle), and the
+    /// raw runtime id must never stand alone as a row.
+    func testRuntimeJoinsDeclaredRowsByPackageTargetWhenIDDiffers() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginListIDDiffers)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertEqual(library.rows.count, 2, "declared pair only — the runtime id adds no row")
+        let audit = library.rows.first { $0.id == "demo.audit" }
+        XCTAssertNotNil(
+            audit?.runtime,
+            "the package runtime joins the row declared under its source target"
+        )
+        XCTAssertEqual(audit?.statusText, "Active")
+        XCTAssertEqual(audit?.canDisable, true)
+        XCTAssertNil(library.rows.first { $0.id == "pkg-123" })
     }
 }

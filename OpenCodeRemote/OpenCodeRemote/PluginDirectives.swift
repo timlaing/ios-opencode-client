@@ -15,8 +15,8 @@ import Foundation
 enum PluginDirectives {
     /// One top-level element of the plugins array. `string` is the
     /// decoded value iff the element is a PLAIN string literal (only
-    /// `\"` and `\\` escapes recognised); any other shape — objects,
-    /// numbers, escapes — is never toggled.
+    /// `\"`, `\\`, `\n`, `\r`, `\t` escapes recognised); any other
+    /// shape — objects, numbers, other escapes — is never toggled.
     struct Element {
         var range: Range<String.Index>
         var string: String?
@@ -46,13 +46,35 @@ enum PluginDirectives {
         let negative = "-" + target
         guard !array.elements.contains(where: { $0.string == negative }) else { return nil }
         let separator = (array.hasTrailingComma || array.elements.isEmpty) ? "" : ","
-        let insert = "\(separator) \"\(negative)\""
+        let insert = "\(separator) \"\(escapedJSONString(negative))\""
         var text = raw
         text.insert(contentsOf: insert, at: array.closeBracket)
         return Edit(
             resultingText: text,
             description: "Add \"\(negative)\" to the plugins directives."
         )
+    }
+
+    /// Escapes a directive for insertion INSIDE a JSON string literal:
+    /// a target may carry backslashes, quotes or control characters (a
+    /// local plugin path can), and a raw splice would write an invalid
+    /// document into the host's config. Round-trips through
+    /// `stringToken`, which decodes exactly these escapes — so
+    /// `enable` still recognises what `disable` wrote.
+    private static func escapedJSONString(_ value: String) -> String {
+        var out = ""
+        out.reserveCapacity(value.count)
+        for character in value {
+            switch character {
+            case "\\": out += "\\\\"
+            case "\"": out += "\\\""
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            default: out.append(character)
+            }
+        }
+        return out
     }
 
     /// Enables `target` by REMOVING its `"-target"` directive, keeping
@@ -223,8 +245,9 @@ enum PluginDirectives {
     }
 
     /// Parses a string literal from its opening quote. `value` is the
-    /// decoded text for plain `\"`/`\\` escapes and nil for anything
-    /// else — an undecodable literal is simply never toggled.
+    /// decoded text for the plain `\"`, `\\`, `\n`, `\r`, `\t` escapes
+    /// and nil for anything else — an undecodable literal is simply
+    /// never toggled.
     private static func stringToken(
         from quote: String.Index, in raw: String
     ) -> (range: Range<String.Index>, value: String?)? {
@@ -241,6 +264,12 @@ enum PluginDirectives {
                     value.append("\"")
                 } else if escaped == "\\" {
                     value.append("\\")
+                } else if escaped == "n" {
+                    value.append("\n")
+                } else if escaped == "r" {
+                    value.append("\r")
+                } else if escaped == "t" {
+                    value.append("\t")
                 } else {
                     decodable = false
                 }
