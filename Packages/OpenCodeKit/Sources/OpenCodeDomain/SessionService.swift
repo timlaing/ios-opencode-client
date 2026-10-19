@@ -67,6 +67,29 @@ public struct SessionService: Sendable {
             .data
     }
 
+    /// Requests manual compaction (`session.compact`). The response is
+    /// an ADMISSION (`Session.Inbox.Compaction`) — the compaction runs
+    /// at the next step boundary, so the caller refreshes
+    /// context/history to observe it and never derives completion from
+    /// this response (docs/api-contract.md W13).
+    public func compact(
+        at host: URL,
+        credential: BasicCredential?,
+        sessionID: String,
+        id: String? = nil,
+        delivery: InboxDelivery? = nil
+    ) async throws -> InboxItem {
+        try await makeTransport(host)
+            .perform(try W13Requests.compact(
+                sessionID: sessionID,
+                id: id,
+                delivery: delivery,
+                credential: credential
+            ))
+            .decodedJSON(InboxEnvelope.self)
+            .data
+    }
+
     /// Renames a session (`{title}` patch only → 204).
     public func rename(
         at host: URL,

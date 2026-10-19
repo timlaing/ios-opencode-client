@@ -233,15 +233,30 @@ public struct SessionMessage: Codable, Equatable, Sendable, Identifiable {
     /// The wire `type` discriminator, always present per the pinned schema.
     public var rawType: String
     public var kind: Kind
+    /// The message's REPORTED token usage (`Session.Message.Assistant`
+    /// and `Session.Message.Compaction.*` carry it; other variants do
+    /// not) — decoded at the envelope level so the `Kind` union stays
+    /// untouched. This is a per-STEP figure: session-cumulative totals
+    /// come from `Session.tokens` (`session.get`), and the client never
+    /// extrapolates live context utilisation between reports
+    /// (docs/api-contract.md W13).
+    public var tokens: Session.TokenUsage?
 
-    public init(id: String, time: TimeInfo, rawType: String, kind: Kind) {
+    public init(
+        id: String,
+        time: TimeInfo,
+        rawType: String,
+        kind: Kind,
+        tokens: Session.TokenUsage? = nil
+    ) {
         self.id = id
         self.time = time
         self.rawType = rawType
         self.kind = kind
+        self.tokens = tokens
     }
 
-    enum CodingKeys: String, CodingKey { case id, time, type }
+    enum CodingKeys: String, CodingKey { case id, time, type, tokens }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -249,6 +264,7 @@ public struct SessionMessage: Codable, Equatable, Sendable, Identifiable {
         time = try container.decode(TimeInfo.self, forKey: .time)
         let type = try container.decode(String.self, forKey: .type)
         rawType = type
+        tokens = try container.decodeIfPresent(Session.TokenUsage.self, forKey: .tokens)
         switch type {
         case "user":
             let payload = try UserPayload(from: decoder)
@@ -305,6 +321,7 @@ public struct SessionMessage: Codable, Equatable, Sendable, Identifiable {
         try container.encode(id, forKey: .id)
         try container.encode(time, forKey: .time)
         try container.encode(rawType, forKey: .type)
+        try container.encodeIfPresent(tokens, forKey: .tokens)
         switch kind {
         case .user(let text, let files):
             var payload = encoder.container(keyedBy: UserPayload.Keys.self)

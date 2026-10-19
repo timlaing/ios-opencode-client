@@ -25,6 +25,7 @@ final class ConversationLibrary {
 
     private let service: SessionHistoryService
     private let promptService: PromptService
+    private let sessionService: SessionService
     private var credentialProvider: CredentialProvider?
 
     /// Transcript in display order: oldest → newest.
@@ -69,14 +70,30 @@ final class ConversationLibrary {
     /// session's transcript.
     private var projectedPending: [String: (sessionID: String, message: SessionMessage)] = [:]
 
+    // MARK: - W13 usage + manual compaction (S14)
+
+    /// Fresh cumulative session info from `session.get` — `cost`/
+    /// `tokens` are SESSION-TOTAL figures, distinct from last-step
+    /// context (docs/api-contract.md W13). Until it loads, the panel
+    /// shows the list-time snapshot, which is also host-reported.
+    private(set) var usageInfo: Session?
+    private(set) var usageError: String?
+    private(set) var isLoadingUsage = false
+    /// Manual compaction (W13): single-flight like `isSending`; a
+    /// failure carries its own wording and changes no other state.
+    private(set) var isCompacting = false
+    private(set) var compactionError: String?
+
     init(
         service: SessionHistoryService? = nil,
         promptService: PromptService? = nil,
+        sessionService: SessionService? = nil,
         credentialProvider: CredentialProvider? = nil
     ) {
         let makeTransport: @Sendable (URL) -> any OpenCodeTransport = { URLSessionTransport(baseURL: $0) }
         self.service = service ?? SessionHistoryService(makeTransport: makeTransport)
         self.promptService = promptService ?? PromptService(makeTransport: makeTransport)
+        self.sessionService = sessionService ?? SessionService(makeTransport: makeTransport)
         self.credentialProvider = credentialProvider
     }
 
@@ -389,6 +406,80 @@ final class ConversationLibrary {
             inboxError = nil
         } catch {
             if !Self.isSilent(error) { inboxError = Self.message(for: error) }
+        }
+    }
+
+    // MARK: - W13 usage + manual compaction (S14)
+
+    /// S14 (`session.get`): the fresh CUMULATIVE cost/tokens/model for
+    /// the usage panel. A failure keeps any previously loaded info and
+    /// carries its own error; cancellation is silent.
+    func loadUsage(host: OpenCodeDomain.Host, sessionID: String) async {
+        guard !isLoadingUsage else { return }
+        guard let credential = credentialProvider?(host.id) else {
+            usageError = "Re-pair this host to read its usage."
+            return
+        }
+        isLoadingUsage = true
+        defer { isLoadingUsage = false }
+        do {
+            usageInfo = try await sessionService.session(
+                at: host.address, credential: credential, sessionID: sessionID
+            )
+            usageError = nil
+        } catch {
+            if !Self.isSilent(error) { usageError = Self.usageErrorMessage(for: error) }
+        }
+    }
+
+    private static func usageErrorMessage(for error: Error) -> String {
+        switch error {
+        case TransportError.http(let status, _):
+            return "The host could not load usage (HTTP \(status))."
+        case TransportError.connectionFailed:
+            return "The host is unreachable right now. Pull to refresh to try again."
+        default:
+            return "Usage could not be loaded from this host."
+        }
+    }
+
+    /// W13 manual compaction. The host's response is an ADMISSION only —
+    /// it runs at the next step boundary — so a successful request
+    /// refreshes the admission-bearing inbox, the active context and the
+    /// cumulative totals. The transcript is never trimmed locally: the
+    /// compaction transition arrives with the normal history refresh and
+    /// the full transcript stays preserved (docs/api-contract.md W13).
+    func compact(host: OpenCodeDomain.Host, sessionID: String, delivery: InboxDelivery? = nil) async {
+        guard !isCompacting else { return }
+        guard let credential = credentialProvider?(host.id) else {
+            compactionError = "Re-pair this host to compact its context."
+            return
+        }
+        isCompacting = true
+        defer { isCompacting = false }
+        do {
+            _ = try await sessionService.compact(
+                at: host.address, credential: credential, sessionID: sessionID, delivery: delivery
+            )
+            compactionError = nil
+            // Admission, not completion — the copy says exactly that.
+            notice = "Compaction requested — it runs at the next step boundary."
+            await loadInbox(host: host, sessionID: sessionID)
+            await loadContext(host: host, sessionID: sessionID)
+            await loadUsage(host: host, sessionID: sessionID)
+        } catch {
+            if !Self.isSilent(error) { compactionError = Self.compactErrorMessage(for: error) }
+        }
+    }
+
+    private static func compactErrorMessage(for error: Error) -> String {
+        switch error {
+        case TransportError.http(let status, _):
+            return "The host could not accept the compaction request (HTTP \(status))."
+        case TransportError.connectionFailed:
+            return "The host is unreachable — the compaction request was not sent."
+        default:
+            return "The compaction request failed."
         }
     }
 

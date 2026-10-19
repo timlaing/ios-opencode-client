@@ -51,6 +51,15 @@ final class ConversationLibraryTests: XCTestCase {
             #"{"id":"\#(id)","sessionID":"ses_a","time":{"created":\#(created)},"type":"user","delivery":"\#(delivery)","payload":{"text":"\#(text)"}}"#
         }
 
+        /// A `Session` envelope with CUMULATIVE cost/tokens (W13 usage).
+        static let sessionUsage = #"{"data":{"id":"ses_a","title":"Demo","cost":1.25,"tokens":{"input":10,"output":5}}}"#
+
+        /// The `Session.Inbox.Compaction` admission `session.compact` returns.
+        static let compactionAdmission = #"{"data":{"id":"msg_compact","sessionID":"ses_a","time":{"created":900},"type":"compaction","payload":{},"delivery":"steer"}}"#
+
+        /// An inbox listing containing the compaction admission.
+        static let inboxWithCompaction = #"{"data":[{"id":"msg_compact","sessionID":"ses_a","time":{"created":900},"type":"compaction","payload":{},"delivery":"steer"}]}"#
+
         static func query(_ request: APIRequest) -> [String: String] {
             Dictionary(uniqueKeysWithValues: request.query.map { ($0.key, $0.value) })
         }
@@ -65,6 +74,19 @@ final class ConversationLibraryTests: XCTestCase {
         }
         var requests: [APIRequest] {
             lock.lock(); defer { lock.unlock() }; return recorded
+        }
+    }
+
+    /// A one-shot flip for handlers that must behave differently across
+    /// awaited calls (`Recorder` documents why captured mutation is out).
+    private final class Flip: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func first() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            let wasFirst = !done
+            done = true
+            return wasFirst
         }
     }
 
@@ -101,6 +123,7 @@ final class ConversationLibraryTests: XCTestCase {
         return ConversationLibrary(
             service: SessionHistoryService(makeTransport: { _ in stub() }),
             promptService: PromptService(makeTransport: { _ in stub() }),
+            sessionService: SessionService(makeTransport: { _ in stub() }),
             credentialProvider: { id in credentials[id.rawValue] ?? nil }
         )
     }
@@ -759,5 +782,133 @@ final class ConversationLibraryTests: XCTestCase {
             recorder.requests.map(\.operationID),
             ["session.inbox.list", "session.inbox.update", "session.inbox.cancel", "session.inbox.list"]
         )
+    }
+
+    // MARK: - W13 usage + manual compaction (S14)
+
+    func testLoadUsageSurfacesFreshCumulativeCostAndTokens() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            guard request.operationID == "session.get" else {
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+            return Fixtures.response(Fixtures.sessionUsage)
+        }
+
+        await library.loadUsage(host: one, sessionID: "ses_a")
+
+        XCTAssertNil(library.usageError)
+        XCTAssertEqual(library.usageInfo?.cost, 1.25)
+        XCTAssertEqual(library.usageInfo?.tokens, Session.TokenUsage(input: 10, output: 5))
+        XCTAssertFalse(library.isLoadingUsage)
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["session.get"])
+    }
+
+    func testLoadUsageFailureKeepsPreviousInfoAndReportsError() async throws {
+        let recorder = Recorder()
+        let flip = Flip()
+        let library = conversation(recorder: recorder) { request in
+            guard request.operationID == "session.get" else {
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+            if flip.first() {
+                return Fixtures.response(Fixtures.sessionUsage)
+            }
+            throw TransportError.http(status: 500, envelope: nil)
+        }
+
+        await library.loadUsage(host: one, sessionID: "ses_a")
+        XCTAssertNil(library.usageError)
+
+        await library.loadUsage(host: one, sessionID: "ses_a")
+        XCTAssertEqual(library.usageError, "The host could not load usage (HTTP 500).")
+        XCTAssertEqual(
+            library.usageInfo?.cost, 1.25,
+            "a failure never erases the last reported totals"
+        )
+    }
+
+    func testLoadUsageWithoutCredentialReportsRePairAndSendsNoRequest() async {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder, credentials: [:]) { _ in
+            XCTFail("no request may be sent without a credential")
+            return Fixtures.response("{}")
+        }
+
+        await library.loadUsage(host: one, sessionID: "ses_a")
+
+        XCTAssertEqual(library.usageError, "Re-pair this host to read its usage.")
+        XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    func testCompactAdmissionIsNotCompletionAndRefreshesObservableState() async throws {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.compact":
+                return Fixtures.response(Fixtures.compactionAdmission)
+            case "session.inbox.list":
+                return Fixtures.response(Fixtures.inboxWithCompaction)
+            case "session.context":
+                return Fixtures.response(Fixtures.contextJSON)
+            case "session.get":
+                return Fixtures.response(Fixtures.sessionUsage)
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.compact(host: one, sessionID: "ses_a")
+
+        XCTAssertNil(library.compactionError)
+        XCTAssertFalse(library.isCompacting)
+        XCTAssertEqual(library.notice, "Compaction requested — it runs at the next step boundary.")
+        // The admission refreshes what is observable — the ADMITTED item
+        // and fresh context/usage — while no completion claim is made
+        // and the transcript is never trimmed locally.
+        XCTAssertEqual(library.inboxItems.map(\.id), ["msg_compact"])
+        XCTAssertEqual(library.usageInfo?.cost, 1.25)
+        XCTAssertTrue(library.messages.isEmpty, "an admission derives nothing about the transcript")
+
+        let compact = try XCTUnwrap(recorder.requests.first { $0.operationID == "session.compact" })
+        XCTAssertEqual(compact.method, .post)
+        XCTAssertEqual(compact.path, "/api/session/ses_a/compact")
+        XCTAssertEqual(
+            recorder.requests.map(\.operationID),
+            ["session.compact", "session.inbox.list", "session.context", "session.get"]
+        )
+    }
+
+    func testCompactFailureSurfacesErrorAndClaimsNoAdmission() async {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            guard request.operationID == "session.compact" else {
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+            throw TransportError.http(status: 500, envelope: nil)
+        }
+
+        await library.compact(host: one, sessionID: "ses_a")
+
+        XCTAssertEqual(library.compactionError, "The host could not accept the compaction request (HTTP 500).")
+        XCTAssertNil(library.notice, "a failed request claims no admission")
+        XCTAssertFalse(library.isCompacting)
+        XCTAssertEqual(
+            recorder.requests.map(\.operationID), ["session.compact"],
+            "no refresh cascade follows a failure"
+        )
+    }
+
+    func testCompactWithoutCredentialIsRejected() async {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder, credentials: [:]) { _ in
+            XCTFail("no request may be sent without a credential")
+            return Fixtures.response("{}")
+        }
+
+        await library.compact(host: one, sessionID: "ses_a")
+
+        XCTAssertEqual(library.compactionError, "Re-pair this host to compact its context.")
+        XCTAssertTrue(recorder.requests.isEmpty)
     }
 }

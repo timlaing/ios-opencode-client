@@ -125,7 +125,7 @@ struct ConversationView: View {
         }
         .sheet(isPresented: $showingContext) {
             NavigationStack {
-                ContextPanelView(conversation: conversation, host: host, session: session)
+                ContextPanelView(conversation: conversation, host: host, session: session, selection: selection)
                     .navigationTitle("Active Context")
                     .toolbar {
                         ToolbarItem(placement: .topBarTrailing) {
@@ -852,10 +852,85 @@ struct ConversationView: View {
 /// S14 active-context panel (W04 minimal consumer): what the server says
 /// is currently in the model's context since the last compaction. The
 /// full usage/cost panel belongs to W13.
+/// S14 usage/context inspector (W13, docs/navigation-screens.md S14):
+/// last-REPORTED step usage from message tokens plus the selected
+/// model's context limit, session-cumulative cost/tokens from
+/// `session.get`, and compaction state with the manual Compact action.
+///
+/// Honesty rules (docs/api-contract.md W13): costs are labelled
+/// estimated, an absent limit shows "Unknown", token categories the
+/// host did not report show "Not reported", and context utilisation is
+/// NEVER fabricated between reports — every figure here is one the host
+/// sent.
 struct ContextPanelView: View {
     let conversation: ConversationLibrary
     let host: OpenCodeDomain.Host
     let session: Session
+    let selection: SelectionLibrary
+
+    /// The freshest cumulative info the library holds (from
+    /// `session.get`); the passed-in snapshot is also host-reported —
+    /// just older, from the sessions list.
+    private var usage: Session { conversation.usageInfo ?? session }
+
+    /// The last STEP's reported tokens: the newest message carrying any
+    /// — assistant steps and completed compactions both report tokens.
+    /// Never extrapolated between reports.
+    private var lastReportedStep: (rawType: String, tokens: Session.TokenUsage)? {
+        for message in conversation.messages.reversed() {
+            if let tokens = message.tokens { return (message.rawType, tokens) }
+        }
+        return nil
+    }
+
+    /// The selected model's context limit, resolved through the host's
+    /// inventory; unknown when no matching model is loaded — never
+    /// guessed.
+    private var contextLimit: Int? {
+        let ref = selection.selectedRef ?? usage.model
+        guard let ref else { return nil }
+        return selection.models
+            .first { $0.id == ref.id && $0.providerID == ref.providerID }?
+            .limit.context
+    }
+
+    /// The newest compaction transition in the transcript, if any.
+    private var lastCompaction: SessionMessage.Kind? {
+        conversation.messages.reversed().first {
+            if case .compaction = $0.kind { return true }
+            return false
+        }?.kind
+    }
+
+    /// A compaction the host ADMITTED but has not yet delivered as a
+    /// transcript transition — admission is not completion.
+    private var pendingCompactionAdmission: Bool {
+        conversation.inboxItems.contains {
+            if case .compaction = $0.kind { return true }
+            return false
+        }
+    }
+
+    private var modelLabel: String? {
+        guard let ref = usage.model else { return nil }
+        if let variant = ref.variant { return "\(ref.providerID)/\(ref.id) (\(variant))" }
+        return "\(ref.providerID)/\(ref.id)"
+    }
+
+    private func tokenRows(_ tokens: Session.TokenUsage) -> some View {
+        Group {
+            LabeledContent("Input", value: Self.count(tokens.input))
+            LabeledContent("Output", value: Self.count(tokens.output))
+            LabeledContent("Reasoning", value: Self.count(tokens.reasoning))
+            LabeledContent("Cache Read", value: Self.count(tokens.cache?.read))
+            LabeledContent("Cache Write", value: Self.count(tokens.cache?.write))
+        }
+    }
+
+    private static func count(_ value: Int?) -> String {
+        guard let value else { return "Not reported" }
+        return value.formatted()
+    }
 
     private var countsByType: [(type: String, count: Int)] {
         Dictionary(grouping: conversation.activeContext, by: \.rawType)
@@ -865,7 +940,7 @@ struct ContextPanelView: View {
 
     var body: some View {
         List {
-            if conversation.isLoadingContext {
+            if conversation.isLoadingContext || conversation.isLoadingUsage {
                 Section { ProgressView("Loading Context…") }
             }
             if let error = conversation.contextError {
@@ -873,6 +948,63 @@ struct ContextPanelView: View {
                     Label(error, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.red)
                         .font(.footnote)
+                }
+            }
+            if let error = conversation.usageError {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.footnote)
+                }
+            }
+            if let error = conversation.compactionError {
+                Section {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.red)
+                        .font(.footnote)
+                }
+            }
+            Section {
+                if let step = lastReportedStep {
+                    tokenRows(step.tokens)
+                        .accessibilityIdentifier("S14.usage.step")
+                } else {
+                    Text("No usage reported yet.")
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("Last Reported Step")
+            } footer: {
+                if lastReportedStep != nil {
+                    Text("Reported by the newest message carrying usage. Context use between reports is never estimated.")
+                }
+            }
+            Section("Model & Context Limit") {
+                LabeledContent("Model", value: modelLabel ?? "Unknown")
+                LabeledContent("Context Limit") {
+                    if let limit = contextLimit {
+                        Text("\(limit.formatted()) tokens")
+                    } else {
+                        Text("Unknown").foregroundStyle(.secondary)
+                    }
+                }
+                .accessibilityIdentifier("S14.usage.limit")
+            }
+            Section("Cumulative Session") {
+                if let cost = usage.cost {
+                    LabeledContent("Cost") {
+                        Text("Estimated \(cost.formatted(.currency(code: "USD")))")
+                    }
+                    .accessibilityIdentifier("S14.usage.cost")
+                } else {
+                    LabeledContent("Cost", value: "Not reported")
+                        .accessibilityIdentifier("S14.usage.cost")
+                }
+                if let tokens = usage.tokens {
+                    tokenRows(tokens)
+                        .accessibilityIdentifier("S14.usage.tokens")
+                } else {
+                    LabeledContent("Tokens", value: "Not reported")
                 }
             }
             Section("Since Last Compaction") {
@@ -885,9 +1017,52 @@ struct ContextPanelView: View {
                         .accessibilityIdentifier("S14.context.row.\(entry.type)")
                 }
             }
+            Section {
+                Button {
+                    Task {
+                        await conversation.compact(host: host, sessionID: session.id)
+                    }
+                } label: {
+                    if conversation.isCompacting {
+                        ProgressView("Requesting…")
+                    } else {
+                        Label("Compact Context", systemImage: "rectangle.compress.vertical")
+                    }
+                }
+                .disabled(conversation.isCompacting)
+                .accessibilityIdentifier("S14.compaction.button")
+            } header: {
+                Text("Compaction")
+            } footer: {
+                compactionFooter
+            }
         }
         .task {
             await conversation.loadContext(host: host, sessionID: session.id)
+            await conversation.loadUsage(host: host, sessionID: session.id)
+            if conversation.inboxItems.isEmpty {
+                await conversation.loadInbox(host: host, sessionID: session.id)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var compactionFooter: some View {
+        if pendingCompactionAdmission {
+            Text("Requested — admitted, waiting for the next step boundary.")
+        } else if case .compaction(let status, let reason, _, let errorMessage) = lastCompaction {
+            switch status {
+            case "completed":
+                Text("Last compaction completed. The full transcript is preserved.")
+            case "running":
+                Text("Compaction running — the transcript stays intact.")
+            case "failed":
+                Text("Last compaction failed\(reason.map { ": \($0)" } ?? "")\(errorMessage.map { " — \($0)" } ?? "").")
+            default:
+                Text("Last compaction reported status “\(status)”.")
+            }
+        } else {
+            Text("Compacts context at the next step boundary. The full transcript is preserved.")
         }
     }
 }
