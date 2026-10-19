@@ -154,6 +154,10 @@ final class IntegrationsLibrary {
     /// every authoritative inventory read (never mutated by a status
     /// claim alone).
     private(set) var mcpRows: [McpRow] = []
+    /// The MCP segment's OWN failure (failed or mismatched `mcp.list`
+    /// read) — rendered inside that segment, never as a global error
+    /// that would hide the plugin rows (W15 review round 1).
+    private(set) var mcpError: String?
     /// The server an in-flight connect/disconnect runs for — the row
     /// shows its pending control while `isToggling` disables every
     /// action on the screen.
@@ -179,8 +183,9 @@ final class IntegrationsLibrary {
 
     /// Loads the effective inventory: runtime plugins, the ordered
     /// configuration documents and the runtime MCP servers in
-    /// parallel; the rows need ALL of them and a stale load's result
-    /// is discarded whole.
+    /// parallel; the plugin rows need the first two, the MCP segment
+    /// the third — an MCP failure degrades only that segment — and a
+    /// stale load's result is discarded whole.
     func load(host: OpenCodeDomain.Host, sessionDirectory: String?) async {
         guard !isLoading else { return }
         loadGeneration += 1
@@ -202,8 +207,6 @@ final class IntegrationsLibrary {
             guard generation == loadGeneration else { return }
             if case InventoryError.locationMismatch = error {
                 loadError = "The host reports its plugins for a different location than this session's directory."
-            } else if case InventoryError.mcpLocationMismatch = error {
-                loadError = "The host reports its MCP inventory for a different location than this session's directory."
             } else if !Self.isSilent(error) {
                 loadError = Self.message(for: error)
             }
@@ -212,25 +215,23 @@ final class IntegrationsLibrary {
 
     private enum InventoryError: Error {
         case locationMismatch(requested: String, answered: String)
-        case mcpLocationMismatch(requested: String, answered: String)
     }
 
-    /// One inventory read: the runtime plugins, the ordered
-    /// configuration documents and the runtime MCP servers, ALL
-    /// scoped to `sessionDirectory` (each route declares
+    /// One inventory read: plugin facts THROW when unusable (the
+    /// plugin rows cannot exist without both the runtime inventory
+    /// and the directives), while the MCP section's outcome travels
+    /// as a Result — an mcp.list failure or scope mismatch clears and
+    /// labels the MCP segment only, never hiding the plugin rows the
+    /// failure has nothing to do with (W15 review round 1). All three
+    /// reads are scoped to `sessionDirectory` (each route declares
     /// `location[directory]` — unscoped, the host answers its default
     /// location whose documents may not live under the session's),
-    /// in parallel. THROWS when the host answers any inventory for a
-    /// different location than the one requested — combining runtime
-    /// facts with directives from another scope would render
-    /// half-truth rows and lie about what is running.
+    /// in parallel.
     private func fetchInventory(
         host: OpenCodeDomain.Host,
         credential: BasicCredential?,
         sessionDirectory: String?
-    ) async throws -> (
-        plugins: [PluginInfo], entries: [ConfigEntry], servers: [McpServer]
-    ) {
+    ) async throws -> Inventory {
         async let runtime = service.plugins(
             at: host.address, credential: credential, directory: sessionDirectory
         )
@@ -242,33 +243,64 @@ final class IntegrationsLibrary {
         )
         let (answeredDirectory, plugins) = try await runtime
         let entries = try await documents
-        let (mcpAnswered, servers) = try await mcp
+        // Captured without throwing: this section fails alone
+        // (adopt() clears it and names the failure).
+        let mcpResult: Result<(directory: String, servers: [McpServer]), Error>
+        do {
+            mcpResult = .success(try await mcp)
+        } catch {
+            mcpResult = .failure(error)
+        }
         if let requested = sessionDirectory, !Self.sameLocation(answeredDirectory, requested) {
+            // Combining runtime facts with directives from another
+            // scope would render half-truth rows and lie about what
+            // is running — refused fail-closed, as before.
             throw InventoryError.locationMismatch(requested: requested, answered: answeredDirectory)
         }
-        if let requested = sessionDirectory, !Self.sameLocation(mcpAnswered, requested) {
-            throw InventoryError.mcpLocationMismatch(requested: requested, answered: mcpAnswered)
-        }
-        return (plugins, entries, servers)
+        return (plugins, entries, mcpResult)
     }
+
+    /// The plugin facts of one read (throwing) plus the MCP section's
+    /// own outcome — kept apart so one section's trouble never
+    /// suppresses the other.
+    typealias Inventory = (
+        plugins: [PluginInfo],
+        entries: [ConfigEntry],
+        mcp: Result<(directory: String, servers: [McpServer]), Error>
+    )
 
     /// Rebuilds EVERY section from a freshly fetched inventory —
     /// shared by `load`, the plugin readback and the MCP runtime
     /// action so no path can update one section and leave another
-    /// stale.
-    private func adopt(
-        inventory: (plugins: [PluginInfo], entries: [ConfigEntry], servers: [McpServer]),
-        directory: String?
-    ) {
+    /// stale. The MCP section is adopted independently: a failed or
+    /// mismatched read clears its rows and sets `mcpError` (the view
+    /// renders it in that segment), a success rebuilds the rows and
+    /// clears the error — never a global failure.
+    private func adopt(inventory: Inventory, directory: String?) {
         let editable = Self.editableDocument(in: inventory.entries, sessionDirectory: directory)
         editableDocument = editable
         rows = Self.buildRows(
             plugins: inventory.plugins, entries: inventory.entries, editable: editable
         )
-        mcpRows = Self.buildMcpRows(servers: inventory.servers, entries: inventory.entries)
         // Prune ineffective markers for rows no longer present; row
         // IDs cover declared (== target) and runtime keys alike.
         unreflected = unreflected.intersection(rows.map(\.id))
+        switch inventory.mcp {
+        case .success(let answered, let servers):
+            if let requested = directory, !Self.sameLocation(answered, requested) {
+                // Fail-closed like the plugin rule: statuses from
+                // another scope are never shown under this session —
+                // but only this segment is affected.
+                mcpRows = []
+                mcpError = "The host reports its MCP inventory for a different location than this session's directory."
+            } else {
+                mcpRows = Self.buildMcpRows(servers: servers, entries: inventory.entries)
+                mcpError = nil
+            }
+        case .failure(let error):
+            mcpRows = []
+            mcpError = Self.isSilent(error) ? nil : Self.message(for: error)
+        }
     }
 
     /// The authoritative refresh pattern: bump BEFORE the fetch so an
@@ -276,9 +308,7 @@ final class IntegrationsLibrary {
     /// result (W14 round-4 lesson), then adopt the fresh inventory.
     private func refresh(
         host: OpenCodeDomain.Host, credential: BasicCredential?, directory: String?
-    ) async throws -> (
-        plugins: [PluginInfo], entries: [ConfigEntry], servers: [McpServer]
-    ) {
+    ) async throws -> Inventory {
         loadGeneration += 1
         let inventory = try await fetchInventory(
             host: host, credential: credential, sessionDirectory: directory
@@ -464,10 +494,11 @@ final class IntegrationsLibrary {
             } catch {
                 if Self.isSilent(error) { return }
                 // Saved AND reloaded — only the verification failed.
+                // (An MCP-only failure never reaches this: it travels
+                // as a Result to `mcpError`, so this verdict reports
+                // only plugin/config facts.)
                 if case InventoryError.locationMismatch = error {
                     notice = "Saved, but the host reports its plugins for a different location."
-                } else if case InventoryError.mcpLocationMismatch = error {
-                    notice = "Saved, but the host reports its MCP inventory for a different location."
                 } else {
                     notice = "Saved, but the host's runtime inventory could not be read."
                 }
@@ -548,7 +579,22 @@ final class IntegrationsLibrary {
                     for: failure, server: server, desired: connect
                 )
             } else {
-                notice = "The change was accepted, but the MCP inventory could not be re-read."
+                notice = "The change was accepted, but the refreshed inventory could not be read."
+            }
+            return
+        }
+
+        // The refresh itself answered for the plugin facts, but the
+        // MCP segment's own read failed (`mcpError`, rows cleared) —
+        // the runtime status stays UNKNOWN and the banner says so
+        // rather than presenting cleared rows as an absent server.
+        if mcpError != nil {
+            if let failure {
+                toggleError = Self.mcpFailureMessage(
+                    for: failure, server: server, desired: connect
+                )
+            } else {
+                notice = "The change was accepted, but the MCP inventory could not be read."
             }
             return
         }
@@ -603,6 +649,13 @@ final class IntegrationsLibrary {
     ) -> String {
         if case TransportError.http(let statusCode, _) = error {
             if statusCode == 404 {
+                // The REFRESHED LIST is the evidence: when it still
+                // shows the server, "does not report it" would be a
+                // lie printed under the row itself — name the status
+                // the refresh actually reports (W15 review round 1).
+                if refreshed, let status {
+                    return "The host answered HTTP 404 for \"\(server)\"; the refreshed list shows it as \(mcpStatusPhrase(status))."
+                }
                 return refreshed
                     ? "The host does not report an MCP server named \"\(server)\" — the list was refreshed."
                     : "The host does not report an MCP server named \"\(server)\", and the list could not be refreshed."

@@ -187,14 +187,15 @@ final class IntegrationsLibraryTests: XCTestCase {
         provider: @escaping @MainActor (HostID) -> BasicCredential?
     ) -> IntegrationsLibrary {
         // W15: `mcp.list` joins every inventory read. The wrapper
-        // delegates FIRST, so a test that stubs `mcp.list` itself
-        // wins; one that does not care about MCP gets the standard
-        // two-server fixture instead of an "unstubbed" failure.
+        // delegates FIRST: a test that stubs `mcp.list` itself wins,
+        // and only the shared "unstubbed" convention gets the standard
+        // two-server fixture — a DELIBERATE mcp.list failure (any
+        // other error) still propagates to the test.
         let wrapped: @Sendable (APIRequest) async throws -> APIResponse = { request in
             do {
                 return try await handler(request)
-            } catch {
-                guard request.operationID == "mcp.list" else { throw error }
+            } catch TransportError.connectionFailed(let reason)
+                where reason.hasPrefix("unstubbed") && request.operationID == "mcp.list" {
                 return Fixtures.response(Fixtures.mcpList)
             }
         }
@@ -1305,8 +1306,10 @@ final class IntegrationsLibraryTests: XCTestCase {
     }
 
     /// The MCP inventory answered for ANOTHER location: refused
-    /// fail-closed like the plugin inventory — runtime statuses from
-    /// one scope are never combined with this session's directives.
+    /// fail-closed — statuses from one scope are never shown under
+    /// this session — but only the MCP segment is cleared and
+    /// labelled; the plugin rows (answered for the right scope) stay
+    /// fully usable (W15 review round 1).
     func testLoadRefusesAnMcpInventoryAnsweredForAnotherLocation() async {
         let recorder = Recorder()
         let library = library(recorder: recorder) { request in
@@ -1319,9 +1322,116 @@ final class IntegrationsLibraryTests: XCTestCase {
         }
         await library.load(host: one, sessionDirectory: "/srv/demo")
 
+        XCTAssertNil(library.loadError, "the plugin inventory answered for the right scope")
         XCTAssertEqual(
-            library.loadError,
+            library.rows.first?.id, "demo.audit",
+            "the plugin segment stays fully usable"
+        )
+        XCTAssertTrue(library.mcpRows.isEmpty, "statuses from another scope are never shown")
+        XCTAssertEqual(
+            library.mcpError,
             "The host reports its MCP inventory for a different location than this session's directory."
+        )
+    }
+
+    /// An mcp.list transport failure degrades ONLY the MCP segment:
+    /// the plugin rows load, the failure is named inside its own
+    /// section, and the global load error stays clear — one section's
+    /// trouble never hides the other (W15 review round 1).
+    func testAnMcpReadFailureKeepsThePluginRows() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list":
+                throw TransportError.connectionFailed("mcp inventory unavailable")
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertNil(library.loadError)
+        XCTAssertEqual(library.rows.first?.id, "demo.audit", "the plugin rows stand")
+        XCTAssertTrue(library.mcpRows.isEmpty)
+        XCTAssertEqual(
+            library.mcpError,
+            "The host is unreachable right now. Pull to refresh to try again.",
+            "the MCP segment names its failure with its actual cause"
+        )
+    }
+
+    /// A plugin write lands and the readback verdict completes even
+    /// when the MCP read fails in the SAME refresh: the verdict
+    /// reports plugin facts only — never "the runtime inventory could
+    /// not be read" when the plugin inventory did answer (the exact
+    /// falsehood W15 review round 1 caught).
+    func testPluginReadbackCompletesWhenTheMcpReadFails() async throws {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list":
+                throw TransportError.connectionFailed("mcp inventory unavailable")
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write", "location.reload":
+                return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        XCTAssertEqual(
+            library.mcpError, "The host is unreachable right now. Pull to refresh to try again.",
+            "the MCP segment already carries its own label after load"
+        )
+
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+        await library.applyToggle(host: one, plan: plan)
+
+        XCTAssertNil(library.toggleError)
+        XCTAssertEqual(
+            library.notice, "Saved — the host reloaded the location.",
+            "the plugin verdict is the plugin inventory's truth — the MCP read changes nothing about it"
+        )
+        XCTAssertEqual(library.rows.first?.id, "demo.audit")
+        XCTAssertEqual(
+            library.mcpError, "The host is unreachable right now. Pull to refresh to try again.",
+            "the readback keeps the MCP segment labelled through its adopt"
+        )
+    }
+
+    /// A 404 whose refreshed list still SHOWS the server: "does not
+    /// report it" would be a lie printed under the row itself — the
+    /// banner names the 404 and the status the refresh actually
+    /// reports (W15 review round 1).
+    func testMcpConnect404WithServerStillListedNamesTheStatus() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list": return Fixtures.response(Fixtures.mcpListDisabled)
+            case "experimental.mcp.connect":
+                throw TransportError.http(status: 404, envelope: nil)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        await library.mcpAction(
+            host: one, server: "demo-docs", connect: true, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertEqual(
+            library.toggleError,
+            "The host answered HTTP 404 for \"demo-docs\"; the refreshed list shows it as Disabled."
+        )
+        XCTAssertNil(library.notice)
+        XCTAssertEqual(
+            library.mcpRows.first?.status.kind, .disabled,
+            "the row itself proves the refreshed list still reports it"
         )
     }
 }

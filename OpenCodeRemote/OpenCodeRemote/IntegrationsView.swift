@@ -72,7 +72,15 @@ struct IntegrationsView: View {
                 }
             } else {
                 Section("MCP") {
-                    if library.mcpRows.isEmpty, !library.isLoading, library.loadError == nil {
+                    // This segment's OWN failure renders HERE — a
+                    // failed or mismatched mcp.list never blanks the
+                    // Plugins segment (W15 review round 1).
+                    if let mcpError = library.mcpError {
+                        Label(mcpError, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                            .font(.footnote)
+                            .accessibilityIdentifier("S16.mcp.error")
+                    } else if library.mcpRows.isEmpty, !library.isLoading, library.loadError == nil {
                         Text("No MCP servers reported by this host.")
                             .foregroundStyle(.secondary)
                             .accessibilityIdentifier("S16.mcp.empty")
