@@ -89,6 +89,20 @@ final class HostLibrary {
     /// waiting for the next refresh cycle.
     func add(_ paired: PairedHost) throws {
         guard let hostStore else { throw LibraryError.storageUnavailable }
+        var paired = paired
+        if let existing = entries.first(where: { Self.isSameServer($0.host.address, paired.host.address) }) {
+            // RE-PAIR of a known server: the host keeps its identity
+            // (id + createdAt), so the new credential replaces the old
+            // one under the same Keychain account, no duplicate row
+            // appears for one address, and every per-host surface —
+            // projects, sessions, approvals, local-state caches, the
+            // push provider's `secretsByHost` comparison (its comment
+            // assumes exactly this) — sees a credential CHANGE, not a
+            // new host. The freshly proven displayName/version from
+            // THIS pairing are still adopted below.
+            paired.host.id = existing.host.id
+            paired.host.createdAt = existing.host.createdAt
+        }
         do {
             try credentials.save(secret: paired.secret, for: paired.host.id.rawValue)
         } catch {
@@ -106,6 +120,21 @@ final class HostLibrary {
         if let index = entries.firstIndex(where: { $0.id == paired.host.id }) {
             entries[index] = Entry(host: paired.host, connection: .reachable(version: paired.host.lastVersion))
         }
+    }
+
+    /// Same server? Scheme, host, port and path — case-insensitive on
+    /// scheme/host, trailing-slash-insensitive on the path — so a
+    /// re-pair scanned from the same QR or typed with cosmetic
+    /// differences still matches. Deliberately NOT `URL ==`, which is
+    /// byte-exact and would miss "http://h:4096" vs "http://h:4096/".
+    private static func isSameServer(_ lhs: URL, _ rhs: URL) -> Bool {
+        func norm(_ path: String) -> String {
+            path == "/" ? "" : String(path.dropLast(path.hasSuffix("/") ? 1 : 0))
+        }
+        return lhs.scheme?.lowercased() == rhs.scheme?.lowercased()
+            && lhs.host?.lowercased() == rhs.host?.lowercased()
+            && lhs.port == rhs.port
+            && norm(lhs.path) == norm(rhs.path)
     }
 
     /// Removes the host row and its stored credential from this device. The

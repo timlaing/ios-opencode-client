@@ -36,13 +36,14 @@ final class HostLibraryTests: XCTestCase {
     private func paired(
         id: String = "H-1",
         name: String = "Lab",
-        secret: String = "token-1"
+        secret: String = "token-1",
+        address: String = "https://lab.example:4096"
     ) throws -> PairedHost {
         PairedHost(
             host: OpenCodeDomain.Host(
                 id: HostID(rawValue: id),
                 displayName: name,
-                address: try XCTUnwrap(URL(string: "https://lab.example:4096"))
+                address: try XCTUnwrap(URL(string: address))
             ),
             secret: secret
         )
@@ -96,10 +97,32 @@ final class HostLibraryTests: XCTestCase {
         XCTAssertEqual(library.entries.first?.connection, .unreachable)
     }
 
+    func testRepairingTheSameAddressReplacesTheRow() async throws {
+        let (library, _, credentials) = try makeLibrary(health: .success(healthy("1.0.0")))
+        let first = try paired(secret: "old-token")
+        try library.add(first)
+        // The pairing flow mints a FRESH HostID every time
+        // (completePairing); a re-pair of the same address must still
+        // replace the row rather than add a second one.
+        let second = try paired(id: "H-2", name: "Renamed Host", secret: "new-token")
+        try library.add(second)
+
+        XCTAssertEqual(library.entries.count, 1, "re-pairing one address must not duplicate the row")
+        XCTAssertEqual(library.entries.first?.host.id, first.host.id, "the original identity is kept")
+        XCTAssertEqual(library.entries.first?.host.displayName, "Renamed Host", "the new proven name is adopted")
+        XCTAssertEqual(
+            try credentials.secret(for: first.host.id.rawValue), "new-token",
+            "the credential is replaced under the same Keychain account"
+        )
+        XCTAssertNil(try credentials.secret(for: "H-2"), "no orphan secret under the minted id")
+    }
+
     func testRemoveDeletesRowAndCredential() async throws {
         let (library, store, credentials) = try makeLibrary(health: .success(healthy("1.0.0")))
         try library.add(try paired(id: "H-1"))
-        try library.add(try paired(id: "H-2", name: "Office"))
+        // A SECOND host must be a different server — one address is one
+        // host (re-pairing an address replaces its row).
+        try library.add(try paired(id: "H-2", name: "Office", address: "https://office.example:4096"))
 
         try library.remove(HostID(rawValue: "H-1"))
 

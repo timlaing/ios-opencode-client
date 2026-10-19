@@ -73,6 +73,10 @@ struct FileViewerView: View {
 
     // Share: a temp copy of the COMPLETE file handed to the share sheet.
     @State private var shareItem: ShareItem?
+    /// The per-share temp folder `prepareShare` created — kept outside
+    /// `shareItem` because the item binding is already nil when the
+    /// sheet's `onDismiss` runs.
+    @State private var shareFolder: URL?
 
     /// A temp file prepared for the system share sheet (which offers Save to
     /// Files — the "Save" half of S13's progressive Load More/Save).
@@ -157,7 +161,15 @@ struct FileViewerView: View {
                 }
             }
         }
-        .sheet(item: $shareItem) { item in
+        .sheet(item: $shareItem, onDismiss: {
+            // Host file content (source, config, keys) must not outlive
+            // the share: the whole per-share temp folder goes the moment
+            // the sheet closes — never left sitting in tmp.
+            if let folder = shareFolder {
+                try? FileManager.default.removeItem(at: folder)
+                shareFolder = nil
+            }
+        }) { item in
             ShareSheet(url: item.url)
         }
     }
@@ -647,10 +659,16 @@ struct FileViewerView: View {
         else { return }
         let folder = FileManager.default.temporaryDirectory
             .appendingPathComponent("file-preview", isDirectory: true)
+            // Unique per share: two files with the same last path segment
+            // (README.md in different folders) must never overwrite each
+            // other's staged copy, and the whole folder can be removed the
+            // moment the sheet closes.
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let url = folder.appendingPathComponent(lastPathSegment(entry.path))
         do {
             try bytes.write(to: url)
+            shareFolder = folder
             shareItem = ShareItem(url: url)
         } catch {
             loadMoreError = "The file could not be prepared for sharing. \(error.localizedDescription)"

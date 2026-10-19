@@ -176,7 +176,7 @@ struct ChangesView: View {
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("S15.base.unavailable")
         case .available(let base):
-            LabeledContent("Base", value: "\(base.name) (\(base.source == .reflog ? "reflog" : "default"))")
+            LabeledContent("Base", value: "\(base.name) (\(base.source.rawValue))")
                 .accessibilityIdentifier("S15.base")
         }
     }
@@ -232,10 +232,13 @@ struct ChangesView: View {
     }
 
     private func statusLabel(_ status: FileDiff.Status) -> String {
+        // A NEWER host's vocabulary (renamed, …) shows verbatim — the
+        // host said it; inventing a known label would lie.
         switch status {
         case .added: return "Added"
         case .deleted: return "Deleted"
         case .modified: return "Modified"
+        default: return status.rawValue
         }
     }
 

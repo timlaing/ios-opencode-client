@@ -124,13 +124,29 @@ final class W12RequestsTests: XCTestCase {
         ])
     }
 
-    func testDiffStatusEnumRejectsCasesOutsideThePinnedThree() {
-        XCTAssertNil(
-            FileDiff.Status(rawValue: "renamed"),
-            "the pinned enum is exactly added/deleted/modified"
+    func testDiffStatusToleratesCasesOutsideThePinnedThree() throws {
+        // The pinned schema enum-declares added/deleted/modified, but a
+        // NEWER self-hosted host may send more (git has renamed/copied);
+        // one unknown row must never fail the decode and hide the whole
+        // Changes list.
+        let row = try JSONDecoder().decode(
+            FileDiff.Info.self,
+            from: Data(#"{"file":"a.swift","patch":"@@ -1 +1 @@","additions":1,"deletions":1,"status":"renamed"}"#.utf8)
         )
+        XCTAssertEqual(row.status.rawValue, "renamed")
+        XCTAssertFalse(row.status.isKnown, "unknown values stay visible, not guessed")
+
+        XCTAssertEqual(FileDiff.Status(rawValue: "added"), .added)
+        XCTAssertTrue(FileDiff.Status(rawValue: "added").isKnown)
         XCTAssertEqual(Vcs.Source(rawValue: "reflog"), .reflog)
-        XCTAssertEqual(Vcs.Source(rawValue: "default"), .repositoryDefault)
-        XCTAssertNil(Vcs.Source(rawValue: "guessed"))
+        XCTAssertEqual(Vcs.Source(rawValue: "guessed").rawValue, "guessed",
+                       "an unknown base source keeps its raw value")
+        let base = try JSONDecoder().decode(
+            Vcs.Base.self,
+            from: Data(#"{"name":"main","ref":"abc123","source":"guessed"}"#.utf8)
+        )
+        XCTAssertEqual(base.source.rawValue, "guessed",
+                       "an unknown source must not fail the vcs.base decode")
+        XCTAssertFalse(base.source.isKnown)
     }
 }

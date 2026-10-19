@@ -5,9 +5,42 @@ import Foundation
 /// answer with `FileDiff.Info` rows; `Vcs.*` carries branch identity,
 /// working-copy status and the review base.
 public enum FileDiff {
-    /// The pinned status enum — exactly `added`/`deleted`/`modified`.
-    public enum Status: String, Codable, Sendable {
-        case added, deleted, modified
+    /// The pinned schema enum-declares exactly `added`/`deleted`/
+    /// `modified` — but the client pairs with SELF-HOSTED hosts that can
+    /// run NEWER than the pinned baseline, and git itself has more
+    /// statuses (renamed, copied, typechange). One unknown row must
+    /// never fail the decode and hide the whole Changes list, so the
+    /// value keeps its raw string (the transport's convention for
+    /// DECODED strings that hosts may evolve: `ModelInfo.status`,
+    /// `AgentInfo.mode`, `Session.outcome`); the known vocabulary stays
+    /// addressable as statics and `isKnown`.
+    public struct Status: RawRepresentable, Codable, Hashable, Sendable {
+        public var rawValue: String
+
+        public init(rawValue: String) {
+            self.rawValue = rawValue
+        }
+
+        public static let added = Status(rawValue: "added")
+        public static let deleted = Status(rawValue: "deleted")
+        public static let modified = Status(rawValue: "modified")
+
+        /// Whether the value is one of the pinned three — consumers show
+        /// unknown raw values verbatim rather than guessing a label.
+        public var isKnown: Bool {
+            self == .added || self == .deleted || self == .modified
+        }
+
+        // Explicit single-value coding (not synthesis): the wire shape is
+        // a plain string in both directions, unknown cases included.
+        public init(from decoder: Decoder) throws {
+            rawValue = try decoder.singleValueContainer().decode(String.self)
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
+        }
     }
 
     /// One changed file with a unified `patch` (full file unless the
@@ -105,10 +138,32 @@ public enum Vcs {
     }
 
     /// Where the base came from: a reflog walk or the repository default
-    /// branch (wire key `default`).
-    public enum Source: String, Codable, Sendable {
-        case reflog
-        case repositoryDefault = "default"
+    /// branch (wire key `default`). Kept as a raw-value struct for the
+    /// same reason as `FileDiff.Status`: a newer host's source must not
+    /// fail the `vcs.base` decode and hide the whole base state.
+    public struct Source: RawRepresentable, Codable, Hashable, Sendable {
+        public var rawValue: String
+
+        public init(rawValue: String) {
+            self.rawValue = rawValue
+        }
+
+        public static let reflog = Source(rawValue: "reflog")
+        public static let repositoryDefault = Source(rawValue: "default")
+
+        /// Whether the value is one of the pinned two.
+        public var isKnown: Bool {
+            self == .reflog || self == .repositoryDefault
+        }
+
+        public init(from decoder: Decoder) throws {
+            rawValue = try decoder.singleValueContainer().decode(String.self)
+        }
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.singleValueContainer()
+            try container.encode(rawValue)
+        }
     }
 }
 
