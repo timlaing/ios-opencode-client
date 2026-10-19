@@ -28,6 +28,11 @@ final class SessionsLibrary {
     /// Server-reported actively-drained sessions per host.
     private(set) var activeByHost: [HostID: Set<String>] = [:]
     private(set) var errorsByHost: [HostID: String] = [:]
+    /// Title-search failures live apart from listing failures: a search
+    /// that fails does NOT mean the host could not list sessions, and a
+    /// search that succeeds must never erase a still-missing inventory's
+    /// error (the same discipline `markViewed` documents).
+    private(set) var searchErrorsByHost: [HostID: String] = [:]
     private(set) var loadingHosts: Set<HostID> = []
 
     /// Results of the last server-side TITLE search, kept separate so
@@ -131,6 +136,7 @@ final class SessionsLibrary {
         guard !needle.isEmpty else {
             activeSearch = nil
             searchResultsByHost = [:]
+            searchErrorsByHost = [:]
             return
         }
         activeSearch = needle
@@ -145,13 +151,16 @@ final class SessionsLibrary {
                 // results, and a cancelled task must not surface errors.
                 guard activeSearch == needle, !Task.isCancelled else { return }
                 searchResultsByHost[entry.id] = page.data
-                errorsByHost[entry.id] = nil
+                // Only the SEARCH error clears here — a successful search
+                // is no evidence the inventory exists.
+                searchErrorsByHost[entry.id] = nil
             } catch {
                 guard activeSearch == needle, !Task.isCancelled else { return }
                 // A failed host shows no stale results from the previous
-                // term — its error is surfaced instead.
+                // term — its own error is surfaced instead, in search
+                // wording, never painted as a listing failure.
                 searchResultsByHost[entry.id] = nil
-                errorsByHost[entry.id] = Self.message(for: error)
+                searchErrorsByHost[entry.id] = Self.searchMessage(for: error)
             }
         }
     }
@@ -219,12 +228,18 @@ final class SessionsLibrary {
     }
 
     /// Visible errors for the current host filter (never rendered as
-    /// "no sessions").
+    /// "no sessions"). While a title search is active, its OWN failures
+    /// lead — a listing failure stays reachable underneath for hosts the
+    /// search skipped, and returns alone the moment the search clears
+    /// (search outcomes never erase it).
     func visibleErrors(entries: [HostLibrary.Entry], hostFilter: HostID?) -> [(id: HostID, name: String, message: String)] {
         entries
             .filter { hostFilter == nil || $0.id == hostFilter }
             .compactMap { entry in
-                guard let message = errorsByHost[entry.id] else { return nil }
+                let message = activeSearch == nil
+                    ? errorsByHost[entry.id]
+                    : searchErrorsByHost[entry.id] ?? errorsByHost[entry.id]
+                guard let message else { return nil }
                 return (entry.id, entry.host.displayName, message)
             }
     }
@@ -343,6 +358,20 @@ final class SessionsLibrary {
     }
 
     private var nextCursors: [HostID: String] = [:]
+
+    /// Search failures get SEARCH wording — "could not list sessions"
+    /// would claim the inventory is broken when only the title search
+    /// failed.
+    private static func searchMessage(for error: Error) -> String {
+        switch error {
+        case TransportError.http(let status, _):
+            return "The host could not search sessions (HTTP \(status))."
+        case TransportError.connectionFailed:
+            return "The host is unreachable right now. Pull to refresh to try again."
+        default:
+            return "Sessions could not be searched on this host."
+        }
+    }
 
     private static func message(for error: Error) -> String {
         switch error {

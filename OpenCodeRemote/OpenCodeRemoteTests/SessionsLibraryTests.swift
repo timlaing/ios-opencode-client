@@ -215,7 +215,58 @@ final class SessionsLibraryTests: XCTestCase {
 
         XCTAssertEqual(library.activeSearch, "gone")
         XCTAssertNil(library.searchResultsByHost[one.id], "a failed host keeps no stale results from the previous term")
-        XCTAssertNotNil(library.errorsByHost[one.id], "the failure is surfaced instead")
+        XCTAssertNil(library.errorsByHost[one.id], "a search failure is never a listing failure")
+        XCTAssertNotNil(library.searchErrorsByHost[one.id], "the failure is surfaced as a search error")
+    }
+
+    func testSearchFailuresNeverPolluteTheListingErrorMap() async throws {
+        let one = host("host_one", name: "Mock A")
+        let failSearch = Flag(false)
+        let library = library { request in
+            if request.query.contains(where: { $0.key == "search" }) {
+                if failSearch.value { throw TransportError.http(status: 500, envelope: nil) }
+                return Fixtures.response(Fixtures.page([Fixtures.session("ses_match")]))
+            }
+            return Fixtures.response(Fixtures.page([Fixtures.session("ses_a")]))
+        }
+        await library.load([entry(one)])
+        XCTAssertNil(library.errorsByHost[one.id])
+
+        failSearch.value = true
+        await library.search("deployment", entries: [entry(one)])
+
+        XCTAssertNil(library.errorsByHost[one.id],
+                     "a failed title search must not claim the host could not list sessions")
+        XCTAssertEqual(library.searchErrorsByHost[one.id], "The host could not search sessions (HTTP 500).",
+                       "search wording, not the listing wording")
+        XCTAssertEqual(
+            library.visibleErrors(entries: [entry(one)], hostFilter: nil).map { $0.message },
+            ["The host could not search sessions (HTTP 500)."]
+        )
+
+        await library.search("   ", entries: [entry(one)])
+        XCTAssertTrue(library.searchErrorsByHost.isEmpty, "clearing the term clears the search failures")
+        XCTAssertTrue(library.visibleErrors(entries: [entry(one)], hostFilter: nil).isEmpty,
+                      "no false Host Status survives the cleared search")
+    }
+
+    func testSearchSuccessKeepsARealListingFailureVisible() async throws {
+        let one = host("host_one", name: "Mock A")
+        let library = library { request in
+            if request.query.contains(where: { $0.key == "search" }) {
+                return Fixtures.response(Fixtures.page([Fixtures.session("ses_match")]))
+            }
+            throw TransportError.http(status: 503, envelope: nil)
+        }
+        await library.load([entry(one)])
+        XCTAssertEqual(library.errorsByHost[one.id], "The host could not list sessions (HTTP 503).")
+
+        await library.search("deployment", entries: [entry(one)])
+
+        XCTAssertEqual(library.searchResultsByHost[one.id]?.map(\.id), ["ses_match"])
+        XCTAssertEqual(library.errorsByHost[one.id], "The host could not list sessions (HTTP 503).",
+                       "a successful search is no evidence the inventory exists")
+        XCTAssertNil(library.searchErrorsByHost[one.id])
     }
 
     // MARK: - Rows, scopes, markers

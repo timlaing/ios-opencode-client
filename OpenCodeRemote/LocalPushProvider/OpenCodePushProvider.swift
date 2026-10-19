@@ -187,7 +187,24 @@ final class OpenCodePushProvider: NEAppPushProvider {
     private func startObservers(for configuration: ConfigurationPayload, generation: Int) {
         guard let hostStore, let ledger else { return }
         let followed = Set(configuration.followedSessions)
-        let hosts = (try? hostStore.hosts()) ?? []
+        // A failed read must not look like "every host was removed" — an
+        // empty result from `?? []` would stop every supervisor below.
+        guard let hosts = try? hostStore.hosts() else {
+            logger.error("host store read failed; observers unchanged")
+            return
+        }
+        // Hosts REMOVED from the store produce no configuration diff (the
+        // app deletes the host row, not the push configuration), so this
+        // reconcile — the path the timer retry and the configuration KVO
+        // both share — is where their observers stop: with the secret they
+        // captured, never left streaming after removal.
+        let storedIDs = Set(hosts.map(\.id.rawValue))
+        for (hostID, supervisor) in supervisors where !storedIDs.contains(hostID) {
+            supervisors.removeValue(forKey: hostID)
+            secretsByHost.removeValue(forKey: hostID)
+            Task { await supervisor.stop() }
+            logger.info("stopped observer of removed host")
+        }
         for host in hosts where configuration.hostIDs.contains(host.id.rawValue) {
             // Keychain FIRST: the existing-supervisor check below must be
             // able to compare secrets, and a re-pair under the same host ID
@@ -206,7 +223,18 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 continue
             }
             guard let secret else {
-                logger.warning("host has no stored credential; observer not started")
+                // The read SUCCEEDED with no credential — it was removed.
+                // (A read FAILURE above is different: a locked device keeps
+                // the existing observer running on its captured secret.) An
+                // observer built on the deleted secret must stop instead of
+                // streaming with it until the system restarts the provider.
+                if let existing = supervisors.removeValue(forKey: host.id.rawValue) {
+                    secretsByHost.removeValue(forKey: host.id.rawValue)
+                    Task { await existing.stop() }
+                    logger.info("stopped observer of uncredentialed host")
+                } else {
+                    logger.warning("host has no stored credential; observer not started")
+                }
                 continue
             }
             if let existing = supervisors[host.id.rawValue] {
