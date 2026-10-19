@@ -48,8 +48,9 @@ struct ConversationView: View {
     /// W12 Changes inspector (S15): session-turn/workspace diffs over
     /// the session's location; opens from the trailing toolbar button.
     @State private var showingChanges = false
-    /// W14 Integrations inspector (S16): effective plugin inventory
-    /// over the session's location; the MCP segment arrives with W15.
+    /// W14/W15 Integrations inspector (S16): effective plugin
+    /// inventory and the runtime MCP segment over the session's
+    /// location; opens from the trailing toolbar button.
     @State private var showingIntegrations = false
     @State private var integrations = IntegrationsLibrary()
     /// Which queued confirmation is on screen. The library's queue is

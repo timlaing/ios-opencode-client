@@ -2,15 +2,28 @@ import SwiftUI
 import OpenCodeDomain
 import OpenCodeTransport
 
-/// S16 integrations inspector — W14: the effective plugin inventory
-/// (docs/navigation-screens.md S16). Every row combines the runtime
-/// inventory with the declared directives; a toggle shows its exact
-/// JSONC plan before anything is written, and a saved change the host
-/// has not applied yet stays visible. The MCP segment arrives with W15.
+/// S16 integrations inspector — W14: the effective plugin inventory,
+/// W15: the runtime MCP segment (docs/navigation-screens.md S16).
+/// Every plugin row combines the runtime inventory with the declared
+/// directives; a toggle shows its exact JSONC plan before anything is
+/// written, and a saved change the host has not applied yet stays
+/// visible. MCP rows separate configured intent from runtime status
+/// and offer Connect/Disconnect as RUNTIME controls only — a
+/// `needs_auth` server shows host setup guidance instead of a
+/// success toggle that could not succeed.
 struct IntegrationsView: View {
     let host: OpenCodeDomain.Host
     let sessionDirectory: String?
     @Bindable var library: IntegrationsLibrary
+
+    /// The two S16 segments (docs/navigation-screens.md S16).
+    enum Segment: String, CaseIterable, Identifiable {
+        case plugins = "Plugins"
+        case mcp = "MCP"
+        var id: String { rawValue }
+    }
+
+    @State private var segment: Segment = .plugins
 
     var body: some View {
         List {
@@ -41,13 +54,32 @@ struct IntegrationsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Section("Plugins") {
-                if library.rows.isEmpty, !library.isLoading, library.loadError == nil {
-                    Text("No plugins reported by this host.")
-                        .foregroundStyle(.secondary)
+            Picker("Inspector", selection: $segment) {
+                ForEach(Segment.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityIdentifier("S16.segment")
+
+            if segment == .plugins {
+                Section("Plugins") {
+                    if library.rows.isEmpty, !library.isLoading, library.loadError == nil {
+                        Text("No plugins reported by this host.")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(library.rows) { row in
+                        rowView(row)
+                    }
                 }
-                ForEach(library.rows) { row in
-                    rowView(row)
+            } else {
+                Section("MCP") {
+                    if library.mcpRows.isEmpty, !library.isLoading, library.loadError == nil {
+                        Text("No MCP servers reported by this host.")
+                            .foregroundStyle(.secondary)
+                            .accessibilityIdentifier("S16.mcp.empty")
+                    }
+                    ForEach(library.mcpRows) { row in
+                        mcpRowView(row)
+                    }
                 }
             }
         }
@@ -128,6 +160,79 @@ struct IntegrationsView: View {
                     .font(.caption)
                     .foregroundStyle(.orange)
                     .accessibilityIdentifier("S16.plugins.ineffective.\(row.id)")
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// The setup guide for MCP authentication (the currently
+    /// supported host path: `/mcps` on the host — verified
+    /// opencode.ai docs; http(s) link only, house rule).
+    private static let mcpSetupGuide = URL(string: "https://opencode.ai/v2/docs/mcp-servers")!
+
+    @ViewBuilder
+    private func mcpRowView(_ row: IntegrationsLibrary.McpRow) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(row.name)
+                    .font(.body.weight(.medium))
+                    .accessibilityIdentifier("S16.mcp.row.\(row.name)")
+                Spacer()
+                // Runtime controls only — never a persisted enabled
+                // flag (docs/api-contract.md W15). Row-level gating
+                // (pending / needs_auth / unknown status) lives on
+                // `canConnect`/`canDisconnect`.
+                if row.canConnect {
+                    Button("Connect (runtime)") {
+                        Task {
+                            await library.mcpAction(
+                                host: host, server: row.name, connect: true,
+                                sessionDirectory: sessionDirectory
+                            )
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(library.isToggling)
+                    .accessibilityIdentifier("S16.mcp.connect.\(row.name)")
+                } else if row.canDisconnect {
+                    Button("Disconnect (runtime)") {
+                        Task {
+                            await library.mcpAction(
+                                host: host, server: row.name, connect: false,
+                                sessionDirectory: sessionDirectory
+                            )
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(library.isToggling)
+                    .accessibilityIdentifier("S16.mcp.disconnect.\(row.name)")
+                }
+            }
+            Text(row.statusText)
+                .font(.subheadline)
+                .foregroundStyle(row.status.kind == .failed ? Color.red : Color.secondary)
+                .accessibilityIdentifier("S16.mcp.status.\(row.name)")
+            Text(row.intentText)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("S16.mcp.intent.\(row.name)")
+            if row.status.kind == .needsAuth {
+                // Sign-in runs on the HOST: show the state and the
+                // currently supported setup path — never a success
+                // toggle that could not succeed.
+                Text("Sign-in is completed on the host: open OpenCode, run /mcps, select this server and sign in.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("S16.mcp.authguide.\(row.name)")
+                Link("Open the MCP setup guide", destination: Self.mcpSetupGuide)
+                    .font(.footnote)
+                    .accessibilityIdentifier("S16.mcp.authlink.\(row.name)")
+            }
+            if library.mcpActionServer == row.name {
+                Text("Applying…")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .accessibilityIdentifier("S16.mcp.inflight.\(row.name)")
             }
         }
         .padding(.vertical, 2)

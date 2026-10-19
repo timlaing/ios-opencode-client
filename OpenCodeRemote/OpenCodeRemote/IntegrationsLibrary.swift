@@ -4,9 +4,11 @@ import OpenCodeDomain
 import OpenCodeTransport
 
 /// S16 integrations state — W14: the effective plugin inventory
-/// (docs/navigation-screens.md S16, docs/api-contract.md W14).
+/// (docs/navigation-screens.md S16, docs/api-contract.md W14);
+/// W15: the runtime MCP segment with its per-server Connect/
+/// Disconnect runtime controls.
 ///
-/// Honory rules: the RUNTIME inventory (`plugin.list`) and the
+/// Honesty rules: the RUNTIME inventory (`plugin.list`) and the
 /// DECLARED directives (`config.get` + raw document bytes) are separate
 /// facts combined into rows — a plugin's absence from the runtime list
 /// is never presented alone as "disabled". A toggle is a PLAN over the
@@ -14,7 +16,11 @@ import OpenCodeTransport
 /// `location.reload` → authoritative readback); if the saved change is
 /// not reflected by the runtime inventory afterwards, the row says so
 /// instead of implying success. Built-in/SDK plugins are protected and
-/// never offer a disable.
+/// never offer a disable. W15: a CONNECT/DISCONNECT is a RUNTIME
+/// control — 204 is admission and the REFETCHED inventory decides the
+/// status shown (never a success claim from the response alone), a
+/// `needs_auth` server offers no toggle because sign-in runs on the
+/// host, and no MCP row ever implies a persisted enabled flag.
 @MainActor
 @Observable
 final class IntegrationsLibrary {
@@ -65,6 +71,49 @@ final class IntegrationsLibrary {
         }
     }
 
+    /// One runtime MCP server in the W15 segment: configured intent,
+    /// runtime status and the in-flight control are SEPARATE facts —
+    /// Connect/Disconnect acts on the RUNTIME only, never on a
+    /// persisted enabled flag (docs/api-contract.md W15).
+    struct McpRow: Identifiable, Equatable {
+        var name: String
+        var status: McpStatus
+        /// This location's configuration declares the server with this
+        /// `disabled` flag; nil when no document declares it (the
+        /// server is host/runtime-provided in this location).
+        var configuredDisabled: Bool?
+
+        var id: String { name }
+
+        /// The runtime status as the screen shows it — the pinned
+        /// vocabulary, unknown kinds verbatim.
+        var statusText: String { IntegrationsLibrary.mcpStatusPhrase(status) }
+
+        /// The CONFIGURED intent line, kept separate from the runtime
+        /// status: what this location's documents declare (the
+        /// baseline shape is `mcp.servers.<name>` — Config.InfoEncoded
+        /// allows no other nesting), nil when none declares it.
+        var intentText: String {
+            switch configuredDisabled {
+            case .some(true): return "Declared DISABLED in this location's configuration."
+            case .some(false): return "Declared ENABLED in this location's configuration."
+            case nil: return "Not declared in this location's configuration."
+            }
+        }
+
+        /// Controls appear only where they can mean something:
+        /// `pending` is the host mid-work (the refresh shows the
+        /// outcome), `needs_auth` needs sign-in on the HOST — a
+        /// success toggle offered there could not succeed
+        /// (docs/navigation-screens.md S16) — and an unknown status
+        /// this baseline cannot label gets no control either.
+        var canConnect: Bool {
+            guard let kind = status.kind else { return false }
+            return kind == .disabled || kind == .failed
+        }
+        var canDisconnect: Bool { status.kind == .connected }
+    }
+
     /// A confirmed plan awaiting Apply: the exact edit plus the bytes it
     /// was computed against — a changed document invalidates the plan.
     struct PendingPlan: Equatable {
@@ -101,6 +150,14 @@ final class IntegrationsLibrary {
     /// Targets whose last saved toggle the runtime inventory does NOT
     /// reflect — ineffective overrides stay visible, never glossed.
     private(set) var unreflected: Set<String> = []
+    /// The W15 MCP segment: one row per runtime server, rebuilt from
+    /// every authoritative inventory read (never mutated by a status
+    /// claim alone).
+    private(set) var mcpRows: [McpRow] = []
+    /// The server an in-flight connect/disconnect runs for — the row
+    /// shows its pending control while `isToggling` disables every
+    /// action on the screen.
+    private(set) var mcpActionServer: String?
 
     init(
         service: IntegrationsService? = nil,
@@ -120,9 +177,10 @@ final class IntegrationsLibrary {
         credentialProvider = { [weak hosts] in hosts?.credential(for: $0) }
     }
 
-    /// Loads the effective inventory: runtime plugins and the ordered
-    /// configuration documents in parallel; the rows need BOTH and a
-    /// stale load's result is discarded whole.
+    /// Loads the effective inventory: runtime plugins, the ordered
+    /// configuration documents and the runtime MCP servers in
+    /// parallel; the rows need ALL of them and a stale load's result
+    /// is discarded whole.
     func load(host: OpenCodeDomain.Host, sessionDirectory: String?) async {
         guard !isLoading else { return }
         loadGeneration += 1
@@ -138,21 +196,14 @@ final class IntegrationsLibrary {
                 host: host, credential: credential, sessionDirectory: sessionDirectory
             )
             guard generation == loadGeneration else { return }
-            let editable = Self.editableDocument(
-                in: inventory.entries, sessionDirectory: sessionDirectory
-            )
-            editableDocument = editable
-            rows = Self.buildRows(
-                plugins: inventory.plugins, entries: inventory.entries, editable: editable
-            )
-            // Prune ineffective markers for rows no longer present;
-            // row IDs cover declared (== target) and runtime keys alike.
-            unreflected = unreflected.intersection(rows.map(\.id))
+            adopt(inventory: inventory, directory: sessionDirectory)
             loadError = nil
         } catch {
             guard generation == loadGeneration else { return }
             if case InventoryError.locationMismatch = error {
                 loadError = "The host reports its plugins for a different location than this session's directory."
+            } else if case InventoryError.mcpLocationMismatch = error {
+                loadError = "The host reports its MCP inventory for a different location than this session's directory."
             } else if !Self.isSilent(error) {
                 loadError = Self.message(for: error)
             }
@@ -161,14 +212,15 @@ final class IntegrationsLibrary {
 
     private enum InventoryError: Error {
         case locationMismatch(requested: String, answered: String)
+        case mcpLocationMismatch(requested: String, answered: String)
     }
 
-    /// One inventory read: the runtime plugins scoped to
-    /// `sessionDirectory`, the ordered configuration documents scoped
-    /// to the SAME directory (the route declares `location[directory]`
-    /// — unscoped, the host answers its default location whose
-    /// documents may not live under the session's), in parallel.
-    /// THROWS when the host answers the plugin inventory for a
+    /// One inventory read: the runtime plugins, the ordered
+    /// configuration documents and the runtime MCP servers, ALL
+    /// scoped to `sessionDirectory` (each route declares
+    /// `location[directory]` — unscoped, the host answers its default
+    /// location whose documents may not live under the session's),
+    /// in parallel. THROWS when the host answers any inventory for a
     /// different location than the one requested — combining runtime
     /// facts with directives from another scope would render
     /// half-truth rows and lie about what is running.
@@ -176,19 +228,63 @@ final class IntegrationsLibrary {
         host: OpenCodeDomain.Host,
         credential: BasicCredential?,
         sessionDirectory: String?
-    ) async throws -> (plugins: [PluginInfo], entries: [ConfigEntry]) {
+    ) async throws -> (
+        plugins: [PluginInfo], entries: [ConfigEntry], servers: [McpServer]
+    ) {
         async let runtime = service.plugins(
             at: host.address, credential: credential, directory: sessionDirectory
         )
         async let documents = service.configDocuments(
             at: host.address, credential: credential, directory: sessionDirectory
         )
+        async let mcp = service.mcpServers(
+            at: host.address, credential: credential, directory: sessionDirectory
+        )
         let (answeredDirectory, plugins) = try await runtime
         let entries = try await documents
+        let (mcpAnswered, servers) = try await mcp
         if let requested = sessionDirectory, !Self.sameLocation(answeredDirectory, requested) {
             throw InventoryError.locationMismatch(requested: requested, answered: answeredDirectory)
         }
-        return (plugins, entries)
+        if let requested = sessionDirectory, !Self.sameLocation(mcpAnswered, requested) {
+            throw InventoryError.mcpLocationMismatch(requested: requested, answered: mcpAnswered)
+        }
+        return (plugins, entries, servers)
+    }
+
+    /// Rebuilds EVERY section from a freshly fetched inventory —
+    /// shared by `load`, the plugin readback and the MCP runtime
+    /// action so no path can update one section and leave another
+    /// stale.
+    private func adopt(
+        inventory: (plugins: [PluginInfo], entries: [ConfigEntry], servers: [McpServer]),
+        directory: String?
+    ) {
+        let editable = Self.editableDocument(in: inventory.entries, sessionDirectory: directory)
+        editableDocument = editable
+        rows = Self.buildRows(
+            plugins: inventory.plugins, entries: inventory.entries, editable: editable
+        )
+        mcpRows = Self.buildMcpRows(servers: inventory.servers, entries: inventory.entries)
+        // Prune ineffective markers for rows no longer present; row
+        // IDs cover declared (== target) and runtime keys alike.
+        unreflected = unreflected.intersection(rows.map(\.id))
+    }
+
+    /// The authoritative refresh pattern: bump BEFORE the fetch so an
+    /// in-flight load's pre-action snapshot can never overwrite this
+    /// result (W14 round-4 lesson), then adopt the fresh inventory.
+    private func refresh(
+        host: OpenCodeDomain.Host, credential: BasicCredential?, directory: String?
+    ) async throws -> (
+        plugins: [PluginInfo], entries: [ConfigEntry], servers: [McpServer]
+    ) {
+        loadGeneration += 1
+        let inventory = try await fetchInventory(
+            host: host, credential: credential, sessionDirectory: directory
+        )
+        adopt(inventory: inventory, directory: directory)
+        return inventory
     }
 
     /// The host answered FOR the requested directory: equal modulo
@@ -346,21 +442,13 @@ final class IntegrationsLibrary {
             // guard, and a silently skipped readback would claim an
             // outcome from stale rows.
             do {
-                // Supersede any in-flight load: its pre-write snapshot
-                // must not overwrite this authoritative readback (nor
-                // prune `unreflected` against rows that predate it).
-                loadGeneration += 1
-                let inventory = try await fetchInventory(
-                    host: host, credential: credential, sessionDirectory: plan.directory
+                // `refresh` supersedes any in-flight load BEFORE its
+                // fetch (that snapshot must not overwrite this
+                // readback) and adopts every section — plugin rows,
+                // editable document and the MCP segment alike.
+                _ = try await refresh(
+                    host: host, credential: credential, directory: plan.directory
                 )
-                editableDocument = Self.editableDocument(
-                    in: inventory.entries, sessionDirectory: plan.directory
-                )
-                rows = Self.buildRows(
-                    plugins: inventory.plugins, entries: inventory.entries,
-                    editable: editableDocument
-                )
-                unreflected = unreflected.intersection(rows.map(\.id))
                 // Joined by row ID: runtime-present rows carry the
                 // runtime key (their `target` is nil when nothing
                 // declares them).
@@ -378,12 +466,172 @@ final class IntegrationsLibrary {
                 // Saved AND reloaded — only the verification failed.
                 if case InventoryError.locationMismatch = error {
                     notice = "Saved, but the host reports its plugins for a different location."
+                } else if case InventoryError.mcpLocationMismatch = error {
+                    notice = "Saved, but the host reports its MCP inventory for a different location."
                 } else {
                     notice = "Saved, but the host's runtime inventory could not be read."
                 }
             }
         } catch {
             if !Self.isSilent(error) { toggleError = Self.toggleErrorMessage(for: error) }
+        }
+    }
+
+    // MARK: - W15 MCP runtime controls
+
+    /// A RUNTIME connect/disconnect for the W15 MCP segment
+    /// (docs/api-contract.md W15). Honesty rules: 204 is ADMISSION —
+    /// the REFETCHED inventory decides the status shown, never the
+    /// response alone; a definite HTTP rejection (other than 404)
+    /// means the host answered "no", so nothing changed and the rows
+    /// stand; a 404 or a response-less failure may have changed the
+    /// host, so the list is refreshed and the banner names what is
+    /// actually known. Banners are owned by this attempt: the view
+    /// renders notice and toggleError independently (W14 round 6).
+    func mcpAction(
+        host: OpenCodeDomain.Host,
+        server: String,
+        connect: Bool,
+        sessionDirectory: String?
+    ) async {
+        guard !isToggling else { return }
+        guard let credential = credentialProvider?(host.id) else {
+            toggleError = "Re-pair this host to control its MCP runtime."
+            return
+        }
+        isToggling = true
+        defer { isToggling = false }
+        // A new attempt owns the banners — an earlier "Saved" beside a
+        // later unknown outcome would contradict it.
+        notice = nil
+        toggleError = nil
+        mcpActionServer = server
+        defer { mcpActionServer = nil }
+
+        var failure: Error?
+        do {
+            if connect {
+                try await service.mcpConnect(
+                    at: host.address, credential: credential,
+                    server: server, directory: sessionDirectory
+                )
+            } else {
+                try await service.mcpDisconnect(
+                    at: host.address, credential: credential,
+                    server: server, directory: sessionDirectory
+                )
+            }
+        } catch {
+            if Self.isSilent(error) { return }
+            failure = error
+        }
+
+        // The host ANSWERED with a rejection (404 is handled below: it
+        // means this list itself is stale): the runtime did not change,
+        // so the rows stand and the message names the actual failure.
+        if let failure, case TransportError.http(let status, _) = failure, status != 404 {
+            toggleError = Self.mcpFailureMessage(for: failure, server: server, desired: connect)
+            return
+        }
+
+        // Admitted (204), a vanished server (404), or a response-less
+        // attempt: only the current inventory can say what the runtime
+        // now is.
+        do {
+            _ = try await refresh(
+                host: host, credential: credential, directory: sessionDirectory
+            )
+        } catch {
+            if Self.isSilent(error) { return }
+            if let failure {
+                toggleError = Self.mcpFailureMessage(
+                    for: failure, server: server, desired: connect
+                )
+            } else {
+                notice = "The change was accepted, but the MCP inventory could not be re-read."
+            }
+            return
+        }
+
+        let current = mcpRows.first { $0.name == server }
+        guard let failure else {
+            // 204 admission: judge ONLY by the refetched status.
+            if let current, Self.desiredMatches(current.status, connect: connect) {
+                notice = Self.mcpReportedMessage(server: server, connect: connect)
+            } else if let current {
+                notice = "The host accepted the change, but still reports \"\(server)\" as \(Self.mcpStatusPhrase(current.status))."
+            } else {
+                notice = "The host accepted the change, but no longer reports \"\(server)\"."
+            }
+            return
+        }
+
+        // The attempt failed, but the refreshed list may show it took
+        // effect anyway (a lost response after a landed change).
+        if let current, Self.desiredMatches(current.status, connect: connect) {
+            notice = Self.mcpReportedMessage(server: server, connect: connect)
+        } else {
+            toggleError = Self.mcpFailureMessage(
+                for: failure, server: server, desired: connect,
+                refreshed: true, status: current?.status
+            )
+        }
+    }
+
+    /// The success notice — never written from the 204 itself, only
+    /// from a refetched row that shows the desired status.
+    private static func mcpReportedMessage(server: String, connect: Bool) -> String {
+        "The host now reports \"\(server)\" as \(connect ? "connected" : "disabled")."
+    }
+
+    private static func desiredMatches(_ status: McpStatus, connect: Bool) -> Bool {
+        status.kind == (connect ? .connected : .disabled)
+    }
+
+    /// Names the ACTUAL failure (house rule). An HTTP rejection is
+    /// definite — the host answered, nothing landed; a 404 means the
+    /// server left the host (after a refresh the list is already
+    /// current, without one the user is told what stands); a
+    /// response-less failure is UNKNOWN: with a fresh read it says
+    /// what the host does not report, without one it says to refresh.
+    private static func mcpFailureMessage(
+        for error: Error,
+        server: String,
+        desired: Bool,
+        refreshed: Bool = false,
+        status: McpStatus? = nil
+    ) -> String {
+        if case TransportError.http(let statusCode, _) = error {
+            if statusCode == 404 {
+                return refreshed
+                    ? "The host does not report an MCP server named \"\(server)\" — the list was refreshed."
+                    : "The host does not report an MCP server named \"\(server)\", and the list could not be refreshed."
+            }
+            return "The host rejected the MCP runtime change (HTTP \(statusCode))."
+        }
+        let wanted = desired ? "connected" : "disabled"
+        if refreshed, let status {
+            return "The connection dropped during the MCP change — the host does not report \"\(server)\" as \(wanted); it shows \(mcpStatusPhrase(status))."
+        }
+        if refreshed {
+            return "The connection dropped during the MCP change — the host no longer reports \"\(server)\"."
+        }
+        return "The connection dropped during the MCP change — pull to refresh to see whether it landed."
+    }
+
+    /// The user-facing phrase for a runtime status: the pinned five
+    /// get their documented vocabulary; an unknown kind shows its raw
+    /// string verbatim (never a guessed mapping — house rule for
+    /// DECODED values hosts may evolve). `nonisolated`: McpRow's
+    /// display properties are plain struct members, not actor state.
+    nonisolated static func mcpStatusPhrase(_ status: McpStatus) -> String {
+        guard let kind = status.kind else { return "\"\(status.rawKind)\"" }
+        switch kind {
+        case .connected: return "Connected"
+        case .pending: return "Pending"
+        case .disabled: return "Disabled"
+        case .failed: return "Failed: \(status.error ?? "no detail reported")"
+        case .needsAuth: return "Needs authentication: \(status.error ?? "sign-in required")"
         }
     }
 
@@ -543,6 +791,44 @@ final class IntegrationsLibrary {
             row.negativeIsEditable = editable.map { row.disabledInPaths.contains($0.path) } ?? false
             if row.isProtected { row.statusText += " (protected)" }
             return row
+        }
+    }
+
+    /// Builds the W15 MCP segment: one row per runtime server, joined
+    /// with the CONFIGURED intent declared in this location's
+    /// documents (`mcp.servers.<name>`, baseline Config.InfoEncoded —
+    /// `mcp` has `additionalProperties: false`, so this is the only
+    /// nesting). config.get answers LOW → HIGH precedence, so the
+    /// LAST declaration of a name wins — the same join rule the
+    /// plugin rows use. A name no document declares stays nil: the
+    /// server is host/runtime-provided here, never "declared
+    /// disabled" by absence.
+    private static func buildMcpRows(
+        servers: [McpServer], entries: [ConfigEntry]
+    ) -> [McpRow] {
+        var declared: [String: Bool] = [:]
+        for entry in entries {
+            guard case .document(let path, let info) = entry, let path,
+                  case .object(let fields) = info,
+                  case .object(let mcp)? = fields["mcp"],
+                  case .object(let declaredServers)? = mcp["servers"]
+            else { continue }
+            for (name, value) in declaredServers {
+                guard case .object(let config) = value else { continue }
+                // Declared without the `disabled` flag = enabled.
+                if case .bool(let disabled)? = config["disabled"] {
+                    declared[name] = disabled
+                } else {
+                    declared[name] = false
+                }
+            }
+        }
+        return servers.map { server in
+            McpRow(
+                name: server.name,
+                status: server.status,
+                configuredDisabled: declared[server.name]
+            )
         }
     }
 

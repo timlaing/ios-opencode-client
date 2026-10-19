@@ -75,6 +75,27 @@ final class IntegrationsLibraryTests: XCTestCase {
         /// target positive — Disable would be offered for a directive
         /// it could never write. (config.get is a bare array.)
         static let configSessionDocEmpty = #"[{"type":"document","path":"/srv/demo/opencode.jsonc","info":{}},{"type":"document","path":"/srv/shared/plugins.jsonc","info":{"plugins":["demo.audit"]}}]"#
+
+        /// The standard W15 MCP inventory: one connected server and
+        /// one requiring host-side sign-in (the mock's vocabulary).
+        static let mcpList = #"{"location":{"directory":"/srv/demo"},"data":[{"name":"demo-docs","status":{"status":"connected"}},{"name":"demo-auth","status":{"status":"needs_auth","error":"Synthetic sign-in required"}}]}"#
+
+        /// The same inventory before a connect took effect:
+        /// demo-docs is runtime-disabled, so its row offers Connect.
+        static let mcpListDisabled = #"{"location":{"directory":"/srv/demo"},"data":[{"name":"demo-docs","status":{"status":"disabled"}}]}"#
+
+        /// The inventory after a connect took effect.
+        static let mcpListConnected = #"{"location":{"directory":"/srv/demo"},"data":[{"name":"demo-docs","status":{"status":"connected"}}]}"#
+
+        /// The MCP inventory answered under a DIFFERENT location than
+        /// the session asked for — refused fail-closed like plugins.
+        static let mcpListOtherLocation = #"{"location":{"directory":"/srv/other"},"data":[]}"#
+
+        /// config.get's document declares demo-docs DISABLED through
+        /// the baseline `mcp.servers.<name>` shape (Config.InfoEncoded
+        /// allows no other nesting) — the configured-intent line
+        /// joins it with the runtime status, kept separate.
+        static let configWithMcpServer = #"[{"type":"document","path":"/srv/demo/opencode.jsonc","info":{"mcp":{"servers":{"demo-docs":{"type":"local","command":["docs"],"disabled":true}}}}}]"#
     }
 
     /// Captured-var mutation is not allowed in `@Sendable` handlers.
@@ -165,7 +186,19 @@ final class IntegrationsLibraryTests: XCTestCase {
         handler: @escaping @Sendable (APIRequest) async throws -> APIResponse,
         provider: @escaping @MainActor (HostID) -> BasicCredential?
     ) -> IntegrationsLibrary {
-        let stub: @Sendable () -> StubTransport = { StubTransport(recorder: recorder, handler: handler) }
+        // W15: `mcp.list` joins every inventory read. The wrapper
+        // delegates FIRST, so a test that stubs `mcp.list` itself
+        // wins; one that does not care about MCP gets the standard
+        // two-server fixture instead of an "unstubbed" failure.
+        let wrapped: @Sendable (APIRequest) async throws -> APIResponse = { request in
+            do {
+                return try await handler(request)
+            } catch {
+                guard request.operationID == "mcp.list" else { throw error }
+                return Fixtures.response(Fixtures.mcpList)
+            }
+        }
+        let stub: @Sendable () -> StubTransport = { StubTransport(recorder: recorder, handler: wrapped) }
         return IntegrationsLibrary(
             service: IntegrationsService(makeTransport: { _ in stub() }),
             projectService: ProjectService(makeTransport: { _ in stub() }),
@@ -202,7 +235,8 @@ final class IntegrationsLibraryTests: XCTestCase {
         )
         XCTAssertEqual(library.editableDocument?.relativePath, "opencode.jsonc")
         XCTAssertEqual(
-            Set(recorder.requests.map(\.operationID)), ["plugin.list", "config.get"]
+            Set(recorder.requests.map(\.operationID)),
+            ["plugin.list", "config.get", "mcp.list"]
         )
         // The runtime inventory is requested FOR THE SESSION'S
         // LOCATION — combining another scope's runtime with these
@@ -218,6 +252,12 @@ final class IntegrationsLibraryTests: XCTestCase {
         let configRequest = recorder.requests.first { $0.operationID == "config.get" }
         XCTAssertEqual(
             configRequest?.query.first { $0.key == "location[directory]" }?.value, "/srv/demo"
+        )
+        // …AND SO IS THE MCP INVENTORY: same scope, same location
+        // equality rule (W15 — all three routes declare the query).
+        let mcpRequest = recorder.requests.first { $0.operationID == "mcp.list" }
+        XCTAssertEqual(
+            mcpRequest?.query.first { $0.key == "location[directory]" }?.value, "/srv/demo"
         )
 
         // Declared positive + running: active with its declared scope.
@@ -418,7 +458,7 @@ final class IntegrationsLibraryTests: XCTestCase {
             "fs.write takes the ABSOLUTE document path"
         )
         XCTAssertEqual(
-            Set(ids.suffix(2)), ["plugin.list", "config.get"],
+            Set(ids.suffix(3)), ["plugin.list", "config.get", "mcp.list"],
             "the authoritative readback follows the reload"
         )
     }
@@ -956,5 +996,332 @@ final class IntegrationsLibraryTests: XCTestCase {
             "The connection dropped during the save — pull to refresh to see whether the change landed."
         )
         XCTAssertNil(library.pendingPlan)
+    }
+
+    // MARK: - W15 MCP runtime controls
+
+    /// Row controls appear only for statuses a runtime control can
+    /// move: a definite Connect/Disconnect target, never while the
+    /// host is mid-work, never for a server needing sign-in, never
+    /// for a status this baseline cannot label.
+    func testMcpRowControlsAppearOnlyForMovableStatuses() {
+        func row(_ status: McpStatus) -> IntegrationsLibrary.McpRow {
+            IntegrationsLibrary.McpRow(name: "x", status: status, configuredDisabled: nil)
+        }
+        XCTAssertTrue(row(McpStatus(rawKind: "disabled")).canConnect)
+        XCTAssertTrue(row(McpStatus(rawKind: "failed", error: "boom")).canConnect)
+        XCTAssertFalse(row(McpStatus(rawKind: "pending")).canConnect)
+        XCTAssertFalse(row(McpStatus(rawKind: "connected")).canConnect)
+        XCTAssertFalse(row(McpStatus(rawKind: "needs_auth")).canConnect)
+        XCTAssertFalse(
+            row(McpStatus(rawKind: "teleported")).canConnect,
+            "an unknown status gets no control — it could only misfire"
+        )
+        XCTAssertTrue(row(McpStatus(rawKind: "connected")).canDisconnect)
+        XCTAssertFalse(row(McpStatus(rawKind: "pending")).canDisconnect)
+        XCTAssertFalse(row(McpStatus(rawKind: "teleported")).canDisconnect)
+    }
+
+    /// Load joins the runtime MCP inventory with the configured
+    /// intent, kept as SEPARATE facts — a connected server declared
+    /// disabled in config shows both truths; a `needs_auth` server
+    /// offers no toggle (sign-in runs on the host) and names its
+    /// status detail.
+    func testLoadBuildsMcpRowsSeparatingIntentFromRuntimeStatus() async throws {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithMcpServer)
+            case "mcp.list": return Fixtures.response(Fixtures.mcpList)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertNil(library.loadError)
+        XCTAssertEqual(library.mcpRows.map(\.id), ["demo-docs", "demo-auth"])
+
+        let connected = try XCTUnwrap(library.mcpRows.first { $0.id == "demo-docs" })
+        XCTAssertEqual(connected.statusText, "Connected")
+        XCTAssertEqual(
+            connected.intentText, "Declared DISABLED in this location's configuration.",
+            "the configured intent never merges into the runtime status"
+        )
+        XCTAssertTrue(connected.canDisconnect)
+        XCTAssertFalse(connected.canConnect, "a connected server offers Disconnect, never Connect")
+
+        let auth = try XCTUnwrap(library.mcpRows.first { $0.id == "demo-auth" })
+        XCTAssertEqual(auth.statusText, "Needs authentication: Synthetic sign-in required")
+        XCTAssertNil(auth.configuredDisabled, "nothing here declares it")
+        XCTAssertEqual(
+            auth.intentText, "Not declared in this location's configuration.",
+            "absence of a declaration is never presented as 'declared disabled'"
+        )
+        XCTAssertFalse(auth.canConnect, "needs_auth gets NO success toggle")
+        XCTAssertFalse(auth.canDisconnect)
+    }
+
+    /// Connect is a RUNTIME control: the 204 is admission only and
+    /// the row shows the REFETCHED status; both routes carry the
+    /// session's location query (W15 scope).
+    func testMcpConnectShowsOnlyTheRefetchedStatus() async {
+        let recorder = Recorder()
+        let mcpCalls = Counter()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list":
+                return Fixtures.response(
+                    mcpCalls.next() == 0 ? Fixtures.mcpListDisabled : Fixtures.mcpListConnected
+                )
+            case "experimental.mcp.connect": return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        XCTAssertEqual(library.mcpRows.first?.status.kind, .disabled)
+        XCTAssertEqual(library.mcpRows.first?.canConnect, true, "disabled rows offer Connect")
+
+        await library.mcpAction(
+            host: one, server: "demo-docs", connect: true, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertEqual(library.notice, "The host now reports \"demo-docs\" as connected.")
+        XCTAssertNil(library.toggleError)
+        XCTAssertEqual(
+            library.mcpRows.first?.status.kind, .connected,
+            "the row shows the REFETCHED status, never the 204"
+        )
+        XCTAssertNil(library.mcpActionServer, "the pending marker is spent when the action ends")
+        XCTAssertFalse(library.isToggling)
+
+        let connect = recorder.requests.first { $0.operationID == "experimental.mcp.connect" }
+        XCTAssertEqual(
+            connect?.query.first { $0.key == "location[directory]" }?.value, "/srv/demo",
+            "the control is scoped to the session's location like every W15 route"
+        )
+    }
+
+    /// The host ADMITS the connect (204) but its refetched inventory
+    /// still reports the old status — the outcome is "accepted, not
+    /// applied", never success (docs/api-contract.md W15 admission
+    /// rule).
+    func testMcpConnectAdmittedButNotAppliedNeverClaimsSuccess() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list": return Fixtures.response(Fixtures.mcpListDisabled)
+            case "experimental.mcp.connect": return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        await library.mcpAction(
+            host: one, server: "demo-docs", connect: true, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertEqual(
+            library.notice,
+            "The host accepted the change, but still reports \"demo-docs\" as Disabled."
+        )
+        XCTAssertNil(library.toggleError, "the admission itself did not fail")
+        XCTAssertEqual(library.mcpRows.first?.status.kind, .disabled)
+    }
+
+    /// The disconnect counterpart: runtime control, location-scoped,
+    /// and the row shows the refetched (now disabled) status.
+    func testMcpDisconnectRunsTheRuntimeControlWithItsLocation() async {
+        let recorder = Recorder()
+        let mcpCalls = Counter()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list":
+                return Fixtures.response(
+                    mcpCalls.next() == 0 ? Fixtures.mcpList : Fixtures.mcpListDisabled
+                )
+            case "experimental.mcp.disconnect": return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        await library.mcpAction(
+            host: one, server: "demo-docs", connect: false, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertEqual(library.notice, "The host now reports \"demo-docs\" as disabled.")
+        XCTAssertEqual(library.mcpRows.first?.status.kind, .disabled)
+        let disconnect = recorder.requests.first { $0.operationID == "experimental.mcp.disconnect" }
+        XCTAssertEqual(
+            disconnect?.query.first { $0.key == "location[directory]" }?.value, "/srv/demo"
+        )
+    }
+
+    /// A response-less connect failure is UNKNOWN — but the refresh
+    /// that follows answers it: the refetched inventory shows the
+    /// change landed, so the banner reports that truth instead of
+    /// claiming either way from the lost response.
+    func testMcpConnectResponseLessFailureIsAnsweredByTheRefresh() async {
+        let recorder = Recorder()
+        let mcpCalls = Counter()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list":
+                return Fixtures.response(
+                    mcpCalls.next() == 0 ? Fixtures.mcpListDisabled : Fixtures.mcpListConnected
+                )
+            case "experimental.mcp.connect":
+                throw TransportError.connectionFailed("dropped after the request body")
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        await library.mcpAction(
+            host: one, server: "demo-docs", connect: true, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertEqual(
+            library.notice, "The host now reports \"demo-docs\" as connected.",
+            "fresh evidence replaces the unknown outcome with what the host reports"
+        )
+        XCTAssertNil(library.toggleError)
+        XCTAssertEqual(library.mcpRows.first?.status.kind, .connected)
+    }
+
+    /// …and when the refresh shows the change did NOT take effect,
+    /// the banner says exactly that — the refreshed inventory's
+    /// evidence, not a guess.
+    func testMcpConnectResponseLessFailureWithUnchangedHostSaysWhatIsKnown() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list": return Fixtures.response(Fixtures.mcpListDisabled)
+            case "experimental.mcp.connect":
+                throw TransportError.connectionFailed("dropped after the request body")
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        await library.mcpAction(
+            host: one, server: "demo-docs", connect: true, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertEqual(
+            library.toggleError,
+            "The connection dropped during the MCP change — the host does not report \"demo-docs\" as connected; it shows Disabled."
+        )
+        XCTAssertNil(library.notice)
+        XCTAssertEqual(library.mcpRows.first?.status.kind, .disabled)
+    }
+
+    /// The server vanished between render and tap (404): the failed
+    /// action REFRESHES the list and the message says so — the stale
+    /// row is replaced by whatever the host reports now.
+    func testMcpConnectToAServerTheHostNoLongerReportsRefreshesTheList() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list": return Fixtures.response(Fixtures.mcpList)
+            case "experimental.mcp.connect":
+                throw TransportError.http(status: 404, envelope: nil)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        await library.mcpAction(
+            host: one, server: "ghost", connect: true, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertEqual(
+            library.toggleError,
+            "The host does not report an MCP server named \"ghost\" — the list was refreshed."
+        )
+        XCTAssertNil(library.notice)
+        XCTAssertEqual(
+            library.mcpRows.map(\.id), ["demo-docs", "demo-auth"],
+            "the refreshed inventory is what the list shows"
+        )
+    }
+
+    /// A definite HTTP rejection means the host answered "no": the
+    /// message names the status, the rows stand (nothing changed — no
+    /// refetch needed), and the banners belong to THIS attempt (an
+    /// earlier plugin "Saved" notice must not survive beside it).
+    func testMcpActionOwnsTheBannersAndNamesADefiniteRejection() async throws {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list": return Fixtures.response(Fixtures.mcpListDisabled)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write", "location.reload":
+                return Fixtures.noContent
+            case "experimental.mcp.connect":
+                throw TransportError.http(status: 400, envelope: nil)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+        await library.applyToggle(host: one, plan: plan)
+        XCTAssertEqual(library.notice, "Saved — the host reloaded the location.")
+        let mcpReadsBeforeAction = recorder.requests.filter { $0.operationID == "mcp.list" }.count
+
+        await library.mcpAction(
+            host: one, server: "demo-docs", connect: true, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertEqual(
+            library.toggleError, "The host rejected the MCP runtime change (HTTP 400)."
+        )
+        XCTAssertNil(library.notice, "a new attempt owns the banners — no stale 'Saved'")
+        XCTAssertEqual(
+            library.mcpRows.first?.status.kind, .disabled,
+            "a rejected control changed nothing — the rows stand without a refetch"
+        )
+        XCTAssertEqual(
+            recorder.requests.filter { $0.operationID == "mcp.list" }.count,
+            mcpReadsBeforeAction,
+            "a definite rejection needs no refetch — the host already answered"
+        )
+    }
+
+    /// The MCP inventory answered for ANOTHER location: refused
+    /// fail-closed like the plugin inventory — runtime statuses from
+    /// one scope are never combined with this session's directives.
+    func testLoadRefusesAnMcpInventoryAnsweredForAnotherLocation() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list": return Fixtures.response(Fixtures.mcpListOtherLocation)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertEqual(
+            library.loadError,
+            "The host reports its MCP inventory for a different location than this session's directory."
+        )
     }
 }

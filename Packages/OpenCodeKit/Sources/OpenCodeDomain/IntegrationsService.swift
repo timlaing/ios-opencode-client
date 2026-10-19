@@ -1,11 +1,13 @@
 import Foundation
 import OpenCodeTransport
 
-/// W14 operations for the S16 integrations inspector
+/// W14/W15 operations for the S16 integrations inspector
 /// (docs/api-contract.md W14/W15): the runtime plugin inventory, the
 /// ordered configuration documents, the raw document bytes a plugin
-/// toggle edits, and the location reload that makes the host re-read
-/// them. Honesty rules: the runtime inventory and the declared
+/// toggle edits, the location reload that makes the host re-read
+/// them, and (W15) the runtime MCP inventory plus its per-server
+/// Connect/Disconnect controls. Honesty rules: the runtime
+/// inventory and the declared
 /// directives are SEPARATE facts — absence from `/api/plugin` is never
 /// presented alone as "disabled" — and `location.reload` is a
 /// location-level reload, never an unverified per-plugin endpoint.
@@ -66,6 +68,51 @@ public struct IntegrationsService: Sendable {
         _ = try await makeTransport(host)
             .perform(W02Requests.writeFile(
                 directory: directory, path: path, bytes: bytes, credential: credential
+            ))
+    }
+
+    /// `GET /api/mcp` (W15) — the RUNTIME MCP inventory with the
+    /// location the host actually answered under, exactly like
+    /// `plugins`. The returned directory is authoritative: combine
+    /// statuses with directives from the SAME location only.
+    public func mcpServers(
+        at host: URL,
+        credential: BasicCredential?,
+        directory: String? = nil
+    ) async throws -> (directory: String, servers: [McpServer]) {
+        let envelope = try await makeTransport(host)
+            .perform(W15Requests.mcpList(directory: directory, credential: credential))
+            .decodedJSON(LocationEnvelope<[McpServer]>.self)
+        return (envelope.location.directory, envelope.data)
+    }
+
+    /// `POST /api/experimental/mcp/{server}/connect` → 204 (W15) —
+    /// a RUNTIME connect: it never edits configuration, and 204 is
+    /// admission — callers must refetch the inventory for the status
+    /// they show.
+    public func mcpConnect(
+        at host: URL,
+        credential: BasicCredential?,
+        server: String,
+        directory: String? = nil
+    ) async throws {
+        _ = try await makeTransport(host)
+            .perform(W15Requests.mcpConnect(
+                server: server, directory: directory, credential: credential
+            ))
+    }
+
+    /// `POST /api/experimental/mcp/{server}/disconnect` → 204 (W15) —
+    /// the runtime counterpart of `mcpConnect` (same admission rule).
+    public func mcpDisconnect(
+        at host: URL,
+        credential: BasicCredential?,
+        server: String,
+        directory: String? = nil
+    ) async throws {
+        _ = try await makeTransport(host)
+            .perform(W15Requests.mcpDisconnect(
+                server: server, directory: directory, credential: credential
             ))
     }
 }
