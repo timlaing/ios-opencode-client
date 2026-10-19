@@ -52,6 +52,25 @@ final class OpenCodePushProvider: NEAppPushProvider {
     /// a stopped provider.
     private var running = false
 
+    /// Per-host serialisation of supervisor lifecycle commands
+    /// (start / stop / replace), read and written only on `stateQueue`.
+    /// Unstructured Tasks carry NO ordering between them: a stop
+    /// enqueued for a removed host could run BEFORE a start still
+    /// pending from the previous pass, and that late start would open
+    /// a stream no entry in `supervisors` owns any more — orphaned
+    /// notifications for a host that is gone. Chaining each host's
+    /// commands through one tail makes every command wait for the one
+    /// enqueued before it.
+    private var lifecycleTails: [String: Task<Void, Never>] = [:]
+
+    private func enqueueLifecycle(_ hostID: String, _ work: @escaping @Sendable () async -> Void) {
+        let previous = lifecycleTails[hostID]
+        lifecycleTails[hostID] = Task {
+            await previous?.value
+            await work()
+        }
+    }
+
     // MARK: - NEAppPushProvider lifecycle
 
     override func start(completionHandler: @escaping (Error?) -> Void) {
@@ -83,7 +102,16 @@ final class OpenCodePushProvider: NEAppPushProvider {
             let stopping = supervisors.values
             supervisors = [:]
             secretsByHost = [:]
+            let tails = Array(lifecycleTails.values)
+            lifecycleTails = [:]
             Task { @Sendable in
+                // A start still pending from an earlier pass must run
+                // BEFORE its supervisor is stopped below — otherwise the
+                // stop finishes first and the late start opens a stream
+                // nothing owns any more.
+                for tail in tails {
+                    await tail.value
+                }
                 for supervisor in stopping {
                     await supervisor.stop()
                 }
@@ -111,9 +139,12 @@ final class OpenCodePushProvider: NEAppPushProvider {
             // their start is already queued in startObservers' ordered task,
             // and handleTimerEvent() on a still-.stopped supervisor calls
             // start() from a SECOND task — racing the stop of the replaced
-            // stream and recreating the two-stream window.
+            // stream and recreating the two-stream window. The nudge itself
+            // rides the per-host tail: handleTimerEvent() STARTS a
+            // .stopped supervisor (the retry path), and that start must not
+            // run after a stop another pass enqueued for the same host.
             for (hostID, supervisor) in supervisors where !justStarted.contains(hostID) {
-                Task { await supervisor.handleTimerEvent() }
+                enqueueLifecycle(hostID) { await supervisor.handleTimerEvent() }
             }
         }
     }
@@ -141,7 +172,7 @@ final class OpenCodePushProvider: NEAppPushProvider {
             for (hostID, supervisor) in supervisors where !desired.contains(hostID) {
                 supervisors.removeValue(forKey: hostID)
                 secretsByHost.removeValue(forKey: hostID)
-                Task { await supervisor.stop() }
+                enqueueLifecycle(hostID) { await supervisor.stop() }
                 logger.info("stopped removed host observer")
             }
             // Reopen only when missing: a configuration change must not
@@ -215,7 +246,7 @@ final class OpenCodePushProvider: NEAppPushProvider {
         for (hostID, supervisor) in supervisors where !storedIDs.contains(hostID) {
             supervisors.removeValue(forKey: hostID)
             secretsByHost.removeValue(forKey: hostID)
-            Task { await supervisor.stop() }
+            enqueueLifecycle(hostID) { await supervisor.stop() }
             logger.info("stopped observer of removed host")
         }
         for host in hosts where configuration.hostIDs.contains(host.id.rawValue) {
@@ -243,7 +274,7 @@ final class OpenCodePushProvider: NEAppPushProvider {
                 // streaming with it until the system restarts the provider.
                 if let existing = supervisors.removeValue(forKey: host.id.rawValue) {
                     secretsByHost.removeValue(forKey: host.id.rawValue)
-                    Task { await existing.stop() }
+                    enqueueLifecycle(host.id.rawValue) { await existing.stop() }
                     logger.info("stopped observer of uncredentialed host")
                 } else {
                     logger.warning("host has no stored credential; observer not started")
@@ -270,13 +301,14 @@ final class OpenCodePushProvider: NEAppPushProvider {
             )
             supervisors[host.id.rawValue] = supervisor
             secretsByHost[host.id.rawValue] = secret
-            // ONE task, stop FIRST: two separate Tasks target different
-            // actors and carry no ordering, so the new stream could
-            // connect before the old was cancelled — two live streams
-            // for one host, both feeding schedule(…), breaking the
-            // one-stream-per-host invariant above. A fresh start has
-            // `replaced == nil` and is unchanged.
-            Task {
+            // ONE chained command, stop FIRST: unstructured Tasks carry no
+            // ordering between them (the new stream could otherwise connect
+            // before the old was cancelled — two live streams, both feeding
+            // schedule(…)), and the per-host tail additionally serialises
+            // this against a stop another pass enqueued for the same host
+            // (config removal, provider stop) so a late start can never
+            // outlive its supervisor's removal. Fresh start: `replaced == nil`.
+            enqueueLifecycle(host.id.rawValue) {
                 await replaced?.stop()
                 await supervisor.start()
             }
