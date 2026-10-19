@@ -72,6 +72,7 @@ Product design and implementation guide for a native iPhone/iPad client that pre
 | [Package verification](docs/verification.md)                                          | Passed contract/mock checks, reproducibility, and remaining real-host/device evidence                                               |
 | [Design gaps and release decisions](docs/design-review.md)                            | Outstanding onboarding, security, compatibility, performance, and support work                                                      |
 | [Free app decision and earlier monetisation analysis](docs/monetisation.md)           | Selected free model; earlier options retained as inactive reference                                                                 |
+| [Push-relay server plugin](plugins/opencode-push-relay/README.md)                     | OpenCode host plugin: relay registration, paired-device enrollment, durable notification delivery, and /push commands               |
 
 The commercial model is decided: completely free. Earlier monetisation analysis is reference material, not implementation scope. Future hosting costs still need an operating plan; no paid service has been authorised.
 

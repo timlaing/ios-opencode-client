@@ -33,6 +33,19 @@ swift test --package-path Packages/OpenCodeKit   # package tests (SSE/encoding/s
 - The app target carries `OpenCodeRemote/OpenCodeRemote.entitlements` (set as `CODE_SIGN_ENTITLEMENTS: OpenCodeRemote.entitlements`, resolved from `SRCROOT` — do not prefix it with `OpenCodeRemote/`) for the W17 I6 iCloud key-value sync: without `com.apple.developer.ubiquity-kvstore-identifier` a signed device build keeps `NSUbiquitousKeyValueStore` values local-only and never uploads, so S19 would report "Up to Date" while nothing actually syncs. Simulator builds never surface this — the entitlement is enforced by the signing profile, not the simulator runtime.
 - Bundle ID: app `uk.co.laingcorp.opencode-client.OpenCodeRemote`. Team `4C8FWEBR8F`.
 
+## Push-relay plugin commands (run from `plugins/opencode-push-relay/`)
+
+```sh
+npm install
+npm run typecheck   # tsc --noEmit (strict)
+npm test            # node --test tests/ — signing fixture, classifier, config, grant, store, engine, handlers, commands, relay
+```
+
+- `plugins/opencode-push-relay/` is an OpenCode **server plugin** (TypeScript executed by Node's native type stripping: `.ts`-extension relative imports, no parameter properties/enums/namespaces). `@opencode/plugin` is pinned to the installed server version — bump both together.
+- Root `opencode.jsonc` documents the plugin wiring with empty `relayUrl`/`app` options. OpenCode v2.0.30 does NOT load project `plugins[]` entries — in-repo loading happens inert (no options, no relay traffic) via the committed `.opencode/plugins/opencode-push-relay/` shim; see the plugin README §Loading. Do not commit non-empty values.
+- `plugins/opencode-push-relay/tests/fixtures/canonical.json` is the relay repo's golden signing vector — refresh it from `apns-push-relay/tests/fixtures/canonical.json` if the canonical message ever changes; the byte-pinned test must keep passing.
+- The suite uses a fake relay plus real loopback HTTP only. Passing it does not verify a live relay, real APNs, or a device — see `docs/verification.md`.
+
 ## Generated files are committed — never hand-edit
 
 `fixtures/generated/*`, `contracts/route-catalog.json`, `contracts/source-manifest.json`, and `docs/api-route-catalog.md` are produced by the two commands above and are byte-for-byte reproducible. Tests validate the committed files against the generators, so hand edits will fail. Change generators (`mock/fixtures.py`, `scripts/build_contracts.py`) and regenerate instead.

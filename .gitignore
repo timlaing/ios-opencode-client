@@ -3,6 +3,7 @@ __pycache__/
 .DS_Store
 .venv/
 .mock-local/
+node_modules/
 
 # Xcode / Swift
 Build/

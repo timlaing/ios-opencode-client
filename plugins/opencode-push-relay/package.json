@@ -1,0 +1,25 @@
+{
+  "name": "opencode-push-relay",
+  "version": "0.1.0",
+  "description": "OpenCode server plugin: registers with an apns-push-relay instance and delivers session/permission notifications to paired iOS clients.",
+  "type": "module",
+  "license": "MPL-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./rpc": "./src/rpc.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "test": "node --test tests/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.30"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "typescript": "^5.9.0"
+  }
+}
