@@ -69,6 +69,12 @@ final class IntegrationsLibraryTests: XCTestCase {
         /// The host normalises the location it answers for (a trailing
         /// slash): the SAME directory — accepted, never a mismatch.
         static let pluginListTrailingSlash = #"{"location":{"directory":"/srv/demo/"},"data":[{"id":"demo.audit","source":{"type":"package","target":"demo.audit","version":"1.0.0"},"features":{"server":true},"state":{"status":"active"}}]}"#
+
+        /// A NEW project's document (W02 writes `{}`) carries NO
+        /// plugins array, while a document ELSEWHERE declares the
+        /// target positive — Disable would be offered for a directive
+        /// it could never write. (config.get is a bare array.)
+        static let configSessionDocEmpty = #"[{"type":"document","path":"/srv/demo/opencode.jsonc","info":{}},{"type":"document","path":"/srv/shared/plugins.jsonc","info":{"plugins":["demo.audit"]}}]"#
     }
 
     /// Captured-var mutation is not allowed in `@Sendable` handlers.
@@ -273,6 +279,41 @@ final class IntegrationsLibraryTests: XCTestCase {
             "This location reports no editable configuration document."
         )
         XCTAssertFalse(recorder.requests.contains { $0.operationID == "fs.read" })
+    }
+
+    /// Disable requires the editable document to CARRY a plugins
+    /// array: W02 writes new projects' opencode.jsonc as `{}` and the
+    /// splice never CREATES the key, so an offered Disable could only
+    /// fail with "…or declares no plugins directives."
+    func testDisableIsNotOfferedWhenTheEditableDocumentHasNoPluginsArray() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configSessionDocEmpty)
+            case "fs.read": return Fixtures.file("{}")
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        // Declared positive by the SHARED document and running — but
+        // the session's own document is `{}`: nothing Disable could
+        // ever write.
+        let audit = library.rows.first { $0.id == "demo.audit" }
+        XCTAssertEqual(audit?.statusText, "Active")
+        XCTAssertEqual(
+            audit?.canDisable, false,
+            "the editable document has no plugins array to edit"
+        )
+        XCTAssertEqual(audit?.canEnable, false)
+
+        await library.planToggle(host: one, target: "demo.audit", enable: false)
+        XCTAssertEqual(
+            library.toggleError,
+            "The document already disables \"demo.audit\" or declares no plugins directives."
+        )
     }
 
     // MARK: - Plan

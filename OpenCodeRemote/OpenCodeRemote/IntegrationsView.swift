@@ -91,12 +91,14 @@ struct IntegrationsView: View {
                         Task { await library.planToggle(host: host, target: row.id, enable: true) }
                     }
                     .buttonStyle(.borderedProminent)
+                    .disabled(library.isToggling)
                     .accessibilityIdentifier("S16.plugins.enable.\(row.id)")
                 } else if row.canDisable {
                     Button("Disable") {
                         Task { await library.planToggle(host: host, target: row.id, enable: false) }
                     }
                     .buttonStyle(.bordered)
+                    .disabled(library.isToggling)
                     .accessibilityIdentifier("S16.plugins.disable.\(row.id)")
                 }
             }

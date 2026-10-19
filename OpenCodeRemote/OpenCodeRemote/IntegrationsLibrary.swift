@@ -41,6 +41,12 @@ final class IntegrationsLibrary {
         /// write — with none (no session directory, or no document
         /// under it) both toggles could only fail.
         var hasEditableDocument: Bool
+        /// Whether that document already carries the top-level
+        /// `plugins` array the splice EDITS — the directives are never
+        /// created where absent (PluginDirectives doctrine), so
+        /// without the array Disable could only fail (a new project's
+        /// `opencode.jsonc` is `{}` — W02).
+        var editableHasPluginsArray: Bool
         /// Built-in/SDK sources (host policy) may not be disabled.
         var isProtected: Bool
         var statusText: String
@@ -54,7 +60,8 @@ final class IntegrationsLibrary {
         /// that could only fail is never offered.
         var canEnable: Bool { target != nil && negativeIsEditable }
         var canDisable: Bool {
-            target != nil && hasEditableDocument && !isProtected && disabledInPaths.isEmpty
+            target != nil && hasEditableDocument && editableHasPluginsArray
+                && !isProtected && disabledInPaths.isEmpty
         }
     }
 
@@ -419,6 +426,23 @@ final class IntegrationsLibrary {
         editable: (directory: String, path: String, relativePath: String)?
     ) -> [PluginRow] {
         let docs = documents(in: entries)
+        // The editable document must CARRY the plugins array the
+        // splice edits: disable/enable never CREATE the key, so an
+        // offered toggle against a `{}` document (the W02
+        // new-project default) could only fail.
+        let editableHasPluginsArray: Bool = {
+            guard let editable else { return false }
+            for entry in entries {
+                guard case .document(let path, let info) = entry, path == editable.path else {
+                    continue
+                }
+                guard case .object(let fields) = info, case .array? = fields["plugins"] else {
+                    return false
+                }
+                return true
+            }
+            return false
+        }()
         var rows: [String: PluginRow] = [:]
         var order: [String] = []
 
@@ -428,7 +452,7 @@ final class IntegrationsLibrary {
             return PluginRow(
                 id: key, target: nil, runtime: nil,
                 declaredInPaths: [], disabledInPaths: [], negativeIsEditable: false,
-                hasEditableDocument: false,
+                hasEditableDocument: false, editableHasPluginsArray: false,
                 isProtected: false, statusText: "", detailText: "", featuresText: nil
             )
         }
@@ -484,6 +508,7 @@ final class IntegrationsLibrary {
         return order.compactMap { key in
             guard var row = rows[key] else { return nil }
             row.hasEditableDocument = editable != nil
+            row.editableHasPluginsArray = editableHasPluginsArray
             let running = row.runtime != nil
             let disabled = !row.disabledInPaths.isEmpty
             let declared = !row.declaredInPaths.isEmpty || disabled
