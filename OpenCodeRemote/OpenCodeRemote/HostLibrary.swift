@@ -71,6 +71,12 @@ final class HostLibrary {
             entries = try hostStore.hosts().map {
                 Entry(host: $0, connection: previous[$0.id] ?? .checking)
             }
+            // One transient read failure must not be permanent: the next
+            // successful read clears it, so pull-to-refresh recovers the
+            // list. (The INIT failure is different — hostStore is nil
+            // there, reload() returns before this, and that error stays
+            // until the app can open its storage again.)
+            storageError = nil
         } catch {
             storageError = "Hosts could not be read from device storage."
         }

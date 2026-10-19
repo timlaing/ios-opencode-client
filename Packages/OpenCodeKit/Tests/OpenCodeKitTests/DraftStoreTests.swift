@@ -3,7 +3,7 @@ import XCTest
 
 final class DraftStoreTests: XCTestCase {
     func testUpsertFetchUpdateDelete() throws {
-        let store = try DraftStore()
+        let store = try DraftStore(inMemory: ())
         let draft = Draft(id: "d1", hostUUID: "host-1", directory: "/srv/demo", text: "hello")
         try store.upsert(draft)
 
@@ -20,7 +20,7 @@ final class DraftStoreTests: XCTestCase {
     }
 
     func testScopeQueryReturnsNewestFirstAndIsolatesScopes() throws {
-        let store = try DraftStore()
+        let store = try DraftStore(inMemory: ())
         var older = Draft(id: "a", hostUUID: "h1", directory: "/d", text: "older")
         older.updatedAt = Date(timeIntervalSince1970: 1000)
         var newer = Draft(id: "b", hostUUID: "h1", directory: "/d", text: "newer")
@@ -34,7 +34,7 @@ final class DraftStoreTests: XCTestCase {
     }
 
     func testPruneRemovesOnlyExpiredDrafts() throws {
-        let store = try DraftStore()
+        let store = try DraftStore(inMemory: ())
         var stale = Draft(id: "stale", hostUUID: "h1", text: "old")
         stale.updatedAt = Date(timeIntervalSince1970: 0)
         let fresh = Draft(id: "fresh", hostUUID: "h1", text: "new")

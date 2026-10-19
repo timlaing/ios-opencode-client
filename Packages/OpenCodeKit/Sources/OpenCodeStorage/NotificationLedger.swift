@@ -38,7 +38,10 @@ public struct NotificationLedger: Sendable {
 
     public init(writingAt directoryURL: URL, now: @escaping @Sendable () -> Date = { Date() }) throws {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        db = try DatabaseQueue(path: directoryURL.appendingPathComponent("notifications.sqlite").path)
+        db = try DatabaseQueue(
+            path: directoryURL.appendingPathComponent("notifications.sqlite").path,
+            configuration: SharedDatabase.configuration
+        )
         self.now = now
         try Self.migrate(db)
     }

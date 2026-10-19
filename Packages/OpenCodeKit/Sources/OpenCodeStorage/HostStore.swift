@@ -19,7 +19,10 @@ public struct HostStore: Sendable {
 
     public init(writingAt directoryURL: URL) throws {
         try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
-        db = try DatabaseQueue(path: directoryURL.appendingPathComponent("hosts.sqlite").path)
+        db = try DatabaseQueue(
+            path: directoryURL.appendingPathComponent("hosts.sqlite").path,
+            configuration: SharedDatabase.configuration
+        )
         try Self.migrate(db)
     }
 
