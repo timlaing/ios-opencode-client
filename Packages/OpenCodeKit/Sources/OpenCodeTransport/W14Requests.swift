@@ -30,12 +30,21 @@ public enum W14Requests {
     }
 
     /// `GET /api/config` — ordered configuration entries, LOW to HIGH
-    /// precedence. A BARE array, not a `{data}` envelope.
-    public static func configList(credential: BasicCredential? = nil) -> APIRequest {
+    /// precedence. A BARE array, not a `{data}` envelope. `directory`
+    /// scopes the query (`location[directory]`, declared by this
+    /// route): without it the host answers its DEFAULT location,
+    /// whose documents may not live under the session directory —
+    /// leaving every session outside that location with no editable
+    /// document while the inventory is scoped to the session.
+    public static func configList(
+        directory: String? = nil,
+        credential: BasicCredential? = nil
+    ) -> APIRequest {
         APIRequest(
             operationID: "config.get",
             method: .get,
             path: "/api/config",
+            query: directory.map { [QueryPair(key: "location[directory]", value: $0)] } ?? [],
             credential: credential
         )
     }
@@ -43,6 +52,10 @@ public enum W14Requests {
     /// `POST /api/location/reload` → 204 — asks the host to re-read the
     /// location's configuration after a document edit. It is a
     /// location-level reload, NOT an unverified per-plugin endpoint.
+    /// The baseline declares NO location parameter and NO request body
+    /// for this route (api-contract.md Line 15 forbids sending one):
+    /// the host scopes the reload itself, and the post-write readback
+    /// — not this call — decides whether it reflected the session.
     public static func locationReload(credential: BasicCredential? = nil) -> APIRequest {
         APIRequest(
             operationID: "location.reload",

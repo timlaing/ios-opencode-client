@@ -151,10 +151,13 @@ final class IntegrationsLibrary {
     }
 
     /// One inventory read: the runtime plugins scoped to
-    /// `sessionDirectory` and the ordered configuration documents, in
-    /// parallel. THROWS when the host answers the plugin inventory
-    /// under a different location than the one requested — combining
-    /// runtime facts with directives from another scope would render
+    /// `sessionDirectory`, the ordered configuration documents scoped
+    /// to the SAME directory (the route declares `location[directory]`
+    /// — unscoped, the host answers its default location whose
+    /// documents may not live under the session's), in parallel.
+    /// THROWS when the host answers the plugin inventory for a
+    /// different location than the one requested — combining runtime
+    /// facts with directives from another scope would render
     /// half-truth rows and lie about what is running.
     private func fetchInventory(
         host: OpenCodeDomain.Host,
@@ -164,13 +167,32 @@ final class IntegrationsLibrary {
         async let runtime = service.plugins(
             at: host.address, credential: credential, directory: sessionDirectory
         )
-        async let documents = service.configDocuments(at: host.address, credential: credential)
+        async let documents = service.configDocuments(
+            at: host.address, credential: credential, directory: sessionDirectory
+        )
         let (answeredDirectory, plugins) = try await runtime
         let entries = try await documents
-        if let requested = sessionDirectory, answeredDirectory != requested {
+        if let requested = sessionDirectory, !Self.sameLocation(answeredDirectory, requested) {
             throw InventoryError.locationMismatch(requested: requested, answered: answeredDirectory)
         }
         return (plugins, entries)
+    }
+
+    /// The host answered FOR the requested directory: equal modulo
+    /// trailing slashes (a host may normalise "/srv/demo/" to
+    /// "/srv/demo"). Anything else — another directory, an ENCLOSING
+    /// or a NESTED scope — is refused fail-closed: an enclosing scope
+    /// can show a sibling's plugin as running, a nested one can hide
+    /// plugins the session declares, so only the same location's
+    /// runtime facts may be combined with its directives
+    /// (docs/api-contract.md W14).
+    private static func sameLocation(_ answered: String, _ requested: String) -> Bool {
+        func normalised(_ path: String) -> String {
+            var path = path
+            while path.count > 1 && path.hasSuffix("/") { path.removeLast() }
+            return path
+        }
+        return normalised(answered) == normalised(requested)
     }
 
     /// Plans a toggle against the CURRENT document bytes. The plan is
@@ -257,11 +279,23 @@ final class IntegrationsLibrary {
                 notice = "The document changed on the host — review the current plugins directives and retry."
                 return
             }
-            try await service.writeFile(
-                at: host.address, credential: credential,
-                directory: plan.directory, path: plan.path,
-                bytes: Data(plan.resultingText.utf8)
-            )
+            do {
+                try await service.writeFile(
+                    at: host.address, credential: credential,
+                    directory: plan.directory, path: plan.path,
+                    bytes: Data(plan.resultingText.utf8)
+                )
+            } catch TransportError.connectionFailed {
+                // The connection failed DURING the save: the bytes may
+                // already be on the host (a timeout or a drop after the
+                // request body). The outcome is UNKNOWN — never claim
+                // "not saved" (api-contract.md W14) — and the plan is
+                // dropped either way: it may already describe the
+                // change, and re-planning must re-read the document.
+                pendingPlan = nil
+                toggleError = "The connection dropped during the save — pull to refresh to see whether the change landed."
+                return
+            }
             // The bytes are on the host now: the plan is spent, and
             // nothing after this point may offer it again.
             pendingPlan = nil
@@ -536,6 +570,10 @@ final class IntegrationsLibrary {
         }
     }
 
+    /// Only the COMPARE-READ phase of applyToggle reaches this: the
+    /// write phase catches its own connection failure (unknown outcome
+    /// ≠ "not saved"), so every "not saved" here is emitted before any
+    /// write was attempted and is therefore true.
     private static func toggleErrorMessage(for error: Error) -> String {
         switch error {
         case TransportError.http(let status, _):

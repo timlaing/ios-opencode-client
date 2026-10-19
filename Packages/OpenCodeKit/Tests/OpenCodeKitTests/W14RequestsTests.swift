@@ -31,6 +31,19 @@ final class W14RequestsTests: XCTestCase {
         XCTAssertTrue(W14Requests.pluginList().query.isEmpty)
     }
 
+    /// `config.get` DECLARES `location` (the W14 contract requires the
+    /// session's directory); `location.reload` declares NO location
+    /// parameter and no body in this baseline — the builder must never
+    /// take one (api-contract.md Line 15 forbids an undeclared query).
+    func testConfigScopesAndReloadCarriesNoLocation() {
+        XCTAssertEqual(
+            W14Requests.configList(directory: "/srv/demo").query,
+            [QueryPair(key: "location[directory]", value: "/srv/demo")]
+        )
+        XCTAssertTrue(W14Requests.configList().query.isEmpty)
+        XCTAssertTrue(W14Requests.locationReload().query.isEmpty)
+    }
+
     private func decodePlugin(_ json: String) throws -> PluginInfo {
         try JSONDecoder().decode(PluginInfo.self, from: Data(json.utf8))
     }

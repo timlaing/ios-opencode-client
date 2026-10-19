@@ -32,18 +32,22 @@ public struct IntegrationsService: Sendable {
     }
 
     /// `GET /api/config` — ordered entries (bare array, LOW → HIGH
-    /// precedence).
+    /// precedence). `directory` is the session's location: the route
+    /// declares `location[directory]`, and scoping it keeps document
+    /// discovery on the SAME location as the inventory.
     public func configDocuments(
         at host: URL,
-        credential: BasicCredential?
+        credential: BasicCredential?,
+        directory: String? = nil
     ) async throws -> [ConfigEntry] {
         try await makeTransport(host)
-            .perform(W14Requests.configList(credential: credential))
+            .perform(W14Requests.configList(directory: directory, credential: credential))
             .decodedJSON([ConfigEntry].self)
     }
 
     /// `POST /api/location/reload` → 204 — the host re-reads the
-    /// location's configuration after a document edit.
+    /// location's configuration after a document edit. No location
+    /// parameter exists in this baseline (api-contract.md Line 15).
     public func reload(at host: URL, credential: BasicCredential?) async throws {
         _ = try await makeTransport(host)
             .perform(W14Requests.locationReload(credential: credential))

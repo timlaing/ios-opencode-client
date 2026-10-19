@@ -65,6 +65,10 @@ final class IntegrationsLibraryTests: XCTestCase {
         /// overwrites the first row and the inspector hides a
         /// host-provided plugin.
         static let pluginListTwoBuiltins = #"{"location":{"directory":"/srv/demo"},"data":[{"source":{"type":"builtin"},"features":{"server":true},"state":{"status":"active"}},{"source":{"type":"builtin"},"features":{"tui":true},"state":{"status":"active"}}]}"#
+
+        /// The host normalises the location it answers for (a trailing
+        /// slash): the SAME directory — accepted, never a mismatch.
+        static let pluginListTrailingSlash = #"{"location":{"directory":"/srv/demo/"},"data":[{"id":"demo.audit","source":{"type":"package","target":"demo.audit","version":"1.0.0"},"features":{"server":true},"state":{"status":"active"}}]}"#
     }
 
     /// Captured-var mutation is not allowed in `@Sendable` handlers.
@@ -200,6 +204,14 @@ final class IntegrationsLibraryTests: XCTestCase {
         let pluginRequest = recorder.requests.first { $0.operationID == "plugin.list" }
         XCTAssertEqual(
             pluginRequest?.query.first { $0.key == "location[directory]" }?.value, "/srv/demo"
+        )
+        // …AND SO ARE THE CONFIG DOCUMENTS: unscoped, the host answers
+        // its default location's documents, which may not live under
+        // the session's directory (the inventory would then be paired
+        // with another scope's directives).
+        let configRequest = recorder.requests.first { $0.operationID == "config.get" }
+        XCTAssertEqual(
+            configRequest?.query.first { $0.key == "location[directory]" }?.value, "/srv/demo"
         )
 
         // Declared positive + running: active with its declared scope.
@@ -731,6 +743,66 @@ final class IntegrationsLibraryTests: XCTestCase {
         XCTAssertEqual(
             synthetic.last?.runtime?.features.tui, true,
             "each row carries ITS plugin's runtime facts"
+        )
+    }
+
+    // MARK: - Location equality (api-contract W14)
+
+    /// A host that answers the SAME directory written with a trailing
+    /// slash is normalised, not refused — only genuinely different
+    /// (or enclosing/nested) locations show the scope mismatch.
+    func testANormalisedTrailingSlashAnswerIsTheSameLocation() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginListTrailingSlash)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertNil(library.loadError, "normalisation must not read as a scope mismatch")
+        XCTAssertEqual(library.rows.first { $0.id == "demo.audit" }?.statusText, "Active")
+    }
+
+    // MARK: - Unknown write outcome (api-contract W14)
+
+    /// A connection failure DURING the write has an UNKNOWN outcome —
+    /// the bytes may already be on the host. Claiming "not saved"
+    /// would send the user re-planning against a document that may
+    /// already carry the change, so the app reports the unknown and
+    /// drops the plan (it may already describe the change).
+    func testAConnectionFailureDuringTheWriteReportsUnknownOutcome() async throws {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "fs.read": return Fixtures.file(Fixtures.documentBytes)
+            case "experimental.fs.write":
+                throw TransportError.connectionFailed("dropped mid-save")
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        await library.planToggle(host: one, target: "demo.audit", enable: true)
+        let plan = try XCTUnwrap(library.pendingPlan)
+
+        await library.applyToggle(host: one, plan: plan)
+
+        XCTAssertEqual(
+            library.toggleError,
+            "The connection dropped during the save — pull to refresh to see whether the change landed."
+        )
+        XCTAssertNil(
+            library.pendingPlan,
+            "the plan may already describe the change — the next attempt must re-read and re-plan"
+        )
+        XCTAssertNil(
+            library.notice,
+            "nothing is known to be saved when the write outcome is unknown"
         )
     }
 }
