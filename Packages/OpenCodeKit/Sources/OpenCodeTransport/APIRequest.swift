@@ -26,6 +26,16 @@ public struct BasicCredential: Sendable, Equatable {
     }
 }
 
+// The doc rule above ("never log or attach to diagnostics") must hold
+// without depending on every caller: the synthesised description,
+// debugDescription and mirror would all print `secret` in plain text —
+// through `"\(request)"` too, since APIRequest embeds the credential.
+extension BasicCredential: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String { "BasicCredential(<redacted>)" }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror { Mirror(self, children: [], displayStyle: .struct) }
+}
+
 /// A typed API request. `path` and `query` carry raw values; encoding is applied
 /// when the URL is built (docs/api-contract.md encoding rules).
 public struct APIRequest: Sendable, Equatable {

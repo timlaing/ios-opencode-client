@@ -268,6 +268,25 @@ final class URLSessionTransportTests: XCTestCase {
         )
     }
 
+    func testCredentialDescriptionsNeverPrintTheSecret() {
+        // The type-level rule (APIRequest.swift): "Never log … or attach
+        // to diagnostics." Every stringification path — interpolation,
+        // String(reflecting:), dump, and any enclosing APIRequest —
+        // must redact without caller discipline.
+        let credential = BasicCredential(secret: "hunter2-secret")
+        XCTAssertFalse("\(credential)".contains("hunter2-secret"))
+        XCTAssertFalse(String(reflecting: credential).contains("hunter2-secret"))
+        var dumped = ""
+        dump(credential, to: &dumped)
+        XCTAssertFalse(dumped.contains("hunter2-secret"))
+        XCTAssertTrue(Mirror(reflecting: credential).children.isEmpty, "the mirror carries no fields to leak")
+
+        let request = APIRequest(
+            operationID: "test.get", method: .get, path: "/x", credential: credential
+        )
+        XCTAssertFalse("\(request)".contains("hunter2-secret"), "APIRequest embeds the credential")
+    }
+
     func testConnectionFailureMapsToConnectionFailed() async throws {
         StubURLProtocol.handler = { _ in throw URLError(.cannotConnectToHost) }
         do {
