@@ -85,6 +85,11 @@ struct ConnectHostView: View {
                         .disabled(phase == .working)
                 }
             }
+            // Cancel is disabled above while redeem()/health is in flight;
+            // the SWIPE must not be a back door into the same half-state —
+            // a pairing code spent with no host persisted, then re-entered
+            // blindly because the sheet "closed successfully".
+            .interactiveDismissDisabled(phase == .working)
             .fullScreenCover(isPresented: $showScanner, onDismiss: { scannerMessage = nil }) {
                 scannerSheet
             }

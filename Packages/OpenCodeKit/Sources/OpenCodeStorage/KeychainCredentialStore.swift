@@ -48,15 +48,22 @@ public struct KeychainCredentialStore: Sendable {
             kSecAttrService as String: service,
             kSecAttrAccount as String: hostID,
         ]
+        // kSecAttrAccessible is deliberately NOT in the UPDATE attributes:
+        // save() writes the secret, never the class. The class is policy —
+        // set at creation and upgraded by enableBackgroundAccess — and an
+        // update forcing the default would silently DEMOTE an item the
+        // upgrade raised to afterFirstUnlock (re-pair rewrites the secret
+        // over the same item), costing the background extension credential
+        // access until the next reconcile re-upgrades it.
         let attributes: [String: Any] = [
             kSecValueData as String: Data(secret.utf8),
-            kSecAttrAccessible as String: accessibility.attribute,
         ]
 
         let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if updateStatus == errSecItemNotFound {
             var add = query
             for (key, value) in attributes { add[key] = value }
+            add[kSecAttrAccessible as String] = accessibility.attribute
             let addStatus = SecItemAdd(add as CFDictionary, nil)
             guard addStatus == errSecSuccess else { throw StoreError.unexpectedStatus(addStatus) }
         } else {

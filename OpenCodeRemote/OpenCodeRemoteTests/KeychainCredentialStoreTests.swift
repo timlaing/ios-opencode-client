@@ -83,6 +83,24 @@ final class KeychainCredentialStoreTests: XCTestCase {
         XCTAssertEqual(try store.secret(for: hostID), "token-both")
     }
 
+    func testSaveUpdateKeepsTheUpgradedAccessibilityClass() throws {
+        try store.save(secret: "token-1", for: hostID)
+        try store.enableBackgroundAccess(for: hostID)
+
+        // A re-pair rewrites the secret over the SAME item (HostID survives
+        // re-pairing): the update path must not demote the class back to
+        // foreground-only — the background extension would then fail
+        // credential reads while the device is locked.
+        try store.save(secret: "token-2", for: hostID)
+
+        XCTAssertEqual(
+            try storedAccessibility(),
+            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
+            "save's update path must never touch kSecAttrAccessible"
+        )
+        XCTAssertEqual(try store.secret(for: hostID), "token-2", "the new secret still lands")
+    }
+
     private func storedAccessibility() throws -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

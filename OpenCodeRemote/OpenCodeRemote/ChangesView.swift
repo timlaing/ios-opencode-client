@@ -274,16 +274,19 @@ private struct PatchDetailView: View {
         var label: String { self == .unified ? "Unified" : "Side by side" }
     }
 
-    private let lines: [ChangesLibrary.PatchLine]
-    private let side: ChangesLibrary.SideBySide
-    private let changeStarts: [Int]
+    // Parsed on FIRST APPEAR, never in init: `NavigationLink` builds its
+    // destination closure when the row is RENDERED, so eager init parsing
+    // would run parsePatch + sideBySide + changeStarts for EVERY listed
+    // file on EVERY re-render of the file list (loading, errors, selector
+    // changes) — main-actor string work proportional to the diff size,
+    // paid for a detail view that may never be opened.
+    @State private var lines: [ChangesLibrary.PatchLine] = []
+    @State private var side = ChangesLibrary.SideBySide(rows: [], rowOfLine: [])
+    @State private var changeStarts: [Int] = []
+    @State private var didParse = false
 
     init(file: FileDiff.Info) {
         self.file = file
-        let parsed = ChangesLibrary.parsePatch(file.patch)
-        self.lines = parsed
-        self.side = ChangesLibrary.sideBySide(parsed)
-        self.changeStarts = ChangesLibrary.changeStarts(in: parsed)
     }
 
     @State private var style: Style = .unified
@@ -377,6 +380,16 @@ private struct PatchDetailView: View {
                 // repeat tap on the same target (one hit, one change, or
                 // a row the user scrolled away from) must still scroll.
                 scrollTarget = nil
+            }
+            .onAppear {
+                // Once per push: re-appearance after a deeper pop must not
+                // re-parse a patch already held in state.
+                guard !didParse else { return }
+                didParse = true
+                let parsed = ChangesLibrary.parsePatch(file.patch)
+                lines = parsed
+                side = ChangesLibrary.sideBySide(parsed)
+                changeStarts = ChangesLibrary.changeStarts(in: parsed)
             }
         }
         .navigationTitle((file.file as NSString).lastPathComponent)
