@@ -300,7 +300,12 @@ final class SessionsLibrary {
             )
             updateLocal(sessionID: session.id, in: host.id) { $0.time?.viewed = observed }
         } catch {
-            errorsByHost[host.id] = Self.message(for: error)
+            // A failed session.view is NOT a listing failure: the listing
+            // had already succeeded. Writing it into errorsByHost would
+            // paint "could not list sessions" on the Sessions tab every
+            // time a conversation opened against a flaking host, and the
+            // false error would persist until the next successful load.
+            // Unread state is display-only — the badge stays as it was.
         }
     }
 

@@ -17,9 +17,15 @@ final class AttachmentServiceTests: XCTestCase {
     private struct FakeTransport: OpenCodeTransport {
         let recorder: Recorder
         var responses: [String: Result<APIResponse, TransportError>] = [:]
+        /// Request-driven response: builds the reply from what was actually
+        /// SENT, so an assertion can compare the two. A canned fixture can
+        /// drift from the request (it did: `UUID-1` vs a fresh UUID) and then
+        /// proves only its own constant.
+        var respond: (@Sendable (APIRequest) -> APIResponse)?
 
         func perform(_ request: APIRequest) async throws -> APIResponse {
             recorder.record(request)
+            if let respond { return respond(request) }
             guard let result = responses[request.operationID] else {
                 throw TransportError.connectionFailed("unstubbed \(request.operationID)")
             }
@@ -38,10 +44,13 @@ final class AttachmentServiceTests: XCTestCase {
     private let credential = BasicCredential(secret: "token")
 
     private func stager(
-        _ responses: [String: Result<APIResponse, TransportError>],
-        recorder: Recorder = Recorder()
+        _ responses: [String: Result<APIResponse, TransportError>] = [:],
+        recorder: Recorder = Recorder(),
+        respond: (@Sendable (APIRequest) -> APIResponse)? = nil
     ) -> AttachmentStager {
-        AttachmentStager(makeTransport: { _ in FakeTransport(recorder: recorder, responses: responses) })
+        AttachmentStager(makeTransport: { _ in
+            FakeTransport(recorder: recorder, responses: responses, respond: respond)
+        })
     }
 
     private func json(_ body: String, status: Int = 200) -> APIResponse {
@@ -133,11 +142,15 @@ final class AttachmentServiceTests: XCTestCase {
 
     func testStageWritesToUniqueUploadDirectoryAndReturnsEscapedURI() async throws {
         let recorder = Recorder()
-        let service = stager([
-            "experimental.fs.write": .success(json(
-                #"{"location":{"directory":"/tmp/opencode-mock"},"data":{"path":"/tmp/opencode-mock/uploads/UUID-1/report final.pdf"}}"#
-            )),
-        ], recorder: recorder)
+        // The host echoes the path it was REQUESTED to write (fs.write
+        // returns the resolved path): the URI assertion then compares the
+        // result with what was actually sent — a canned fixture path would
+        // only ever prove the fixture's own constant.
+        let service = stager(recorder: recorder) { request in
+            let path = request.query.first(where: { $0.key == "path" })?.value ?? ""
+            let body = #"{"location":{"directory":"/tmp/opencode-mock"},"data":{"path":"\#(path)"}}"#
+            return APIResponse(statusCode: 200, payload: .json(Data(body.utf8)))
+        }
 
         let uri = try await service.stage(
             at: host,
@@ -146,8 +159,6 @@ final class AttachmentServiceTests: XCTestCase {
             filename: "report final.pdf",
             bytes: Data([0x25, 0x50, 0x44, 0x46])
         )
-        XCTAssertEqual(uri, "file:///tmp/opencode-mock/uploads/UUID-1/report%20final.pdf",
-                       "the host's resolved path is escaped, never an iOS sandbox URL")
 
         let request = try XCTUnwrap(recorder.requests.first)
         XCTAssertEqual(request.operationID, "experimental.fs.write")
@@ -163,17 +174,20 @@ final class AttachmentServiceTests: XCTestCase {
         let components = path.components(separatedBy: "/")
         XCTAssertNotNil(UUID(uuidString: components[components.count - 2]),
                         "the upload directory is a fresh UUID")
+        XCTAssertTrue(uri.hasSuffix("/report%20final.pdf"), "the space is escaped in the URI")
+        XCTAssertEqual(uri.removingPercentEncoding, "file://\(path)",
+                       "the URI identifies the path the host was asked to write — escaped, never an iOS sandbox URL")
     }
 
     func testStageReplacesSlashesInTheFilename() async throws {
         let recorder = Recorder()
-        let service = stager([
-            "experimental.fs.write": .success(json(
-                #"{"location":{"directory":"/tmp/opencode-mock"},"data":{"path":"/tmp/opencode-mock/uploads/UUID-1/a_b.png"}}"#
-            )),
-        ], recorder: recorder)
+        let service = stager(recorder: recorder) { request in
+            let path = request.query.first(where: { $0.key == "path" })?.value ?? ""
+            let body = #"{"location":{"directory":"/tmp/opencode-mock"},"data":{"path":"\#(path)"}}"#
+            return APIResponse(statusCode: 200, payload: .json(Data(body.utf8)))
+        }
 
-        _ = try await service.stage(
+        let uri = try await service.stage(
             at: host, credential: credential,
             tmpDirectory: "/tmp/opencode-mock",
             filename: "../a/b.png",
@@ -182,6 +196,8 @@ final class AttachmentServiceTests: XCTestCase {
         let path = try XCTUnwrap(recorder.requests.first?.query.first(where: { $0.key == "path" })?.value)
         XCTAssertFalse(path.contains("../"), "a filename cannot climb out of the upload directory")
         XCTAssertTrue(path.hasSuffix("/.._a_b.png"), "each slash becomes an underscore in place")
+        XCTAssertEqual(uri.removingPercentEncoding, "file://\(path)",
+                       "the URI identifies the sanitized path the host was asked to write")
     }
 
     func testStageFailurePropagates() async {

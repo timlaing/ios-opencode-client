@@ -67,7 +67,11 @@ enum PhotoPreparation {
         if longest > 2048 {
             let ratio = 2048.0 / Double(longest)
             let target = CGSize(width: CGFloat(cgImage.width) * ratio, height: CGFloat(cgImage.height) * ratio)
-            let renderer = UIGraphicsImageRenderer(size: target)
+            // Pin scale 1 like the orientation pass above: the default
+            // format renders at the SCREEN scale, so a 2048-point target
+            // would come back as ~6144 pixels on a 3x device — far over
+            // the contract this branch exists to enforce.
+            let renderer = UIGraphicsImageRenderer(size: target, format: format)
             let rendered = renderer.image { _ in
                 UIImage(cgImage: cgImage).draw(in: CGRect(origin: .zero, size: target))
             }
