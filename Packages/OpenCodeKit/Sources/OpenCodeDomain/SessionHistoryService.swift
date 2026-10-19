@@ -1,10 +1,11 @@
 import Foundation
 import OpenCodeTransport
 
-/// W04 operations for a paired host (docs/api-contract.md W04,
-/// docs/navigation-screens.md S08/S14): the paged transcript, single
-/// messages, and the active model context (messages since the last
-/// compaction — distinct from the full transcript).
+/// W04 and W12 session operations for a paired host
+/// (docs/api-contract.md W04/W12–W13, docs/navigation-screens.md
+/// S08/S14/S15): the paged transcript, single messages, the active model
+/// context (messages since the last compaction — distinct from the full
+/// transcript), and per-turn change diffs.
 ///
 /// History paging NEVER combines `cursor` and `order` — the contract
 /// forbids it, so a cursor call drops `order` (the server keeps the
@@ -67,6 +68,32 @@ public struct SessionHistoryService: Sendable {
         try await makeTransport(host)
             .perform(W04Requests.context(sessionID: sessionID, credential: credential))
             .decodedJSON(ContextResponse.self)
+            .data
+    }
+
+    /// W12 `session.diff` — the per-file changes a TURN (or turn range)
+    /// produced. Omit `from` for the newest user turn, `to` for one turn
+    /// alone, `context` for full-file patches. A turn runs from its first
+    /// prompt after idle to the next idle; steering prompts belong to the
+    /// same turn, and a range spanning a location change is rejected by
+    /// the host (docs/api-contract.md W12/W13).
+    public func diff(
+        at host: URL,
+        credential: BasicCredential?,
+        sessionID: String,
+        from: String? = nil,
+        to: String? = nil,
+        context: String? = nil
+    ) async throws -> [FileDiff.Info] {
+        try await makeTransport(host)
+            .perform(W12Requests.sessionDiff(
+                sessionID: sessionID,
+                from: from,
+                to: to,
+                context: context,
+                credential: credential
+            ))
+            .decodedJSON(SessionDiffResponse.self)
             .data
     }
 }

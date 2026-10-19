@@ -94,6 +94,30 @@ final class SessionHistoryServiceTests: XCTestCase {
         XCTAssertEqual(recorder.requests.map(\.operationID), ["session.message.get", "session.context"])
     }
 
+    func testDiffRequestsTurnRangeAndDecodesFiles() async throws {
+        let recorder = Recorder()
+        let body = #"{"data":[{"file":"src/main.py","patch":"@@ -1 +1 @@\n-print(\"Hello\")\n+print(\"Hello, world!\")\n","additions":1,"deletions":1,"status":"modified"}]}"#
+        let files = try await service([
+            "session.diff": .success(json(body)),
+        ], recorder: recorder).diff(
+            at: host, credential: credential, sessionID: "ses_a",
+            from: "msg_a", context: "3"
+        )
+
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["session.diff"])
+        XCTAssertEqual(recorder.requests[0].path, "/api/session/ses_a/diff")
+        let query = Dictionary(
+            uniqueKeysWithValues: recorder.requests[0].query.map { ($0.key, $0.value) }
+        )
+        XCTAssertEqual(
+            query, ["from": "msg_a", "context": "3"],
+            "to stays omitted so the range ends with the from turn alone"
+        )
+        XCTAssertEqual(files.first?.file, "src/main.py")
+        XCTAssertEqual(files.first?.status, .modified)
+        XCTAssertEqual(files.first?.additions, 1)
+    }
+
     func testErrorsPropagateUnchanged() async throws {
         let service = service([
             "session.message.list": .failure(.http(status: 404, envelope: nil)),

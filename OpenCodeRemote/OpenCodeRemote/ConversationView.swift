@@ -45,6 +45,9 @@ struct ConversationView: View {
     /// W11 Files inspector (S13): read-only tree + preview over the
     /// session's workspace; opens from the trailing toolbar button.
     @State private var showingFiles = false
+    /// W12 Changes inspector (S15): session-turn/workspace diffs over
+    /// the session's location; opens from the trailing toolbar button.
+    @State private var showingChanges = false
     /// Which queued confirmation is on screen. The library's queue is
     /// the source of truth; the sequencer gives each question its own
     /// presentation cycle (SwiftUI ignores presented-data swaps on a
@@ -94,6 +97,14 @@ struct ConversationView: View {
                     Label("Files", systemImage: "folder")
                 }
                 .accessibilityIdentifier("S13.files")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showingChanges = true
+                } label: {
+                    Label("Changes", systemImage: "arrow.left.arrow.right")
+                }
+                .accessibilityIdentifier("S15.changes")
             }
         }
         .sheet(isPresented: $showingSelection) {
@@ -174,6 +185,26 @@ struct ConversationView: View {
                     systemImage: "questionmark.folder",
                     description: Text("This session has no workspace directory, so its files cannot be browsed.")
                 )
+            }
+        }
+        .sheet(isPresented: $showingChanges) {
+            // State and environment are injected HERE — `.environment`
+            // on the presenter does not reach into the sheet. The
+            // session-turn scope needs no directory; the workspace scope
+            // degrades honestly when the session has none.
+            NavigationStack {
+                ChangesView(
+                    host: host,
+                    credential: library.credential(for: host.id),
+                    sessionID: session.id,
+                    directory: session.location?.directory,
+                    conversation: conversation
+                )
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { showingChanges = false }
+                    }
+                }
             }
         }
         .fullScreenCover(isPresented: $showingCamera) {
