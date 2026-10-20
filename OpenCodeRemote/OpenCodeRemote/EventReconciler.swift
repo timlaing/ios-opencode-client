@@ -52,11 +52,15 @@ final class EventReconciler {
         var sessionID: String
         var messageID: String
         /// Which text/reasoning PART of the message this patch
-        /// extends (contract: "keyed by message/ordinal"). One
-        /// message's content can interleave text and tool parts — a
-        /// second text part must never append to, replace, or settle
-        /// the first (review W16 r2). Never guessed: an event without
-        /// it falls back to the authoritative list read.
+        /// extends — the PER-KIND part index (review W16 r11): the
+        /// host numbers text among text and reasoning among reasoning
+        /// (one `fragments` counter per kind per message, sequential
+        /// within a kind; b44eea9e publish-llm-event.ts), so a
+        /// second text part after a tool call is ordinal 1, never 2.
+        /// One message's content can interleave text and tool parts —
+        /// a second text part must never append to, replace, or
+        /// settle the first (review W16 r2). Never guessed: an event
+        /// without it falls back to the authoritative list read.
         var ordinal: Int
         var kind: Kind
         var change: Change

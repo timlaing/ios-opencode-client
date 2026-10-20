@@ -994,10 +994,16 @@ struct ConversationView: View {
     }
 
     /// A row's content items with text and reasoning parts numbered
-    /// independently 0,1,2… — the same ordinal space the stream's
-    /// events carry. A message's content can interleave text and
-    /// tools, so each part renders in its own position, never
-    /// combined (review W16 r2).
+    /// independently 0,1,2… — and that is EXACTLY the host's ordinal
+    /// space (review W16 r11): the pinned source numbers ordinals
+    /// PER KIND — one `fragments` counter per kind per assistant
+    /// message, parts sequential within a kind
+    /// (b44eea9e `packages/core/src/session/runner/publish-llm-event.ts`,
+    /// `let nextOrdinal = 0` inside each `fragments` instance) — so
+    /// a text part's ordinal IS its index among the row's text
+    /// items, and tool parts never shift it. A message's content can
+    /// interleave text and tools, so each part renders in its own
+    /// position, never combined (review W16 r2).
     private struct PositionedItem {
         var item: SessionMessage.ContentItem
         var textIndex: Int?

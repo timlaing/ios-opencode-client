@@ -164,12 +164,15 @@ final class EventLibraryTests: XCTestCase {
             [],
         ])
         library.watch(host: one)
-        // Both observed ends raise the ladder: 1, then 2.
-        await waitUntil { log.sleeps.count == 2 }
-
-        XCTAssertEqual(log.sleeps, [1, 2], "clean closes are transient failures on the documented ladder")
-        XCTAssertEqual(log.events.map(\.type), ["server.connected"], "each (re)connect starts from the opening frame")
+        // Both observed ends raise the ladder: 1, then 2. The loop
+        // keeps reconnecting after the scripts end, so assert the
+        // PREFIX after stopping — an exact-count poll can observe a
+        // third recorded sleep on a loaded sim (review W16 r11).
+        await waitUntil { log.sleeps.count >= 2 }
         library.stop()
+
+        XCTAssertEqual(Array(log.sleeps.prefix(2)), [1, 2], "clean closes are transient failures on the documented ladder")
+        XCTAssertEqual(log.events.map(\.type), ["server.connected"], "each (re)connect starts from the opening frame")
     }
 
     func testDeliveredFramesResetTheLadder() async {
@@ -180,10 +183,10 @@ final class EventLibraryTests: XCTestCase {
             [],
         ])
         library.watch(host: one)
-        await waitUntil { log.sleeps.count == 2 }
-
-        XCTAssertEqual(log.sleeps, [1, 1], "a delivered frame proves the connection: the ladder restarts at 1")
+        await waitUntil { log.sleeps.count >= 2 }
         library.stop()
+
+        XCTAssertEqual(Array(log.sleeps.prefix(2)), [1, 1], "a delivered frame proves the connection: the ladder restarts at 1")
     }
 
     func testJitteredDelayFollowsTheDocumentedLadder() {
