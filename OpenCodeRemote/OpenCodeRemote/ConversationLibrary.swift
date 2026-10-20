@@ -84,6 +84,83 @@ final class ConversationLibrary {
     private(set) var isCompacting = false
     private(set) var compactionError: String?
 
+    // MARK: - W16 live streaming overlay + execution status
+
+    struct StreamingMessage: Equatable {
+        var text = ""
+        var reasoning = ""
+    }
+
+    /// Incremental assistant state keyed by assistantMessageID, fed by
+    /// text/reasoning events while the host streams (docs/
+    /// api-contract.md W16). The message LIST stays authoritative: an
+    /// overlay entry is pruned the moment the transcript contains its
+    /// row, and a full refresh (server.connected) clears everything —
+    /// the volatile stream has no replay, so anything accumulated on a
+    /// dead connection is untrusted.
+    private(set) var streaming: [String: StreamingMessage] = [:]
+
+    /// Canonical working state from execution/status events. A
+    /// TRANSPORT disconnect never touches it — a dropped stream is not
+    /// completion (docs/api-contract.md W16).
+    enum ExecutionStatus: Equatable {
+        case idle
+        case busy
+        case retry(attempt: Int?, message: String?)
+    }
+
+    private(set) var executionStatus: ExecutionStatus = .idle
+
+    /// Applies one incremental text/reasoning patch. `ended` carries
+    /// the full value and REPLACES the accumulated text — the deltas
+    /// before it are only the low-latency path to the same truth.
+    func applyStream(_ patch: EventReconciler.StreamPatch) {
+        guard patch.sessionID == loadedSessionID else { return }
+        var entry = streaming[patch.messageID] ?? StreamingMessage()
+        switch (patch.kind, patch.change) {
+        case (_, .started):
+            break
+        case (.text, .delta(let delta)):
+            entry.text += delta
+        case (.text, .ended(let full)):
+            entry.text = full
+        case (.reasoning, .delta(let delta)):
+            entry.reasoning += delta
+        case (.reasoning, .ended(let full)):
+            entry.reasoning = full
+        }
+        streaming[patch.messageID] = entry
+    }
+
+    func markExecutionStarted(sessionID: String) {
+        guard sessionID == loadedSessionID else { return }
+        executionStatus = .busy
+    }
+
+    /// An execution terminal event is authoritative: the turn is over,
+    /// so the working/retry indicator and the overlay both end here —
+    /// regardless of what the volatile stream did afterwards.
+    func markExecutionFinished() {
+        executionStatus = .idle
+        streaming.removeAll()
+    }
+
+    func clearAllStreaming() {
+        streaming.removeAll()
+    }
+
+    func applyStatus(_ status: ExecutionStatus) {
+        executionStatus = status
+    }
+
+    /// The list owns every row it contains: an overlay entry whose
+    /// message has landed is retired (its full text arrived).
+    private func pruneDeliveredStreaming() {
+        streaming = streaming.filter { key, _ in
+            !messages.contains { $0.id == key }
+        }
+    }
+
     init(
         service: SessionHistoryService? = nil,
         promptService: PromptService? = nil,
@@ -123,6 +200,7 @@ final class ConversationLibrary {
             nextCursor = page.cursor?.next
             hasMore = page.cursor?.next != nil
             loadedSessionID = sessionID
+            pruneDeliveredStreaming()
             error = nil
             // A re-open must not erase an admission whose delivery the
             // page does not cover yet.
@@ -196,6 +274,9 @@ final class ConversationLibrary {
                 messages = older + fresh
             }
             loadedSessionID = sessionID
+            // The fresh page is authoritative: overlay rows it now
+            // carries are retired (W16).
+            pruneDeliveredStreaming()
             error = nil
             // A projected-but-undelivered admission is NOT in the newest
             // page yet: the merge must not erase it. It survives while
@@ -274,8 +355,9 @@ final class ConversationLibrary {
             pendingSubmission = nil
             bannerError = nil
             notice = nil
-            // Authoritative read follows admission — nothing is streamed
-            // yet (event.subscribe arrives with W16).
+            // Authoritative read follows admission — W16 events also
+            // reconcile it live (execution/inbox arrivals refresh the
+            // same list), but the post-admission read is the barrier.
             await refresh(host: host, sessionID: sessionID)
             return true
         } catch {
@@ -337,6 +419,10 @@ final class ConversationLibrary {
         if let pending = pendingSubmission, pending.sessionID != sessionID {
             pendingSubmission = nil
         }
+        // The streaming overlay and working state belong to the
+        // PREVIOUS session's turn — never carried across (W16).
+        streaming.removeAll()
+        executionStatus = .idle
     }
 
     /// Projects an admitted user item into the transcript once; a later

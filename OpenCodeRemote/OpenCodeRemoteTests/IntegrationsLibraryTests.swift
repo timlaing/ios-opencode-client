@@ -1473,4 +1473,29 @@ final class IntegrationsLibraryTests: XCTestCase {
         XCTAssertFalse(library.mcpRows.isEmpty, "fresh rows stand under a clear banner")
         XCTAssertNil(library.toggleError)
     }
+
+    /// W16: `config.updated` reconciliation reloads ONLY a loaded
+    /// inventory — the flag marks a credentialed load attempt, never
+    /// a re-pair rejection, and never a screen that never loaded.
+    func testIsLoadedMarksACredentialedLoadOnly() async {
+        let recorder = Recorder()
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list": return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+        XCTAssertFalse(library.isLoaded, "nothing has loaded yet")
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+        XCTAssertTrue(library.isLoaded, "a credentialed load marks the screen as loaded")
+
+        let rejected = self.library(recorder: Recorder(), handler: { _ in
+            XCTFail("no request may be sent without a credential")
+            return Fixtures.noContent
+        }, credentials: [:])
+        await rejected.load(host: one, sessionDirectory: "/srv/demo")
+        XCTAssertFalse(rejected.isLoaded, "a re-pair rejection is not a loaded inventory")
+    }
 }

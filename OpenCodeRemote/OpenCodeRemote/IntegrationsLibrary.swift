@@ -139,6 +139,10 @@ final class IntegrationsLibrary {
     private var loadGeneration = 0
     private(set) var isLoading = false
     private(set) var loadError: String?
+    /// True once this screen has performed a credentialed load — W16
+    /// `config.updated` reconciliation reloads ONLY a loaded inventory
+    /// (never a first fetch for a sheet that was never opened).
+    private(set) var isLoaded = false
     /// The project document an editable toggle writes under (nil when
     /// the location reports none — then no toggle is offered).
     private(set) var editableDocument: (directory: String, path: String, relativePath: String)?
@@ -195,6 +199,7 @@ final class IntegrationsLibrary {
             return
         }
         isLoading = true
+        isLoaded = true
         defer { isLoading = false }
         do {
             let inventory = try await fetchInventory(

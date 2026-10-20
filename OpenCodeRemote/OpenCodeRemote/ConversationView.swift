@@ -12,7 +12,10 @@ import UniformTypeIdentifiers
 /// reconciled by inbox/transcript search on failure), Stop is an ordinary
 /// `interrupt?resume=false`, and the inbox (S09) manages admitted-but-
 /// undelivered work. The S10 model/agent picker (W06) opens from this
-/// toolbar. Live event streaming arrives with W16.
+/// toolbar. W16 streams `/api/event` live: text/reasoning deltas
+/// render as a tail row, execution/status events drive the retry
+/// indicator, and every other on-screen fact reconciles through its
+/// authoritative read.
 struct ConversationView: View {
     let host: OpenCodeDomain.Host
     let session: Session
@@ -53,6 +56,11 @@ struct ConversationView: View {
     /// location; opens from the trailing toolbar button.
     @State private var showingIntegrations = false
     @State private var integrations = IntegrationsLibrary()
+    /// W16 live events (S08): per-host `/api/event` subscription while
+    /// this conversation is on screen; the reconciler maps events to
+    /// the on-screen reads (docs/api-contract.md W16).
+    @State private var events = EventLibrary()
+    @State private var reconciler: EventReconciler?
     /// Which queued confirmation is on screen. The library's queue is
     /// the source of truth; the sequencer gives each question its own
     /// presentation cycle (SwiftUI ignores presented-data swaps on a
@@ -311,9 +319,11 @@ struct ConversationView: View {
             approvals.attach(hosts: library)
             forms.attach(hosts: library)
             integrations.attach(hosts: library)
+            events.attach(hosts: library)
             await openTranscript()
             await loadApprovals()
             await loadForms()
+            startEventStream()
         }
         .onDisappear {
             // A dismissed conversation stops watching — its dock and
@@ -327,6 +337,12 @@ struct ConversationView: View {
             // only cover in this view; the sheets leave the presenter
             // in the hierarchy.
             guard !showingCamera else { return }
+            // W16: the event stream stops with its conversation, and a
+            // pending debounced refresh is dropped — a dismissed view
+            // schedules no further reads (the .task re-runs on return
+            // and re-subscribes).
+            events.stop()
+            reconciler?.flush()
             approvals.stopPostSendWatch()
             forms.stopPostSendWatch()
         }
@@ -434,9 +450,10 @@ struct ConversationView: View {
         }
     }
 
-    /// Refresh-driven approval reconciliation (no live SSE yet): the
-    /// sessions inventory contributes child attribution when it knows
-    /// the descendants — otherwise only the session's own entries show.
+    /// Refresh-driven approval reconciliation (W16 events reload it
+    /// live too): the sessions inventory contributes child attribution
+    /// when it knows the descendants — otherwise only the session's
+    /// own entries show.
     /// Loading also RECORDS the watch context (no polling starts): a
     /// conversation opened onto a pre-existing approval must reopen the
     /// watch on answer too — the released turn's next request has the
@@ -510,7 +527,9 @@ struct ConversationView: View {
     /// The post-send question watch: the host raises a form mid-turn —
     /// after `send` has already returned on durable admission — so the
     /// dock polls on the bounded cadence until the question appears or
-    /// the window closes (live events replace this with W16).
+    /// the window closes. W16 events (`form.created`) reload the same
+    /// dock immediately; the bounded watch stays as the fallback that
+    /// needs no stream.
     private func startFormWatch() {
         forms.startPostSendWatch(
             host: host,
@@ -519,8 +538,90 @@ struct ConversationView: View {
         )
     }
 
+    /// W16: subscribes this host's `/api/event` stream and reconciles
+    /// the ON-SCREEN state from it (docs/api-contract.md W16). The
+    /// closures capture the LIBRARIES (class references) and the
+    /// host/session VALUES — never the view value itself: capturing
+    /// `self` would cycle this view's State storage → reconciler →
+    /// closure → State (the exact cycle the onAppear sequencer note
+    /// warns about).
+    private func startEventStream() {
+        let conversation = self.conversation
+        let approvals = self.approvals
+        let forms = self.forms
+        let integrations = self.integrations
+        let sessions = self.sessions
+        let host = self.host
+        let sessionID = session.id
+        let directory = session.location?.directory
+
+        let reconciler = EventReconciler(conversation: conversation, sessionID: sessionID)
+        reconciler.refreshTranscript = {
+            await conversation.refresh(host: host, sessionID: sessionID)
+        }
+        reconciler.loadInbox = {
+            await conversation.loadInbox(host: host, sessionID: sessionID)
+        }
+        reconciler.loadUsage = {
+            await conversation.loadUsage(host: host, sessionID: sessionID)
+        }
+        reconciler.loadContext = {
+            await conversation.loadContext(host: host, sessionID: sessionID)
+        }
+        reconciler.loadApprovals = {
+            // Same attribution as the view's own loads (child
+            // sessions from the sessions inventory).
+            let children = sessions?.descendantSessionIDs(of: sessionID, on: host.id) ?? []
+            approvals.recordWatchContext(host: host, sessionID: sessionID, childSessionIDs: children)
+            await approvals.load(host: host, sessionID: sessionID, childSessionIDs: children)
+        }
+        reconciler.loadForms = {
+            let children = sessions?.descendantSessionIDs(of: sessionID, on: host.id) ?? []
+            forms.recordWatchContext(host: host, sessionID: sessionID, childSessionIDs: children)
+            await forms.load(host: host, sessionID: sessionID, childSessionIDs: children)
+        }
+        reconciler.reloadIntegrations = {
+            // A config.updated refreshes the inventory ONLY if this
+            // screen has actually loaded one — never a first fetch for
+            // a sheet that was never opened.
+            guard integrations.isLoaded else { return }
+            await integrations.load(host: host, sessionDirectory: directory)
+        }
+        events.onEvent = { event in
+            await reconciler.handle(event)
+        }
+        self.reconciler = reconciler
+        events.watch(host: host)
+    }
+
+    /// W16 retry footnote copy: names the attempt when the host
+    /// reports one, and carries its message verbatim when present.
+    private func retryLabel(attempt: Int?, message: String?) -> String {
+        var label = "The host is retrying"
+        if let attempt {
+            label += " (attempt \(attempt))"
+        }
+        if let message, !message.isEmpty {
+            label += " — \(message)"
+        }
+        return label + "…"
+    }
+
     private var composer: some View {
         VStack(alignment: .leading, spacing: 6) {
+            // W16 retry indicator (docs/api-contract.md W16): the
+            // canonical working state from session.status events — a
+            // transport disconnect never shows completion here.
+            if case .retry(let attempt, let message) = conversation.executionStatus {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.caption)
+                    Text(retryLabel(attempt: attempt, message: message))
+                        .font(.caption)
+                }
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("S08.status.retry")
+            }
             if !attachments.drafts.isEmpty {
                 chips
             }
@@ -592,7 +693,8 @@ struct ConversationView: View {
                             // loads re-records the same context without
                             // touching the task. WATCH still covers the
                             // request that does not exist yet (review R2;
-                            // live events replace this with W16).
+                            // W16 events reload the same docks, and the
+                            // bounded watch is the no-stream fallback).
                             startApprovalWatch()
                             startFormWatch()
                             await loadApprovals()
@@ -719,11 +821,55 @@ struct ConversationView: View {
                         .accessibilityIdentifier("S08.message.\(message.id)")
                 }
             }
+            // W16 live tail (docs/api-contract.md W16): in-flight
+            // assistant text/reasoning straight from the event stream
+            // while the authoritative list has not caught up. The
+            // library prunes every key the list already carries, so a
+            // row here is never a duplicate of a row above.
+            if !conversation.streaming.isEmpty {
+                Section {
+                    ForEach(Array(conversation.streaming.keys.sorted()), id: \.self) { key in
+                        streamingRow(conversation.streaming[key], id: key)
+                    }
+                }
+            }
         }
         .listStyle(.insetGrouped)
     }
 
     // MARK: - Message rendering
+
+    /// W16 live tail row: the assistant's in-flight reasoning and text
+    /// as the deltas arrive. Reasoning renders dimmed above the text
+    /// (the same thinking treatment as the transcript); an empty entry
+    /// is the "responding" placeholder before the first delta.
+    @ViewBuilder
+    private func streamingRow(_ entry: ConversationLibrary.StreamingMessage?, id: String) -> some View {
+        if let entry {
+            VStack(alignment: .leading, spacing: 6) {
+                if !entry.reasoning.isEmpty {
+                    Text(entry.reasoning)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .italic()
+                }
+                if !entry.text.isEmpty {
+                    markdown(entry.text)
+                }
+                if entry.text.isEmpty, entry.reasoning.isEmpty {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Responding…")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 2)
+            .accessibilityIdentifier("S08.streaming.\(id)")
+        }
+    }
 
     @ViewBuilder
     private func messageRow(_ message: SessionMessage) -> some View {

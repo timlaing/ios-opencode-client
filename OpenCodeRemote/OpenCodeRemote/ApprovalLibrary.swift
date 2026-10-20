@@ -5,8 +5,9 @@ import OpenCodeTransport
 
 /// S11 approvals (W09): the pending-permission dock above the
 /// composer (docs/navigation-screens.md S08/S11,
-/// docs/api-contract.md W09). Refresh-driven — the app has no live SSE
-/// yet (W16): reloaded when the conversation opens, on pull-to-refresh,
+/// docs/api-contract.md W09). Refresh-driven — and W16 events reload
+/// it live too (`permission.asked/replied` reconcile through the same
+/// `load`): reloaded when the conversation opens, on pull-to-refresh,
 /// and after every submission. Because `send` returns on durable
 /// ADMISSION — before the host creates the permission request — the
 /// post-send refresh is a BOUNDED WATCH, not a one-off (review R2).

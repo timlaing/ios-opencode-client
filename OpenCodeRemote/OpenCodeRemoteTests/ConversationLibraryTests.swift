@@ -23,6 +23,12 @@ final class ConversationLibraryTests: XCTestCase {
             #"{"id":"\#(id)","type":"user","time":{"created":\#(created)},"text":"\#(text)"}"#
         }
 
+        /// An assistant message row — the list's own row for a turn
+        /// the W16 live overlay has been tracking.
+        static func assistant(_ id: String, created: Int64) -> String {
+            #"{"id":"\#(id)","type":"assistant","time":{"created":\#(created)},"agent":"main","model":{"id":"m","providerID":"p"},"content":[]}"#
+        }
+
         /// A bookkeeping transition row — retained, never dropped.
         static func agentSwitched(_ id: String, agent: String, created: Int64) -> String {
             #"{"id":"\#(id)","type":"agent-switched","time":{"created":\#(created)},"agent":"\#(agent)"}"#
@@ -910,5 +916,93 @@ final class ConversationLibraryTests: XCTestCase {
 
         XCTAssertEqual(library.compactionError, "Re-pair this host to compact its context.")
         XCTAssertTrue(recorder.requests.isEmpty)
+    }
+
+    // MARK: - W16 streaming overlay + execution status
+
+    func testApplyStreamAccumulatesPerKindAndReplacesOnEnded() async {
+        let library = conversation(recorder: Recorder()) { _ in
+            Fixtures.response(Fixtures.emptyPage)
+        }
+        await library.open(host: one, sessionID: "ses_a")
+
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .started))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("Hel")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("lo")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .reasoning, change: .delta("hmm")))
+
+        XCTAssertEqual(library.streaming["msg_live"]?.text, "Hello")
+        XCTAssertEqual(library.streaming["msg_live"]?.reasoning, "hmm")
+
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .ended("Hello there.")))
+
+        XCTAssertEqual(
+            library.streaming["msg_live"]?.text, "Hello there.",
+            "the ended full value REPLACES the accumulated deltas"
+        )
+    }
+
+    func testApplyStreamNeverCrossesSessions() async {
+        let library = conversation(recorder: Recorder()) { _ in
+            Fixtures.response(Fixtures.emptyPage)
+        }
+        await library.open(host: one, sessionID: "ses_a")
+
+        library.applyStream(.init(sessionID: "ses_other", messageID: "msg_live", kind: .text, change: .delta("x")))
+
+        XCTAssertTrue(library.streaming.isEmpty, "another session's stream never renders under this transcript")
+    }
+
+    func testRefreshPrunesOverlayRowsTheListNowCarries() async {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            guard request.operationID == "session.message.list" else {
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+            // The authoritative list catches up with the streamed row.
+            return Fixtures.response(Fixtures.page([
+                Fixtures.assistant("msg_live", created: 300),
+                Fixtures.user("msg_1", text: "hello", created: 100),
+            ]))
+        }
+        await library.open(host: one, sessionID: "ses_a")
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("partial")))
+
+        await library.refresh(host: one, sessionID: "ses_a")
+
+        XCTAssertTrue(library.streaming.isEmpty, "the list owns the row once it carries it")
+        XCTAssertEqual(library.messages.map(\.id), ["msg_1", "msg_live"])
+    }
+
+    func testSessionSwitchClearsTheOverlayAndWorkingState() async {
+        let recorder = Recorder()
+        let library = conversation(recorder: recorder) { request in
+            guard request.operationID == "session.message.list" else {
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+            return Fixtures.response(Fixtures.emptyPage)
+        }
+        await library.open(host: one, sessionID: "ses_a")
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("x")))
+        library.markExecutionStarted(sessionID: "ses_a")
+
+        await library.open(host: one, sessionID: "ses_b")
+
+        XCTAssertTrue(library.streaming.isEmpty, "the live tail never rides into another session")
+        XCTAssertEqual(library.executionStatus, .idle, "nor does the working state")
+    }
+
+    func testMarkExecutionFinishedEndsTailAndIndicator() async {
+        let library = conversation(recorder: Recorder()) { _ in
+            Fixtures.response(Fixtures.emptyPage)
+        }
+        await library.open(host: one, sessionID: "ses_a")
+        library.applyStatus(.retry(attempt: 2, message: "rate limited"))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("x")))
+
+        library.markExecutionFinished()
+
+        XCTAssertEqual(library.executionStatus, .idle, "the terminal event ends retry too")
+        XCTAssertTrue(library.streaming.isEmpty)
     }
 }
