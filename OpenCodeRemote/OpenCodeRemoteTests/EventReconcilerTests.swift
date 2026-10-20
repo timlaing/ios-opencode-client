@@ -435,6 +435,43 @@ final class EventReconcilerTests: XCTestCase {
         XCTAssertEqual(calls.calls, ["transcript"])
     }
 
+    func testTheOverlayOutlivesTheIndicatorUntilTheAuthoritativeRead() async {
+        let conversation = await loadedConversation()
+        let calls = CallLog()
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let (release, releaseContinuation) = AsyncStream<Void>.makeStream()
+        let reconciler = self.reconciler(conversation, calls: calls)
+        reconciler.refreshTranscript = {
+            calls.record("transcript")
+            enteredContinuation.yield()
+            for await _ in release { break }
+        }
+        conversation.applyStatus(.busy)
+        conversation.applyStream(EventReconciler.StreamPatch(
+            sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .ended("Hello there.")
+        ))
+
+        let terminal = Task {
+            await reconciler.handle(event("session.execution.succeeded", ["sessionID": .string("ses_a")]))
+        }
+        var enteredIterator = entered.makeAsyncIterator()
+        _ = await enteredIterator.next() // the authoritative read is in flight
+
+        XCTAssertEqual(conversation.executionStatus, .idle, "the indicator ends at once")
+        XCTAssertNotNil(
+            conversation.streaming["msg_live"],
+            "the overlay must outlive it through the read — the row is still the mid-turn snapshot, and clearing early flashed that stale partial for a round trip (review W16 r6)"
+        )
+
+        releaseContinuation.yield()
+        await terminal.value
+
+        XCTAssertTrue(
+            conversation.streaming.isEmpty,
+            "cleared after the read — even a part that never ended cannot outlive its terminal"
+        )
+    }
+
     func testExecutionTerminalsHandTheRawEventToTheNotifierHook() async {
         let conversation = await loadedConversation()
         let calls = CallLog()

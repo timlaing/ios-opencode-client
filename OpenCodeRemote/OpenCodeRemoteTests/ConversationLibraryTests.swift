@@ -504,6 +504,61 @@ final class ConversationLibraryTests: XCTestCase {
         XCTAssertTrue(library.messages.isEmpty, "nothing is fabricated into the transcript")
     }
 
+    func testAdmissionReconcileTrustsItsOwnFetchEvenWhenSuperseded() async {
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let (release, releaseContinuation) = AsyncStream<Void>.makeStream()
+        let recorder = Recorder()
+        let gate = Flip()
+        let library = conversation(recorder: recorder) { request in
+            switch request.operationID {
+            case "session.prompt":
+                // The host ADMITTED the prompt — its response was lost.
+                throw TransportError.connectionFailed("response lost")
+            case "session.inbox.list":
+                // Already delivered: it left the pending inbox.
+                return Fixtures.response(#"{"data":[]}"#)
+            case "session.message.list":
+                guard gate.first() else {
+                    // The concurrent newer read: an EMPTY page,
+                    // superseding whatever the reconcile started (W16
+                    // events fire refreshes constantly).
+                    return Fixtures.response(Fixtures.page([]))
+                }
+                // The page that proves admission — carrying the SAME
+                // stable ID the send submitted (recovered from the
+                // recorded prompt body, like the 409 test): held
+                // mid-flight so a newer read lands before it (review
+                // W16 r6).
+                enteredContinuation.yield()
+                for await _ in release { break }
+                let payload = recorder.requests
+                    .first { $0.operationID == "session.prompt" }?.body
+                    .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                let stableID = (payload?["id"] as? String) ?? "msg_unknown"
+                return Fixtures.response(Fixtures.page([
+                    Fixtures.user(stableID, text: "hello", created: 100),
+                ]))
+            default:
+                throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        let sending = Task { [one] in
+            await library.send(host: one, sessionID: "ses_a", text: "hello")
+        }
+        var enteredIterator = entered.makeAsyncIterator()
+        _ = await enteredIterator.next()
+        await library.refresh(host: one, sessionID: "ses_a") // newer generation lands first
+        releaseContinuation.yield()
+        let admitted = await sending.value
+
+        XCTAssertTrue(
+            admitted,
+            "the decision reads ITS OWN fetched page — a superseded fold never fakes a failure for an admitted prompt"
+        )
+        XCTAssertNil(library.bannerError, "no false \"your draft is kept\" for a prompt the host admitted")
+    }
+
     func testSendWithoutCredentialFailsClosed() async throws {
         let library = conversation(recorder: Recorder(), handler: { _ in Fixtures.response(#"{"data":[]}"#) }, credentials: [:])
 
@@ -1109,20 +1164,6 @@ final class ConversationLibraryTests: XCTestCase {
 
         XCTAssertTrue(library.streaming.isEmpty, "the live tail never rides into another session")
         XCTAssertEqual(library.executionStatus, .idle, "nor does the working state")
-    }
-
-    func testMarkExecutionFinishedEndsTailAndIndicator() async {
-        let library = conversation(recorder: Recorder()) { _ in
-            Fixtures.response(Fixtures.emptyPage)
-        }
-        await library.open(host: one, sessionID: "ses_a")
-        library.applyStatus(.retry(attempt: 2, message: "rate limited"))
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("x")))
-
-        library.markExecutionFinished()
-
-        XCTAssertEqual(library.executionStatus, .idle, "the terminal event ends retry too")
-        XCTAssertTrue(library.streaming.isEmpty)
     }
 
     // MARK: - Refresh supersession (review W16 r3, minor)

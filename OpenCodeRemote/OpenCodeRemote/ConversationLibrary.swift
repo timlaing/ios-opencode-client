@@ -187,14 +187,6 @@ final class ConversationLibrary {
         executionStatus = .busy
     }
 
-    /// An execution terminal event is authoritative: the turn is over,
-    /// so the working/retry indicator and the overlay both end here —
-    /// regardless of what the volatile stream did afterwards.
-    func markExecutionFinished() {
-        executionStatus = .idle
-        streaming.removeAll()
-    }
-
     func clearAllStreaming() {
         streaming.removeAll()
     }
@@ -481,9 +473,26 @@ final class ConversationLibrary {
             admit(item, sessionID: sessionID)
             return true
         }
+        // The inbox only lists PENDING items: a prompt the host
+        // already admitted has left it, and the transcript decides.
+        // The decision reads the FETCHED page directly — never the
+        // shared `messages` state, because this reconciliation's own
+        // refresh can be superseded by an event-driven one (W16
+        // fires refreshes constantly) and apply nothing, which used
+        // to report a false "your draft is kept" for an admitted
+        // prompt (review W16 r6).
+        let admitted: Bool
+        if let page = try? await service.messages(
+            at: host.address, credential: credential, sessionID: sessionID
+        ) {
+            admitted = page.data.contains { $0.id == messageID }
+        } else {
+            admitted = false
+        }
+        // Fold the page into the transcript either way — the fold
+        // carries no decision, so its own supersession is harmless.
         await refresh(host: host, sessionID: sessionID)
-        if messages.contains(where: { $0.id == messageID }) { return true }
-        return false
+        return admitted
     }
 
     /// A committed SESSION SWITCH discards the OLD session's projection

@@ -273,17 +273,27 @@ final class EventReconciler {
             await reestablishExecutionState()
         case .execution(let sessionID, let finished):
             if finished {
-                // The turn is over regardless of any stale overlay or
-                // busy status (a dropped stream is NOT completion, but
-                // an execution terminal event IS).
-                conversation.markExecutionFinished()
+                // Idle at once — but the overlay outlives the
+                // indicator through the authoritative read (review
+                // W16 r6): the terminal usually arrives INSIDE the
+                // last ended's debounce window, so the row is still
+                // the host's mid-turn snapshot — clearing before the
+                // read flashed that stale partial for one round trip
+                // at the end of most turns. Events deliver serially
+                // (EventLibrary awaits onEvent), so no next turn's
+                // overlay can form during the read; and the clear
+                // AFTER it is unconditional (refresh never throws),
+                // so an unsettled part cannot outlive its terminal.
+                conversation.applyStatus(.idle)
                 // Live delivery is the ONLY path to a banner (S17) —
                 // the notifier gates app-active, dedup and consent.
                 await onExecutionTerminal?(event)
+                await refreshTranscript?()
+                conversation.clearAllStreaming()
             } else {
                 conversation.markExecutionStarted(sessionID: sessionID)
+                await refreshTranscript?()
             }
-            await refreshTranscript?()
         case .transcript:
             scheduleTranscriptRefresh()
         case .stream(let patch):
