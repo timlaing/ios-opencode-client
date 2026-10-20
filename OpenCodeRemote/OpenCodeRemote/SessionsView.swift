@@ -12,7 +12,7 @@ import OpenCodeTransport
 struct SessionsView: View {
     @Environment(HostLibrary.self) private var library
     @Environment(ProjectsLibrary.self) private var projects
-    @State private var sessions = SessionsLibrary()
+    @State private var sessions: SessionsLibrary
     @State private var hostFilter: HostID?
     @State private var projectFilter: String?
     @State private var showHidden = false
@@ -30,6 +30,14 @@ struct SessionsView: View {
     /// Context-menu target — presents the W03 detail sheet.
     @State private var infoTarget: SessionsLibrary.SessionRow?
     @State private var mutationError: String?
+
+    /// `localState` comes from the shell (W17): Clear Local Data
+    /// (S19) must wipe the SAME live store this list renders from —
+    /// a second store over the same domain would leave stale
+    /// pin/follow/hide rows until relaunch.
+    init(localState: SessionLocalStateStore? = nil) {
+        _sessions = State(initialValue: SessionsLibrary(localState: localState))
+    }
 
     private var visibleEntries: [HostLibrary.Entry] {
         library.entries.filter { hostFilter == nil || $0.id == hostFilter }

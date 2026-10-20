@@ -74,4 +74,20 @@ final class SessionLocalStateStoreTests: XCTestCase {
         XCTAssertTrue(store.state.followed.isEmpty)
         XCTAssertTrue(store.state.hidden.isEmpty)
     }
+
+    func testClearLocalDataWipesStateForThisAndEveryFutureReader() {
+        let live = SessionLocalStateStore(defaults: defaults)
+        live.togglePinned(makeKey(session: "ses_a"))
+        live.toggleFollowed(makeKey(session: "ses_a"))
+        live.toggleHidden(makeKey(session: "ses_b"))
+
+        live.clear()
+
+        XCTAssertTrue(live.state.pinned.isEmpty, "the LIVE instance empties at once — Observation readers update without a relaunch")
+        XCTAssertTrue(live.state.followed.isEmpty, "followed IDs are the push eligibility source: the wipe must reach them")
+        XCTAssertTrue(live.state.hidden.isEmpty)
+
+        let relaunched = SessionLocalStateStore(defaults: defaults)
+        XCTAssertTrue(relaunched.state.followed.isEmpty, "the clear persists — not an in-memory illusion")
+    }
 }

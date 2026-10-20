@@ -22,6 +22,9 @@ struct ConversationView: View {
     var sessions: SessionsLibrary?
 
     @Environment(HostLibrary.self) private var library
+    /// Appearance ▸ Spacing (W17 S18): compact tightens the transcript
+    /// rhythm; comfortable leaves the system spacing untouched.
+    @Environment(SettingsLibrary.self) private var settings
     /// W16 S17: banners are posted only while the app is NOT active —
     /// the scenePhase observer below keeps the notifier's gate fresh.
     @Environment(\.scenePhase) private var scenePhase
@@ -917,6 +920,9 @@ struct ConversationView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // Appearance ▸ Spacing (W17 S18): compact tightens the message
+        // rhythm; comfortable keeps the system default spacing.
+        .listRowSpacing(settings.state.spacing == .compact ? 2 : nil)
     }
 
     // MARK: - Message rendering

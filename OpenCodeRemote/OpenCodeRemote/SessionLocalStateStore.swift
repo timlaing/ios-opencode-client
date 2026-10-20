@@ -60,6 +60,16 @@ final class SessionLocalStateStore {
         }
     }
 
+    /// Clear Local Data (S19): device-local pin/follow/hide dies with
+    /// the wipe. One save through THIS live instance keeps every
+    /// Observation reader coherent — a fresh store over the same
+    /// domain would leave the sessions list rendering stale rows until
+    /// relaunch.
+    func clear() {
+        state = SessionLocalState()
+        save()
+    }
+
     func isPinned(_ key: SessionKey) -> Bool { state.pinned.contains(key.storage) }
     func isFollowed(_ key: SessionKey) -> Bool { state.followed.contains(key.storage) }
     func isHidden(_ key: SessionKey) -> Bool { state.hidden.contains(key.storage) }

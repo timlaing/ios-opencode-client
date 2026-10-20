@@ -10,6 +10,11 @@ struct ContentView: View {
     /// New Session; project inventory feeds the S07 project filter).
     @State private var projects = ProjectsLibrary()
     @State private var showingConnectSheet = false
+    /// W17: shared from the shell so Clear Local Data (S19) wipes the
+    /// SAME live stores every screen renders from — a second store
+    /// over the same domain would leave stale rows until relaunch.
+    @State private var settings = SettingsLibrary()
+    @State private var localState = SessionLocalStateStore()
 
     var body: some View {
         TabView {
@@ -17,14 +22,19 @@ struct ContentView: View {
                 .tabItem { Label("Servers", systemImage: "server.rack") }
             ProjectsTab()
                 .tabItem { Label("Projects", systemImage: "folder") }
-            SessionsView()
+            SessionsView(localState: localState)
                 .tabItem { Label("Sessions", systemImage: "bubble.left.and.bubble.right") }
-            SettingsTab()
+            SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }
         .background(Color("AppBackgroundColor"))
+        // Appearance ▸ Mode (W17): nil follows the system — the
+        // documented default; light/dark force the scheme shell-wide.
+        .preferredColorScheme(settings.state.appearance.colorScheme)
         .environment(library)
         .environment(projects)
+        .environment(settings)
+        .environment(localState)
         .sheet(isPresented: $showingConnectSheet) {
             // Injected explicitly rather than relying on sheet environment
             // inheritance — a missing HostLibrary is a fatal SwiftUI error.
@@ -437,29 +447,6 @@ private struct NewProjectTarget: Identifiable {
         self.host = host
         self.credential = credential
         self.parent = parent
-    }
-}
-
-private struct SettingsTab: View {
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
-    }
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    LabeledContent("Version", value: appVersion)
-                }
-                Section("Not Yet Implemented") {
-                    Text("Server, appearance, privacy, and storage settings arrive with follow-up slices.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Color("AppBackgroundColor"))
-            .navigationTitle("Settings")
-        }
     }
 }
 

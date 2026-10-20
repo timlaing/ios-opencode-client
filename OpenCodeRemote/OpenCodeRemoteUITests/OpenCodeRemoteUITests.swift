@@ -134,8 +134,22 @@ final class OpenCodeRemoteUITests: XCTestCase {
             app.staticTexts["Settings"].waitForExistence(timeout: 5),
             "Settings tab did not land its screen", file: file, line: line
         )
+        // S18 is taller than the landscape window — scroll for the
+        // About row instead of assuming it is above the fold. Lazy
+        // rows are not in the accessibility tree until they
+        // materialise, so a bounded scroll-until-found. A coordinate
+        // drag from the window scrolls reliably; `swipeUp` (app- and
+        // table-level, every velocity) registered as 0% scroll here.
+        let version = app.staticTexts["Version"]
+        let window = app.windows.firstMatch
+        for _ in 0..<4 {
+            if version.waitForExistence(timeout: 2) { break }
+            let start = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6))
+            let end = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+            start.press(forDuration: 0.1, thenDragTo: end)
+        }
         XCTAssertTrue(
-            app.staticTexts["Version"].waitForExistence(timeout: 5),
+            version.waitForExistence(timeout: 5),
             "Settings screen is missing its version row", file: file, line: line
         )
         requireTab("Projects", in: app, file: file, line: line)?.tap()
