@@ -15,6 +15,10 @@ struct ContentView: View {
     /// over the same domain would leave stale rows until relaunch.
     @State private var settings = SettingsLibrary()
     @State private var localState = SessionLocalStateStore()
+    /// W17 S17: the permission state every notifications screen reads.
+    /// The diagnostic log is a stateless value over one file — each
+    /// consumer constructs its own handle.
+    @State private var notifications = NotificationsLibrary()
 
     var body: some View {
         TabView {
@@ -35,6 +39,7 @@ struct ContentView: View {
         .environment(projects)
         .environment(settings)
         .environment(localState)
+        .environment(notifications)
         .sheet(isPresented: $showingConnectSheet) {
             // Injected explicitly rather than relying on sheet environment
             // inheritance — a missing HostLibrary is a fatal SwiftUI error.

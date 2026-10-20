@@ -146,6 +146,11 @@ final class NotificationDedupStore {
 final class ExecutionNotifier {
     private let notifier: UserNotifying
     private let dedup: NotificationDedupStore
+    /// S20 diagnostics (W17): permission outcomes and posted banners
+    /// are recorded; nil keeps the W16 behaviour untouched (tests
+    /// never write log files). Set by the conversation when the
+    /// subscription starts.
+    var diagnostics: DiagnosticsLogStore?
 
     /// Kept fresh by the view's `.onChange(of: scenePhase)`; true
     /// while the app is active — a banner would interrupt the user
@@ -157,10 +162,12 @@ final class ExecutionNotifier {
 
     init(
         notifier: UserNotifying = NotificationCenterNotifier(),
-        dedup: NotificationDedupStore = NotificationDedupStore()
+        dedup: NotificationDedupStore = NotificationDedupStore(),
+        diagnostics: DiagnosticsLogStore? = nil
     ) {
         self.notifier = notifier
         self.dedup = dedup
+        self.diagnostics = diagnostics
     }
 
     /// Asks for notification authorization once, lazily, when the
@@ -176,6 +183,16 @@ final class ExecutionNotifier {
         authorizing = ask
         authorization = await ask.value
         authorizing = nil
+        // One record per process: the lazy ask's outcome is the fact
+        // S20's last-error display needs when delivery later proves
+        // silent.
+        if let diagnostics {
+            if authorization == true {
+                diagnostics.record(.notifications, "Notification permission granted")
+            } else {
+                diagnostics.record(.notifications, severity: .error, "Notification permission not granted")
+            }
+        }
     }
 
     /// Handles one execution terminal event. All gates in order:
@@ -217,5 +234,6 @@ final class ExecutionNotifier {
             title: sessionTitle ?? "OpenCode Client",
             body: phrase
         )
+        diagnostics?.record(.notifications, "Banner posted: \(event.type)")
     }
 }

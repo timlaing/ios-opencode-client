@@ -32,7 +32,11 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section("Hosts") {
-                    LabeledContent("Configured", value: "\(hosts.entries.count)")
+                    NavigationLink {
+                        HostsSettingsView()
+                    } label: {
+                        LabeledContent("Configured", value: "\(hosts.entries.count)")
+                    }
                 }
 
                 Section("Appearance") {
@@ -64,6 +68,22 @@ struct SettingsView: View {
                     }
                     Toggle("Cellular Uploads", isOn: binding(\.allowCellularUploads))
                     Toggle("Background Uploads", isOn: binding(\.continueBackgroundUploads))
+                }
+
+                Section("Notifications & Activities") {
+                    NavigationLink {
+                        NotificationsSettingsView()
+                    } label: {
+                        Text("Notifications & Live Activities")
+                    }
+                }
+
+                Section("Diagnostics & Support") {
+                    NavigationLink {
+                        DiagnosticsView()
+                    } label: {
+                        Text("Diagnostics & Support")
+                    }
                 }
 
                 Section {

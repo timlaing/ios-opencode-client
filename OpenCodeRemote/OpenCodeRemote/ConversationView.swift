@@ -592,6 +592,9 @@ struct ConversationView: View {
         // reconciler lives in @State, so capturing self would chain
         // State → reconciler → captured view value → State.
         let notifier = self.notifier
+        // S20 (W17): banner posts and the lazy permission outcome
+        // join the redacted diagnostic log.
+        notifier.diagnostics = DiagnosticsLogStore()
         let sessionTitle = session.title
         let sessionID = session.id
         let directory = session.location?.directory
