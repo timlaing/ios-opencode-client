@@ -14,7 +14,12 @@ import OpenCodeTransport
 ///   FETCHING state, never by assuming missed frames arrived.
 /// - Session-scoped events are attributed ONLY to the open session:
 ///   while S08 is on screen the sessions list is not, and an event
-///   without a sessionID is never guessed into scope.
+///   without a sessionID is never guessed into scope. One subtree
+///   exception (review W16 r5): the approval/form docks also
+///   attribute the open session's DESCENDANTS — that is their own
+///   load scope (subagents raise their own permission/form events),
+///   so those two families accept a descendant's sessionID from an
+///   injected lookup; every other family stays open-session.
 /// - Text/reasoning deltas update the incremental overlay directly
 ///   (keyed by assistantMessageID) — the contract's "incremental
 ///   text; ended full value replaces accumulated text".
@@ -76,6 +81,14 @@ final class EventReconciler {
     var loadForms: (() async -> Void)?
     var loadContext: (() async -> Void)?
     var reloadIntegrations: (() async -> Void)?
+    /// The open session's descendant sessionIDs (live lookup into the
+    /// sessions inventory) — the approval/form docks' own attribution
+    /// scope, and the ONLY reason classify ever accepts a foreign
+    /// sessionID: a subagent raises `permission.*`/`form.*` events
+    /// under ITS sessionID, and the docks' load covers the subtree
+    /// (review W16 r5). Transcript, stream, execution and every other
+    /// family ignore it entirely.
+    var descendantSessionIDs: (() -> Set<String>)?
     /// Reconnect reconciliation of the WORKING state (review W16 r1):
     /// the stream has no replay, so a terminal that landed while the
     /// connection was down left `executionStatus` — and its unpruned
@@ -104,7 +117,13 @@ final class EventReconciler {
 
     /// Pure event → action mapping. `openSessionID` is the session
     /// whose conversation is on screen; nil matches nothing scoped.
-    static func classify(_ event: OpenCodeEvent, openSessionID: String?) -> Action {
+    /// `descendantSessionIDs` is the docks' subtree lookup — without
+    /// it nothing crosses sessions (review W16 r5).
+    static func classify(
+        _ event: OpenCodeEvent,
+        openSessionID: String?,
+        descendantSessionIDs: Set<String> = []
+    ) -> Action {
         guard let type = event.type else { return .ignored }
         let data = event.data ?? .null
 
@@ -121,8 +140,22 @@ final class EventReconciler {
         // Never guess a scope: a session-scoped event without its
         // sessionID cannot be attributed to the open conversation.
         guard let sessionID = data["sessionID"]?.stringValue else { return .ignored }
-        // Only the open session reconciles while S08 is on screen.
-        guard sessionID == openSessionID else { return .ignored }
+        if sessionID != openSessionID {
+            // The approval and form docks cover the open session's
+            // DESCENDANTS too (their own load scope): only those two
+            // families' KNOWN events may cross sessions, and only
+            // into the injected subtree — everything else (unknown
+            // types included) stays strictly open-session.
+            guard descendantSessionIDs.contains(sessionID) else { return .ignored }
+            switch type {
+            case "permission.asked", "permission.replied":
+                return .permissions(sessionID: sessionID)
+            case "form.created", "form.replied", "form.cancelled":
+                return .forms(sessionID: sessionID)
+            default:
+                return .ignored
+            }
+        }
 
         switch type {
         case "session.execution.started":
@@ -221,7 +254,11 @@ final class EventReconciler {
 
     /// Executes one event's action against the open conversation.
     func handle(_ event: OpenCodeEvent) async {
-        switch Self.classify(event, openSessionID: openSessionID) {
+        switch Self.classify(
+            event,
+            openSessionID: openSessionID,
+            descendantSessionIDs: descendantSessionIDs?() ?? []
+        ) {
         case .ignored:
             break
         case .fullRefresh:

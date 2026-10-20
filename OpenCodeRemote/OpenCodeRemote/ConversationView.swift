@@ -618,6 +618,12 @@ struct ConversationView: View {
             forms.recordWatchContext(host: host, sessionID: sessionID, childSessionIDs: children)
             await forms.load(host: host, sessionID: sessionID, childSessionIDs: children)
         }
+        reconciler.descendantSessionIDs = {
+            // Same live attribution as both dock closures above — a
+            // descendant's permission/form event may reload them
+            // (review W16 r5); every other family never asks.
+            sessions?.descendantSessionIDs(of: sessionID, on: host.id) ?? []
+        }
         reconciler.reloadIntegrations = {
             // A config.updated refreshes the inventory ONLY if this
             // screen has actually loaded one — never a first fetch for

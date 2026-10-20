@@ -76,8 +76,13 @@ final class EventReconcilerTests: XCTestCase {
         OpenCodeEvent(id: "evt", type: type, data: .object(data))
     }
 
-    private func classify(_ event: OpenCodeEvent) -> EventReconciler.Action {
-        EventReconciler.classify(event, openSessionID: "ses_a")
+    private func classify(
+        _ event: OpenCodeEvent,
+        descendants: Set<String> = []
+    ) -> EventReconciler.Action {
+        EventReconciler.classify(
+            event, openSessionID: "ses_a", descendantSessionIDs: descendants
+        )
     }
 
     // MARK: - Classification (pure)
@@ -114,6 +119,87 @@ final class EventReconcilerTests: XCTestCase {
                 "sessionID": .string("ses_other"), "assistantMessageID": .string("msg_a"), "delta": .string("x"),
             ])),
             .ignored
+        )
+    }
+
+    func testOnlyTheDockFamiliesCrossIntoTheOpenSessionsSubtree() {
+        let descendants: Set<String> = ["ses_child"]
+        XCTAssertEqual(
+            classify(
+                event("permission.asked", [
+                    "sessionID": .string("ses_child"), "requestID": .string("per_1"),
+                ]),
+                descendants: descendants
+            ),
+            .permissions(sessionID: "ses_child"),
+            "a subagent's permission event reloads the open subtree's dock (its own load scope)"
+        )
+        XCTAssertEqual(
+            classify(
+                event("form.created", [
+                    "sessionID": .string("ses_child"), "formID": .string("frm_1"),
+                ]),
+                descendants: descendants
+            ),
+            .forms(sessionID: "ses_child")
+        )
+        XCTAssertEqual(
+            classify(
+                event("permission.replied", [
+                    "sessionID": .string("ses_child"), "requestID": .string("per_1"),
+                ])
+            ),
+            .ignored,
+            "without the subtree lookup nothing crosses sessions (tests default to none)"
+        )
+        XCTAssertEqual(
+            classify(
+                event("permission.asked", [
+                    "sessionID": .string("ses_other"), "requestID": .string("per_2"),
+                ]),
+                descendants: descendants
+            ),
+            .ignored,
+            "a session outside the subtree never reaches the dock"
+        )
+        XCTAssertEqual(
+            classify(
+                event("session.text.delta", [
+                    "sessionID": .string("ses_child"),
+                    "assistantMessageID": .string("msg_c"), "ordinal": .number(0),
+                    "delta": .string("hi"),
+                ]),
+                descendants: descendants
+            ),
+            .ignored,
+            "transcript/stream stays open-session — only the docks follow the subtree"
+        )
+        XCTAssertEqual(
+            classify(
+                event("session.execution.succeeded", ["sessionID": .string("ses_child")]),
+                descendants: descendants
+            ),
+            .ignored,
+            "execution is the open session's own working state (review W16 r5)"
+        )
+    }
+
+    func testADescendantDockEventReloadsTheDock() async {
+        let conversation = await loadedConversation()
+        let calls = CallLog()
+        let reconciler = self.reconciler(conversation, calls: calls)
+        reconciler.descendantSessionIDs = { ["ses_child"] }
+
+        await reconciler.handle(event("permission.asked", [
+            "sessionID": .string("ses_child"), "requestID": .string("per_1"),
+        ]))
+        await reconciler.handle(event("form.created", [
+            "sessionID": .string("ses_child"), "formID": .string("frm_1"),
+        ]))
+
+        XCTAssertEqual(
+            calls.calls, ["approvals", "forms"],
+            "the dock closures re-read open + descendants themselves — the event only triggers them"
         )
     }
 
