@@ -95,6 +95,14 @@ public struct DraftStore: Sendable {
         }
     }
 
+    /// Every draft, most recently updated first (S19: switching the
+    /// retention must see ALL existing drafts to confirm that the new
+    /// policy would remove none — docs/implementation-defaults.md
+    /// "Drafts").
+    public func allDrafts() throws -> [Draft] {
+        try db.read { try Draft.order(Column("updatedAt").desc).fetchAll($0) }
+    }
+
     public func deleteDraft(id: String) throws {
         try db.write { _ = try Draft.deleteOne($0, key: id) }
     }
