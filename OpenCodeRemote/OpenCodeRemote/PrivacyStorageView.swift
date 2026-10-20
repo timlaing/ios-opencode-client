@@ -9,17 +9,21 @@ import SwiftUI
 struct PrivacyStorageView: View {
     @Environment(SettingsLibrary.self) private var settings
     @Environment(SessionLocalStateStore.self) private var localState
+    @Environment(HostLibrary.self) private var hosts
+    @Environment(CloudSettingsSync.self) private var cloud
 
     @State private var storage = StorageLibrary()
     @State private var cacheUsage: Int64?
     @State private var pendingRetention: DraftRetention?
     @State private var showingClearCache = false
     @State private var showingClearLocalData = false
+    @State private var showingClearSynced = false
     @State private var errorMessage: String?
 
     var body: some View {
         List {
             appLockSection
+            syncSection
             backupsSection
             cacheSection
             draftsSection
@@ -35,8 +39,14 @@ struct PrivacyStorageView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Color("AppBackgroundColor"))
-        .navigationTitle("Privacy & Storage")
-        .task { refreshCacheUsage() }
+        .navigationTitle("Privacy, Storage & Sync")
+        .task {
+            refreshCacheUsage()
+            reconcileSync()
+        }
+        .onChange(of: settings.state.icloudSyncRequested) { _, _ in
+            reconcileSync()
+        }
     }
 
     // MARK: - App lock
@@ -55,6 +65,66 @@ struct PrivacyStorageView: View {
             Text("App Lock")
         } footer: {
             Text("Unlocked with Face ID or Touch ID; your passcode is the fallback. Notifications keep working while the app is locked. iOS still shows the last screen as a snapshot in the app switcher.")
+        }
+    }
+
+    // MARK: - iCloud (I6: opt-in, scoped, tombstoned)
+
+    /// One pull-merge-push pass. The engine is opt-in gated: while
+    /// the toggle is off it reads and writes nothing, so this call is
+    /// safe at every screen open.
+    private func reconcileSync() {
+        cloud.reconcile(
+            settings: settings,
+            hostAddresses: Dictionary(
+                hosts.entries.map { ($0.id.rawValue, $0.host.address.absoluteString) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        )
+    }
+
+    private var syncStatusLabel: String {
+        switch cloud.status {
+        case .off: "Off"
+        case .upToDate: "Up to Date"
+        case .error: "Not Synced"
+        }
+    }
+
+    private var syncSection: some View {
+        Section {
+            Toggle("Sync Settings with iCloud", isOn: binding(\.icloudSyncRequested))
+            if settings.state.icloudSyncRequested {
+                LabeledContent("Status", value: syncStatusLabel)
+                if case .error(let message) = cloud.status {
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                        .accessibilityIdentifier("S19.syncError")
+                }
+                if !cloud.lastReport.pendingCandidates.isEmpty {
+                    LabeledContent("Addresses to Offer", value: "\(cloud.lastReport.pendingCandidates.count)")
+                }
+                Button("Clear Synced Settings…", role: .destructive) {
+                    showingClearSynced = true
+                }
+                .accessibilityIdentifier("S19.clearSynced")
+            }
+        } header: {
+            Text("iCloud")
+        } footer: {
+            Text("Off until you opt in. Only appearance and host addresses sync — never credentials, drafts, notification choices, or attachment references. Turning sync off keeps every local setting. A removed host stays recorded in iCloud until you clear synced settings, so it cannot come back on its own.")
+        }
+        .confirmationDialog(
+            "Clear synced settings in iCloud?",
+            isPresented: $showingClearSynced,
+            titleVisibility: .visible
+        ) {
+            Button("Clear Synced Settings", role: .destructive) {
+                cloud.clearSyncedSettings()
+            }
+        } message: {
+            Text("Removes the appearance and host-address records this app stored in iCloud, including removals it was keeping. Local settings, hosts, and credentials are untouched — the next sync uploads them again.")
         }
     }
 

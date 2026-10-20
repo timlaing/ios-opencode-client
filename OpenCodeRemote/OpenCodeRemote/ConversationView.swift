@@ -1,5 +1,6 @@
 import SwiftUI
 import OpenCodeDomain
+import OpenCodeStorage
 import OpenCodeTransport
 import PhotosUI
 import UniformTypeIdentifiers
@@ -44,6 +45,10 @@ struct ConversationView: View {
     @State private var showingForm = false
     /// Preserved across failures — cleared ONLY on durable admission.
     @State private var draft = ""
+    /// W17 draft persistence: the durable handle for this
+    /// conversation, opened when the subscription starts.
+    @State private var composerDrafts: ComposerDraftStore?
+    @State private var draftSaveTask: Task<Void, Never>?
     /// W08 attachments (S09): prepared per the web inline/staging rule;
     /// chips mirror the tray beside the draft.
     @State private var attachments = AttachmentLibrary()
@@ -595,6 +600,19 @@ struct ConversationView: View {
         // S20 (W17): banner posts and the lazy permission outcome
         // join the redacted diagnostic log.
         notifier.diagnostics = DiagnosticsLogStore()
+        // W17 drafts: open the durable store for this conversation and
+        // restore any text that survived a crash or relaunch (expiry
+        // is applied on sight — see ComposerDraftStore.restore).
+        composerDrafts = (try? DraftStore(writingAt: StorageLibrary.defaultDraftsDirectory))
+            .map(ComposerDraftStore.init(drafts:))
+        if draft.isEmpty,
+           let restored = composerDrafts?.restore(
+               hostUUID: host.id.rawValue,
+               sessionID: session.id,
+               settings: settings
+           ) {
+            draft = restored
+        }
         let sessionTitle = session.title
         let sessionID = session.id
         let directory = session.location?.directory
@@ -758,7 +776,16 @@ struct ConversationView: View {
                             host: host, sessionID: session.id, text: text,
                             files: files.isEmpty ? nil : files
                         ) {
-                            if draft == text { draft = "" }
+                            if draft == text {
+                                draft = ""
+                                // Durable admission also deletes the
+                                // persisted draft at once — the debounced
+                                // path below would leave a sent text
+                                // restorable for its 300 ms window.
+                                composerDrafts?.save(
+                                    "", hostUUID: host.id.rawValue, sessionID: session.id
+                                )
+                            }
                             attachments.consume(sentIDs)
                             // `send` returns on durable ADMISSION — the
                             // host creates the permission request only
@@ -813,6 +840,19 @@ struct ConversationView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
+        // W17 drafts: keystrokes coalesce into one durable write per
+        // ~300 ms of quiet; an emptied field (sent, discarded) takes
+        // the same path and deletes the record.
+        .onChange(of: draft) { _, newValue in
+            draftSaveTask?.cancel()
+            let hostUUID = host.id.rawValue
+            let sessionID = session.id
+            draftSaveTask = Task {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+                guard !Task.isCancelled else { return }
+                composerDrafts?.save(newValue, hostUUID: hostUUID, sessionID: sessionID)
+            }
+        }
     }
 
     /// Attachment chips beside the draft (S08/S09): name plus honest

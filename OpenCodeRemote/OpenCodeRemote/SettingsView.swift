@@ -56,7 +56,7 @@ struct SettingsView: View {
                     NavigationLink {
                         PrivacyStorageView()
                     } label: {
-                        Text("Privacy & Storage")
+                        Text("Privacy, Storage & Sync")
                     }
                 }
 

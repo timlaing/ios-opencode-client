@@ -1,5 +1,6 @@
 import SwiftUI
 import OpenCodeDomain
+import OpenCodeStorage
 import OpenCodeTransport
 
 /// Root navigation shell: Servers, Projects, Sessions, Settings
@@ -19,6 +20,10 @@ struct ContentView: View {
     /// The diagnostic log is a stateless value over one file — each
     /// consumer constructs its own handle.
     @State private var notifications = NotificationsLibrary()
+    /// W17 I6: the opt-in iCloud settings sync (S19). One instance so
+    /// the external-change subscription and the local mirror are
+    /// shared app-wide.
+    @State private var cloud = CloudSettingsSync()
 
     var body: some View {
         TabView {
@@ -40,6 +45,19 @@ struct ContentView: View {
         .environment(settings)
         .environment(localState)
         .environment(notifications)
+        .environment(cloud)
+        // W17 I6: the quota reason reaches the engine through the
+        // store's external-change notification (KVS writes never
+        // throw); every other change converges on the next pull.
+        .onAppear { cloud.observeExternalChanges() }
+        // W17 drafts retention: one sweep per launch removes drafts
+        // older than the active policy's cutoff (until-discarded
+        // sweeps nothing — see ComposerDraftStore.applyRetention).
+        .task {
+            if let drafts = try? DraftStore(writingAt: StorageLibrary.defaultDraftsDirectory) {
+                ComposerDraftStore(drafts: drafts).applyRetention(settings)
+            }
+        }
         .sheet(isPresented: $showingConnectSheet) {
             // Injected explicitly rather than relying on sheet environment
             // inheritance — a missing HostLibrary is a fatal SwiftUI error.
