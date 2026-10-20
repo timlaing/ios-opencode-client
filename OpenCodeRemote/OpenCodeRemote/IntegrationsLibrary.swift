@@ -277,6 +277,11 @@ final class IntegrationsLibrary {
     /// renders it in that segment), a success rebuilds the rows and
     /// clears the error — never a global failure.
     private func adopt(inventory: Inventory, directory: String?) {
+        // A fresh, scope-checked inventory supersedes any earlier
+        // GLOBAL failure: otherwise a failed pull-to-refresh's banner
+        // would linger above the rows a later successful action
+        // refresh installs (mcpAction/applyToggle both adopt).
+        loadError = nil
         let editable = Self.editableDocument(in: inventory.entries, sessionDirectory: directory)
         editableDocument = editable
         rows = Self.buildRows(
@@ -853,7 +858,16 @@ final class IntegrationsLibrary {
     /// `mcp` has `additionalProperties: false`, so this is the only
     /// nesting). config.get answers LOW → HIGH precedence, so the
     /// LAST declaration of a name wins — the same join rule the
-    /// plugin rows use. A name no document declares stays nil: the
+    /// plugin rows use. This mirrors the pinned host's OWN merge
+    /// exactly: `packages/core/src/config/plugin/mcp.ts` (commit
+    /// b44eea9e) walks the documents in that order and does
+    /// `servers.set(name, server)` — a WHOLE per-server config
+    /// replacement, last document wins, never a per-key deep merge —
+    /// so a later document that declares the server WITHOUT
+    /// `disabled` genuinely re-enables it (the earlier object is
+    /// replaced wholesale), which is why a flag-less later
+    /// declaration stores `false` here rather than preserving an
+    /// earlier `true`. A name no document declares stays nil: the
     /// server is host/runtime-provided here, never "declared
     /// disabled" by absence.
     private static func buildMcpRows(

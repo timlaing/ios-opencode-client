@@ -1434,4 +1434,44 @@ final class IntegrationsLibraryTests: XCTestCase {
             "the row itself proves the refreshed list still reports it"
         )
     }
+
+    /// A failed load's global error must not outlive its usefulness:
+    /// once a later authoritative action refresh succeeds, the stale
+    /// "could not load" banner would sit above the fresh rows that
+    /// refresh installs — the successful adopt supersedes it
+    /// (W15 review round 4).
+    func testAnActionRefreshSupersedesAStaleLoadError() async {
+        let recorder = Recorder()
+        var pluginReads = 0
+        let library = library(recorder: recorder) { request in
+            switch request.operationID {
+            case "plugin.list":
+                pluginReads += 1
+                if pluginReads == 1 {
+                    throw TransportError.connectionFailed("the first inventory read fails")
+                }
+                return Fixtures.response(Fixtures.pluginList)
+            case "config.get": return Fixtures.response(Fixtures.configWithDirectives)
+            case "mcp.list": return Fixtures.response(Fixtures.mcpList)
+            case "experimental.mcp.connect": return Fixtures.noContent
+            default: throw TransportError.connectionFailed("unstubbed \(request.operationID)")
+            }
+        }
+
+        await library.load(host: one, sessionDirectory: "/srv/demo")
+
+        XCTAssertNotNil(library.loadError, "the failed read is reported")
+        XCTAssertTrue(library.mcpRows.isEmpty, "nothing was adopted from the failed load")
+
+        await library.mcpAction(
+            host: one, server: "demo-docs", connect: true, sessionDirectory: "/srv/demo"
+        )
+
+        XCTAssertNil(
+            library.loadError,
+            "the successful authoritative refresh supersedes the stale global failure"
+        )
+        XCTAssertFalse(library.mcpRows.isEmpty, "fresh rows stand under a clear banner")
+        XCTAssertNil(library.toggleError)
+    }
 }
