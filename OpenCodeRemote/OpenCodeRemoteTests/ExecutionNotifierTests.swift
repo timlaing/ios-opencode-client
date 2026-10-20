@@ -137,7 +137,13 @@ final class ExecutionNotifierTests: XCTestCase {
 
     func testIdlessAndUnknownEventsAreNeverPosted() async {
         let fake = FakeNotifier()
-        let notifier = notifier(fake)
+        // ONE defaults domain for the notifier AND the assertion: a
+        // second freshDefaults() would read an empty domain the
+        // notifier never wrote to.
+        let defaults = freshDefaults()
+        let notifier = ExecutionNotifier(
+            notifier: fake, dedup: NotificationDedupStore(defaults: defaults)
+        )
         notifier.sceneActive = false
 
         // An id-less event cannot be deduplicated — a duplicate
@@ -148,7 +154,7 @@ final class ExecutionNotifierTests: XCTestCase {
 
         XCTAssertTrue(fake.posted.isEmpty)
         XCTAssertFalse(
-            NotificationDedupStore(defaults: freshDefaults()).alreadyPosted("v"),
+            NotificationDedupStore(defaults: defaults).alreadyPosted("v"),
             "an unknown type never consumes the identity — a later canonical event may still banner"
         )
     }

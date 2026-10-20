@@ -46,6 +46,13 @@ final class EventReconciler {
         enum Change: Equatable { case started, delta(String), ended(String) }
         var sessionID: String
         var messageID: String
+        /// Which text/reasoning PART of the message this patch
+        /// extends (contract: "keyed by message/ordinal"). One
+        /// message's content can interleave text and tool parts — a
+        /// second text part must never append to, replace, or settle
+        /// the first (review W16 r2). Never guessed: an event without
+        /// it falls back to the authoritative list read.
+        var ordinal: Int
         var kind: Kind
         var change: Change
     }
@@ -155,18 +162,27 @@ final class EventReconciler {
             guard let messageID = data["assistantMessageID"]?.stringValue else {
                 return .transcript(sessionID: sessionID)
             }
-            let patch = StreamPatch(sessionID: sessionID, messageID: messageID, kind: kind, change: .started)
+            // Same rule for the ordinal: it is the part's index within
+            // the message, and a guessed one would merge or split
+            // segments arbitrarily.
+            guard let ordinal = data["ordinal"]?.numberValue.flatMap({ Int(exactly: $0) }) else {
+                return .transcript(sessionID: sessionID)
+            }
+            let patch = StreamPatch(
+                sessionID: sessionID, messageID: messageID, ordinal: ordinal,
+                kind: kind, change: .started
+            )
             switch suffix {
             case "started":
                 return .stream(patch)
             case "delta":
                 return .stream(StreamPatch(
-                    sessionID: sessionID, messageID: messageID, kind: kind,
+                    sessionID: sessionID, messageID: messageID, ordinal: ordinal, kind: kind,
                     change: .delta(data["delta"]?.stringValue ?? "")
                 ))
             case "ended":
                 return .stream(StreamPatch(
-                    sessionID: sessionID, messageID: messageID, kind: kind,
+                    sessionID: sessionID, messageID: messageID, ordinal: ordinal, kind: kind,
                     change: .ended(data["text"]?.stringValue ?? "")
                 ))
             default:

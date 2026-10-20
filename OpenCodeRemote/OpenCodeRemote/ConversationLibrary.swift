@@ -87,28 +87,36 @@ final class ConversationLibrary {
     // MARK: - W16 live streaming overlay + execution status
 
     struct StreamingMessage: Equatable {
-        var text = ""
-        var reasoning = ""
-        /// Set once the stream's `text.ended` full value arrived. Only
-        /// a SETTLED entry may be retired by the list (review W16 r1):
-        /// a mid-turn message-list row can carry partial content, and
-        /// pruning an unsettled overlay against it would truncate the
-        /// live tail to the next delta, restarting per delta. A
-        /// reasoning-only turn never settles — its entry is bounded by
-        /// the turn's execution terminal (markExecutionFinished) or a
-        /// full refresh, never pruned early.
-        var isSettled = false
+        /// One in-flight text or reasoning PART of the message, keyed
+        /// by the event's own ordinal: a message's content can
+        /// interleave text and tool parts, so a second part's deltas
+        /// must never append to the first part's ended text — nor
+        /// replace it, nor settle it (contract: "keyed by message/
+        /// ordinal"; review W16 r2).
+        struct Segment: Equatable {
+            var content = ""
+            /// Set once THIS part's `ended` full value arrived. Only a
+            /// settled segment may be retired by the list's row: a
+            /// mid-turn row is the host's partial snapshot, and
+            /// pruning against it would truncate the tail to the next
+            /// delta (review W16 r1). A part that never ends is
+            /// bounded by the turn's execution terminal or a full
+            /// refresh, never pruned early.
+            var isSettled = false
+        }
+        var text: [Int: Segment] = [:]
+        var reasoning: [Int: Segment] = [:]
     }
 
-    /// Incremental assistant state keyed by assistantMessageID, fed by
-    /// text/reasoning events while the host streams (docs/
-    /// api-contract.md W16). The message LIST stays authoritative: a
-    /// SETTLED overlay entry is retired once the transcript contains
-    /// its row (an unsettled one is kept — the row may be the host's
-    /// mid-turn snapshot, not the turn's final text), and a full
-    /// refresh (server.connected) clears everything — the volatile
-    /// stream has no replay, so anything accumulated on a dead
-    /// connection is untrusted.
+    /// Incremental assistant state keyed by assistantMessageID, its
+    /// parts by ordinal, fed by text/reasoning events while the host
+    /// streams (docs/api-contract.md W16). The message LIST stays
+    /// authoritative: an entry whose parts have ALL settled is retired
+    /// once the transcript contains its row (an unsettled part keeps
+    /// the entry — the row may be the host's mid-turn snapshot), and a
+    /// full refresh (server.connected) clears everything — the
+    /// volatile stream has no replay, so anything accumulated on a
+    /// dead connection is untrusted.
     private(set) var streaming: [String: StreamingMessage] = [:]
 
     /// Canonical working state from execution/status events. A
@@ -122,28 +130,35 @@ final class ConversationLibrary {
 
     private(set) var executionStatus: ExecutionStatus = .idle
 
-    /// Applies one incremental text/reasoning patch. `ended` carries
-    /// the full value and REPLACES the accumulated text — the deltas
+    /// Applies one incremental part patch. `ended` carries the full
+    /// value and REPLACES that part's accumulated deltas — the deltas
     /// before it are only the low-latency path to the same truth.
+    /// Parts are independent: `.started` on a later part never
+    /// re-opens, appends to, or settles an earlier one (review W16
+    /// r2).
     func applyStream(_ patch: EventReconciler.StreamPatch) {
         guard patch.sessionID == loadedSessionID else { return }
-        var entry = streaming[patch.messageID] ?? StreamingMessage()
-        switch (patch.kind, patch.change) {
-        case (_, .started):
-            break
-        case (.text, .delta(let delta)):
-            entry.text += delta
-        case (.text, .ended(let full)):
-            entry.text = full
-            // The turn's full text arrived: the entry may now be
-            // retired by the list's next authoritative read.
-            entry.isSettled = true
-        case (.reasoning, .delta(let delta)):
-            entry.reasoning += delta
-        case (.reasoning, .ended(let full)):
-            entry.reasoning = full
+        var message = streaming[patch.messageID] ?? StreamingMessage()
+        var segments = patch.kind == .text ? message.text : message.reasoning
+        var segment = segments[patch.ordinal] ?? StreamingMessage.Segment()
+        switch patch.change {
+        case .started:
+            // A part re-opening after its own earlier end (the stream
+            // can carry a restart) is live again — unprunable.
+            segment.isSettled = false
+        case .delta(let delta):
+            segment.content += delta
+        case .ended(let full):
+            segment.content = full
+            segment.isSettled = true
         }
-        streaming[patch.messageID] = entry
+        segments[patch.ordinal] = segment
+        if patch.kind == .text {
+            message.text = segments
+        } else {
+            message.reasoning = segments
+        }
+        streaming[patch.messageID] = message
     }
 
     func markExecutionStarted(sessionID: String) {
@@ -167,15 +182,18 @@ final class ConversationLibrary {
         executionStatus = status
     }
 
-    /// The list owns every row it contains — but only once the turn
-    /// said so: pruning an UNSETTLED entry against a mid-turn row
-    /// would truncate the live tail to the next delta, restarting it
-    /// per delta against the host's stale partial copy (review W16
-    /// r1). While unsettled, the view renders the overlay IN PLACE of
-    /// that row's text/reasoning instead of duplicating both.
+    /// The list owns every row it contains — but only once every part
+    /// of the overlay has settled: pruning an entry with a live part
+    /// against a mid-turn row would truncate the tail to the next
+    /// delta, restarting it per delta against the host's stale partial
+    /// copy (review W16 r1). While any part is live, the view renders
+    /// the overlay parts IN PLACE of the row's same-index items
+    /// instead of duplicating both.
     private func pruneDeliveredStreaming() {
-        streaming = streaming.filter { key, entry in
-            !(entry.isSettled && messages.contains { $0.id == key })
+        streaming = streaming.filter { key, message in
+            let allSettled = message.text.values.allSatisfy(\.isSettled)
+                && message.reasoning.values.allSatisfy(\.isSettled)
+            return !(allSettled && messages.contains { $0.id == key })
         }
     }
 

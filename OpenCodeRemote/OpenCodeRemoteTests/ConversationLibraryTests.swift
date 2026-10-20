@@ -926,20 +926,46 @@ final class ConversationLibraryTests: XCTestCase {
         }
         await library.open(host: one, sessionID: "ses_a")
 
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .started))
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("Hel")))
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("lo")))
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .reasoning, change: .delta("hmm")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .started))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("Hel")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("lo")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .reasoning, change: .delta("hmm")))
 
-        XCTAssertEqual(library.streaming["msg_live"]?.text, "Hello")
-        XCTAssertEqual(library.streaming["msg_live"]?.reasoning, "hmm")
+        XCTAssertEqual(library.streaming["msg_live"]?.text[0]?.content, "Hello")
+        XCTAssertEqual(library.streaming["msg_live"]?.reasoning[0]?.content, "hmm")
 
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .ended("Hello there.")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .ended("Hello there.")))
 
         XCTAssertEqual(
-            library.streaming["msg_live"]?.text, "Hello there.",
+            library.streaming["msg_live"]?.text[0]?.content, "Hello there.",
             "the ended full value REPLACES the accumulated deltas"
         )
+        XCTAssertEqual(library.streaming["msg_live"]?.text[0]?.isSettled, true)
+    }
+
+    func testApplyStreamKeepsPartsIndependentPerOrdinal() async {
+        let library = conversation(recorder: Recorder()) { _ in
+            Fixtures.response(Fixtures.emptyPage)
+        }
+        await library.open(host: one, sessionID: "ses_a")
+
+        // Text part 0 ends, then a second text part starts in the
+        // SAME message (text -> tool -> text, review W16 r2).
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .ended("First.")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 1, kind: .text, change: .delta("Second")))
+
+        XCTAssertEqual(library.streaming["msg_live"]?.text[0]?.content, "First.", "part 0's ended text is never appended to")
+        XCTAssertEqual(library.streaming["msg_live"]?.text[0]?.isSettled, true)
+        XCTAssertEqual(library.streaming["msg_live"]?.text[1]?.content, "Second", "part 1 accumulates on its own key")
+
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 1, kind: .text, change: .ended("Second part.")))
+
+        XCTAssertEqual(
+            library.streaming["msg_live"]?.text[0]?.content, "First.",
+            "part 1's ended REPLACES only part 1 — part 0 does not vanish"
+        )
+        XCTAssertEqual(library.streaming["msg_live"]?.text[1]?.content, "Second part.")
+        XCTAssertEqual(library.streaming["msg_live"]?.text[1]?.isSettled, true)
     }
 
     func testApplyStreamNeverCrossesSessions() async {
@@ -948,7 +974,7 @@ final class ConversationLibraryTests: XCTestCase {
         }
         await library.open(host: one, sessionID: "ses_a")
 
-        library.applyStream(.init(sessionID: "ses_other", messageID: "msg_live", kind: .text, change: .delta("x")))
+        library.applyStream(.init(sessionID: "ses_other", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("x")))
 
         XCTAssertTrue(library.streaming.isEmpty, "another session's stream never renders under this transcript")
     }
@@ -967,7 +993,7 @@ final class ConversationLibraryTests: XCTestCase {
             ]))
         }
         await library.open(host: one, sessionID: "ses_a")
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("partial")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("partial")))
 
         await library.refresh(host: one, sessionID: "ses_a")
 
@@ -978,7 +1004,7 @@ final class ConversationLibraryTests: XCTestCase {
 
         // The turn's full text arrives: only now is the entry settled
         // enough for the list to retire it.
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .ended("Hello there.")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .ended("Hello there.")))
         await library.refresh(host: one, sessionID: "ses_a")
 
         XCTAssertTrue(library.streaming.isEmpty, "a SETTLED entry the list carries is retired")
@@ -994,7 +1020,7 @@ final class ConversationLibraryTests: XCTestCase {
             return Fixtures.response(Fixtures.emptyPage)
         }
         await library.open(host: one, sessionID: "ses_a")
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("x")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("x")))
         library.markExecutionStarted(sessionID: "ses_a")
 
         await library.open(host: one, sessionID: "ses_b")
@@ -1009,7 +1035,7 @@ final class ConversationLibraryTests: XCTestCase {
         }
         await library.open(host: one, sessionID: "ses_a")
         library.applyStatus(.retry(attempt: 2, message: "rate limited"))
-        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("x")))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("x")))
 
         library.markExecutionFinished()
 

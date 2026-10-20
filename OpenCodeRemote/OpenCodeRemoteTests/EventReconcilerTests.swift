@@ -125,33 +125,39 @@ final class EventReconcilerTests: XCTestCase {
 
     func testTextAndReasoningPatchesCarryTheirKeysAndValues() {
         XCTAssertEqual(
-            classify(event("session.text.started", ["sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a")])),
+            classify(event("session.text.started", [
+                "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a"), "ordinal": .number(0),
+            ])),
             .stream(EventReconciler.StreamPatch(
-                sessionID: "ses_a", messageID: "msg_a", kind: .text, change: .started
+                sessionID: "ses_a", messageID: "msg_a", ordinal: 0, kind: .text, change: .started
             ))
         )
         XCTAssertEqual(
             classify(event("session.text.delta", [
-                "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a"), "delta": .string("Hel"),
+                "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a"),
+                "ordinal": .number(1), "delta": .string("Hel"),
             ])),
             .stream(EventReconciler.StreamPatch(
-                sessionID: "ses_a", messageID: "msg_a", kind: .text, change: .delta("Hel")
-            ))
+                sessionID: "ses_a", messageID: "msg_a", ordinal: 1, kind: .text, change: .delta("Hel")
+            )),
+            "the ordinal rides every patch — a message's parts are independent"
         )
         XCTAssertEqual(
             classify(event("session.text.ended", [
-                "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a"), "text": .string("Hello."),
+                "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a"),
+                "ordinal": .number(0), "text": .string("Hello."),
             ])),
             .stream(EventReconciler.StreamPatch(
-                sessionID: "ses_a", messageID: "msg_a", kind: .text, change: .ended("Hello.")
+                sessionID: "ses_a", messageID: "msg_a", ordinal: 0, kind: .text, change: .ended("Hello.")
             ))
         )
         XCTAssertEqual(
             classify(event("session.reasoning.delta", [
-                "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a"), "delta": .string("hmm"),
+                "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a"),
+                "ordinal": .number(0), "delta": .string("hmm"),
             ])),
             .stream(EventReconciler.StreamPatch(
-                sessionID: "ses_a", messageID: "msg_a", kind: .reasoning, change: .delta("hmm")
+                sessionID: "ses_a", messageID: "msg_a", ordinal: 0, kind: .reasoning, change: .delta("hmm")
             ))
         )
     }
@@ -161,6 +167,13 @@ final class EventReconcilerTests: XCTestCase {
             classify(event("session.text.delta", ["sessionID": .string("ses_a"), "delta": .string("x")])),
             .transcript(sessionID: "ses_a"),
             "a delta that cannot be placed is answered by the list, never a guess"
+        )
+        XCTAssertEqual(
+            classify(event("session.text.delta", [
+                "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_a"), "delta": .string("x"),
+            ])),
+            .transcript(sessionID: "ses_a"),
+            "without the ordinal the segment cannot be attributed — same rule, same fallback"
         )
     }
 
@@ -259,24 +272,63 @@ final class EventReconcilerTests: XCTestCase {
         let reconciler = reconciler(conversation, calls: calls)
 
         await reconciler.handle(event("session.text.started", [
-            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"),
+            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"), "ordinal": .number(0),
         ]))
         await reconciler.handle(event("session.text.delta", [
-            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"), "delta": .string("Hel"),
+            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"),
+            "ordinal": .number(0), "delta": .string("Hel"),
         ]))
         await reconciler.handle(event("session.reasoning.delta", [
-            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"), "delta": .string("hmm"),
+            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"),
+            "ordinal": .number(0), "delta": .string("hmm"),
         ]))
 
-        XCTAssertEqual(conversation.streaming["msg_live"]?.text, "Hel")
-        XCTAssertEqual(conversation.streaming["msg_live"]?.reasoning, "hmm")
+        XCTAssertEqual(conversation.streaming["msg_live"]?.text[0]?.content, "Hel")
+        XCTAssertEqual(conversation.streaming["msg_live"]?.reasoning[0]?.content, "hmm")
         XCTAssertTrue(calls.calls.isEmpty, "deltas are answered by the overlay alone — no list read per delta")
 
         await reconciler.handle(event("session.text.ended", [
-            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"), "text": .string("Hello there."),
+            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"),
+            "ordinal": .number(0), "text": .string("Hello there."),
         ]))
-        XCTAssertEqual(conversation.streaming["msg_live"]?.text, "Hello there.", "the full value REPLACES the deltas")
+        XCTAssertEqual(
+            conversation.streaming["msg_live"]?.text[0]?.content, "Hello there.",
+            "the full value REPLACES the deltas"
+        )
+        XCTAssertEqual(conversation.streaming["msg_live"]?.text[0]?.isSettled, true)
         await waitUntil { calls.calls == ["transcript"] }
+    }
+
+    func testASecondTextPartNeverMergesIntoTheSettledFirst() async {
+        let conversation = await loadedConversation()
+        let calls = CallLog()
+        let reconciler = reconciler(conversation, calls: calls)
+
+        // Text part 0 ends (its row's arrival is pending), then the
+        // model calls a tool and streams a SECOND part into the same
+        // message — the reviewer's multi-segment scenario (review W16
+        // r2).
+        await reconciler.handle(event("session.text.ended", [
+            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"),
+            "ordinal": .number(0), "text": .string("First part."),
+        ]))
+        await reconciler.handle(event("session.text.started", [
+            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"), "ordinal": .number(1),
+        ]))
+        await reconciler.handle(event("session.text.delta", [
+            "sessionID": .string("ses_a"), "assistantMessageID": .string("msg_live"),
+            "ordinal": .number(1), "delta": .string("Second."),
+        ]))
+
+        let entry = conversation.streaming["msg_live"]
+        XCTAssertEqual(entry?.text[0]?.content, "First part.", "part 0 keeps its own ended text")
+        XCTAssertEqual(entry?.text[0]?.isSettled, true)
+        XCTAssertEqual(entry?.text[1]?.content, "Second.", "part 1 accumulates separately")
+        XCTAssertEqual(
+            entry?.text[1]?.isSettled, false,
+            "part 1's started re-opens the entry — it is live again, never prunable"
+        )
+        XCTAssertTrue(calls.calls.isEmpty, "still no list read: the overlay carries every part")
     }
 
     func testExecutionTerminalClearsOverlayAndIndicatorAndRefreshes() async {
@@ -284,7 +336,7 @@ final class EventReconcilerTests: XCTestCase {
         conversation.markExecutionStarted(sessionID: "ses_a")
         conversation.applyStatus(.retry(attempt: 1, message: nil))
         conversation.applyStream(EventReconciler.StreamPatch(
-            sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("partial")
+            sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("partial")
         ))
         XCTAssertEqual(conversation.executionStatus, .retry(attempt: 1, message: nil))
 
@@ -322,7 +374,7 @@ final class EventReconcilerTests: XCTestCase {
     func testFullRefreshReFetchesEverythingAndDistrustsTheOverlay() async {
         let conversation = await loadedConversation()
         conversation.applyStream(EventReconciler.StreamPatch(
-            sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .delta("stale")
+            sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("stale")
         ))
         let calls = CallLog()
         let reconciler = reconciler(conversation, calls: calls)

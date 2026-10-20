@@ -574,6 +574,12 @@ struct ConversationView: View {
         let host = self.host
         let hostLibrary = self.library
         let activeService = SessionHistoryService(makeTransport: { URLSessionTransport(baseURL: $0) })
+        // Stored closures capture the LIBRARY reference and plain
+        // values — never the view struct itself (nextHead lesson): the
+        // reconciler lives in @State, so capturing self would chain
+        // State → reconciler → captured view value → State.
+        let notifier = self.notifier
+        let sessionTitle = session.title
         let sessionID = session.id
         let directory = session.location?.directory
         // One lazy consent ask per notifier lifetime, before the first
@@ -625,7 +631,7 @@ struct ConversationView: View {
         reconciler.onExecutionTerminal = { event in
             // Only this conversation's live terminal events reach the
             // notifier; it applies the active/dedup/consent gates.
-            await notifier.handleTerminal(event, sessionTitle: session.title)
+            await notifier.handleTerminal(event, sessionTitle: sessionTitle)
         }
         reconciler.readActiveSessions = { [weak hostLibrary] in
             // Reconnect reconciliation of the working indicator (review
@@ -892,33 +898,51 @@ struct ConversationView: View {
 
     // MARK: - Message rendering
 
-    /// The overlay's own rendering — shared by the tail row (the list
-    /// has not caught up) and the in-place substitution inside an
-    /// assistant row (review W16 r1: the overlay REPLACES the row's
-    /// text/reasoning rather than duplicating it).
+    /// One part's rendering — shared by the tail row (the list has
+    /// not caught up at all) and the in-place substitution inside an
+    /// assistant row.
     @ViewBuilder
-    private func streamingContent(_ entry: ConversationLibrary.StreamingMessage) -> some View {
-        if !entry.reasoning.isEmpty {
-            Text(entry.reasoning)
+    private func livePartView(_ content: String, isReasoning: Bool) -> some View {
+        if isReasoning {
+            Text(content)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .italic()
+        } else {
+            markdown(content)
         }
-        if !entry.text.isEmpty {
-            markdown(entry.text)
+    }
+
+    /// The tail row's full overlay: reasoning (dimmed) above text, in
+    /// ordinal order — parts are independent (review W16 r2), so a
+    /// later part never merges into an earlier one's text.
+    @ViewBuilder
+    private func streamingContent(_ entry: ConversationLibrary.StreamingMessage) -> some View {
+        let reasoning = entry.reasoning.sorted { $0.key < $1.key }
+            .map(\.value.content).filter { !$0.isEmpty }
+        let text = entry.text.sorted { $0.key < $1.key }
+            .map(\.value.content).filter { !$0.isEmpty }
+        if !reasoning.isEmpty {
+            livePartView(reasoning.joined(separator: "\n\n"), isReasoning: true)
+        }
+        if !text.isEmpty {
+            livePartView(text.joined(separator: "\n\n"), isReasoning: false)
         }
     }
 
     /// W16 live tail row: the assistant's in-flight reasoning and text
     /// as the deltas arrive. Reasoning renders dimmed above the text
-    /// (the same thinking treatment as the transcript); an empty entry
-    /// is the "responding" placeholder before the first delta.
+    /// (the same thinking treatment as the transcript); an entry with
+    /// no content yet is the "responding" placeholder before the first
+    /// delta.
     @ViewBuilder
     private func streamingRow(_ entry: ConversationLibrary.StreamingMessage?, id: String) -> some View {
         if let entry {
+            let hasContent = entry.text.values.contains { !$0.content.isEmpty }
+                || entry.reasoning.values.contains { !$0.content.isEmpty }
             VStack(alignment: .leading, spacing: 6) {
                 streamingContent(entry)
-                if entry.text.isEmpty, entry.reasoning.isEmpty {
+                if !hasContent {
                     HStack(spacing: 8) {
                         ProgressView()
                         Text("Responding…")
@@ -933,26 +957,92 @@ struct ConversationView: View {
         }
     }
 
-    /// The LIVE (non-settled) overlay entry for a row, if any. A
-    /// settled entry no longer owns the row: its full text arrived and
-    /// the list's next authoritative read retires it.
+    /// The overlay entry whose LIVE (unsettled) parts still own their
+    /// row's same-index items. Once every part settled, the row's own
+    /// items are the host's authority — the next authoritative read
+    /// retires the entry.
     private func liveOverlay(for messageID: String) -> ConversationLibrary.StreamingMessage? {
-        conversation.streaming[messageID].flatMap { $0.isSettled ? nil : $0 }
+        guard let entry = conversation.streaming[messageID] else { return nil }
+        let hasLivePart = entry.text.values.contains { !$0.isSettled }
+            || entry.reasoning.values.contains { !$0.isSettled }
+        return hasLivePart ? entry : nil
     }
 
-    /// An item is superseded only when the overlay actually carries
-    /// that KIND of content — reasoning the stream never delivered
-    /// still renders from the list (the overlay cannot replace what it
-    /// never saw), and tool/unknown items always stay authoritative.
-    private func isSupersededByOverlay(
-        _ item: SessionMessage.ContentItem,
+    /// A row's content items with text and reasoning parts numbered
+    /// independently 0,1,2… — the same ordinal space the stream's
+    /// events carry. A message's content can interleave text and
+    /// tools, so each part renders in its own position, never
+    /// combined (review W16 r2).
+    private struct PositionedItem {
+        var item: SessionMessage.ContentItem
+        var textIndex: Int?
+        var reasoningIndex: Int?
+    }
+
+    private func positioned(_ content: [SessionMessage.ContentItem]) -> [PositionedItem] {
+        var text = 0
+        var reasoning = 0
+        return content.map { item in
+            switch item.type {
+            case "text":
+                defer { text += 1 }
+                return PositionedItem(item: item, textIndex: text, reasoningIndex: nil)
+            case "reasoning":
+                defer { reasoning += 1 }
+                return PositionedItem(item: item, textIndex: nil, reasoningIndex: reasoning)
+            default:
+                return PositionedItem(item: item, textIndex: nil, reasoningIndex: nil)
+            }
+        }
+    }
+
+    /// The live part a row item renders INSTEAD of its own content:
+    /// the overlay's part at the item's index within its kind. An
+    /// empty or settled part does not supersede (the row's copy — the
+    /// host's authority — renders), and tool/unknown items are never
+    /// superseded.
+    private func livePartReplacement(
+        _ position: PositionedItem,
         live: ConversationLibrary.StreamingMessage?
-    ) -> Bool {
-        guard let live else { return false }
-        switch item.type {
-        case "text": return !live.text.isEmpty
-        case "reasoning": return !live.reasoning.isEmpty
-        default: return false
+    ) -> String? {
+        guard let live else { return nil }
+        if let textIndex = position.textIndex,
+           let segment = live.text[textIndex],
+           !segment.isSettled, !segment.content.isEmpty {
+            return segment.content
+        }
+        if let reasoningIndex = position.reasoningIndex,
+           let segment = live.reasoning[reasoningIndex],
+           !segment.isSettled, !segment.content.isEmpty {
+            return segment.content
+        }
+        return nil
+    }
+
+    /// Live parts the row has not caught up with at all (indexes past
+    /// the row's items of that kind) — rendered after the row's
+    /// content, in ordinal order.
+    @ViewBuilder
+    private func trailingLiveParts(
+        _ entry: ConversationLibrary.StreamingMessage,
+        textCount: Int,
+        reasoningCount: Int
+    ) -> some View {
+        let trailingReasoning = entry.reasoning
+            .filter { $0.key >= reasoningCount && !$0.value.isSettled }
+            .sorted { $0.key < $1.key }
+            .map(\.value.content)
+            .filter { !$0.isEmpty }
+        let trailingText = entry.text
+            .filter { $0.key >= textCount && !$0.value.isSettled }
+            .sorted { $0.key < $1.key }
+            .map(\.value.content)
+            .filter { !$0.isEmpty }
+        ForEach(Array(trailingReasoning.enumerated()), id: \.offset) { _, part in
+            livePartView(part, isReasoning: true)
+        }
+        ForEach(Array(trailingText.enumerated()), id: \.offset) { _, part in
+            livePartView(part, isReasoning: false)
         }
     }
 
@@ -974,24 +1064,32 @@ struct ConversationView: View {
             .padding(.vertical, 2)
 
         case .assistant(let agent, let model, let content, let error, _):
-            // W16 review r1: while the turn streams and the host has
-            // already returned its in-progress row, the row's
-            // text/reasoning are the host's mid-turn snapshot — stale
-            // beside the live overlay. The overlay renders IN PLACE of
-            // exactly the items it covers (kind by kind); tool and
-            // unknown items stay authoritative from the list.
+            // W16: while a part of this message streams, the row's
+            // items are the host's mid-turn snapshot — stale beside
+            // the live overlay. Each live part renders IN PLACE of the
+            // row's same-index item (review W16 r1: never both) at the
+            // item's OWN position, so the text/tool interleaving is
+            // kept (review W16 r2); tool and unknown items always stay
+            // authoritative from the list.
             let live = liveOverlay(for: message.id)
+            let positions = positioned(content)
             VStack(alignment: .leading, spacing: 6) {
                 Text([agent, model.map { "\($0.providerID)/\($0.id)" }].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
-                if let live {
-                    streamingContent(live)
-                }
-                ForEach(Array(content.enumerated()), id: \.offset) { _, item in
-                    if !isSupersededByOverlay(item, live: live) {
-                        contentItemView(item)
+                ForEach(Array(positions.enumerated()), id: \.offset) { _, position in
+                    if let replacement = livePartReplacement(position, live: live) {
+                        livePartView(replacement, isReasoning: position.reasoningIndex != nil)
+                    } else {
+                        contentItemView(position.item)
                     }
+                }
+                if let live {
+                    trailingLiveParts(
+                        live,
+                        textCount: content.filter { $0.type == "text" }.count,
+                        reasoningCount: content.filter { $0.type == "reasoning" }.count
+                    )
                 }
                 if let error {
                     Label(error.message ?? error.name ?? "The assistant failed.", systemImage: "exclamationmark.triangle")
