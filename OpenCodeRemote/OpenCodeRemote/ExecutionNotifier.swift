@@ -31,6 +31,30 @@ struct NotificationCenterNotifier: UserNotifying {
     }
 }
 
+/// Presents execution banners while the app is still considered
+/// FOREGROUND (review W16 r10): iOS delivers an app-posted
+/// notification SILENTLY in that state unless a delegate answers
+/// `willPresent` — and the `.inactive` cases this feature targets
+/// (app switcher, Control Center) are exactly that state, so
+/// without this the banner only appeared on a real background
+/// transition. The notifier already gates on scene activity
+/// (`sceneActive`), so presenting here never interrupts a user who
+/// is watching the screen.
+final class ExecutionNotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        Self.options(for: notification.request.identifier)
+    }
+
+    /// Only this app's execution banners present in-foreground;
+    /// every other notification keeps the system's own rules.
+    static func options(for identifier: String) -> UNNotificationPresentationOptions {
+        identifier.hasPrefix("opencode.execution.") ? [.banner, .sound] : []
+    }
+}
+
 /// Stable-identity dedup for posted notifications
 /// (docs/implementation-defaults.md): keyed by the server's own event
 /// id, persisted SEVEN days with a 10,000-entry ceiling — the same
@@ -107,11 +131,14 @@ final class NotificationDedupStore {
 /// so in practice banners cover the inactive/early-background window
 /// (app switcher, Control Center, a brief background), never a turn
 /// that ends AFTER suspension; that terminal is reconciled on the
-/// next foreground without a banner. A `beginBackgroundTask` was
-/// considered and deliberately rejected — it buys only a bounded ~30
-/// seconds in exchange for balanced-start/end lifecycle risk — and
-/// the entitlement-gated push provider (stage 1) is the real path
-/// for post-suspension delivery.
+/// next foreground without a banner. That window is preserved by
+/// `ExecutionNotificationPresenter` (the `willPresent` delegate —
+/// iOS delivers app-posted notifications SILENTLY while the app is
+/// still foreground-ish, review W16 r10). A `beginBackgroundTask`
+/// was considered and deliberately rejected — it buys only a
+/// bounded ~30 seconds in exchange for balanced-start/end lifecycle
+/// risk — and the entitlement-gated push provider (stage 1) is the
+/// real path for post-suspension delivery.
 ///
 /// The three terminal outcomes are the contract's canonical
 /// notification transitions (succeeded / failed / interrupted).

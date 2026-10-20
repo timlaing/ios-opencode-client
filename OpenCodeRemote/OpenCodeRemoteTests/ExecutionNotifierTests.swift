@@ -190,4 +190,17 @@ final class ExecutionNotifierTests: XCTestCase {
         XCTAssertTrue(store.alreadyPosted("e1"))
         XCTAssertTrue(store.alreadyPosted("e2"))
     }
+
+    func testOnlyExecutionBannersPresentWhileTheAppIsForeground() {
+        let options = ExecutionNotificationPresenter.options(for: "opencode.execution.evt_1")
+        XCTAssertTrue(
+            options.contains(.banner),
+            "the inactive-window target IS the app-switcher/Control Center case — silent delivery there would miss it (review W16 r10)"
+        )
+        XCTAssertTrue(options.contains(.sound), "the posted content carries the default sound")
+        XCTAssertTrue(
+            ExecutionNotificationPresenter.options(for: "uk.co.laingcorp.opencode-client.other").isEmpty,
+            "every other notification keeps the system's own presentation rules"
+        )
+    }
 }
