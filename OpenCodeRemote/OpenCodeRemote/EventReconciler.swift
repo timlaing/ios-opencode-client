@@ -69,6 +69,12 @@ final class EventReconciler {
     var loadForms: (() async -> Void)?
     var loadContext: (() async -> Void)?
     var reloadIntegrations: (() async -> Void)?
+    /// W16 S17: the RAW event behind every execution terminal — the
+    /// notifier needs the event's own id (stable identity) and type
+    /// (canonical outcome), which the Action deliberately does not
+    /// carry. Awaited, so the dedup claim lands before any later
+    /// delivery of the same identity.
+    var onExecutionTerminal: ((OpenCodeEvent) async -> Void)?
 
     init(
         conversation: ConversationLibrary,
@@ -210,6 +216,9 @@ final class EventReconciler {
                 // busy status (a dropped stream is NOT completion, but
                 // an execution terminal event IS).
                 conversation.markExecutionFinished()
+                // Live delivery is the ONLY path to a banner (S17) —
+                // the notifier gates app-active, dedup and consent.
+                await onExecutionTerminal?(event)
             } else {
                 conversation.markExecutionStarted(sessionID: sessionID)
             }

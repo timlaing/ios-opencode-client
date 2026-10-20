@@ -297,6 +297,28 @@ final class EventReconcilerTests: XCTestCase {
         XCTAssertEqual(calls.calls, ["transcript"])
     }
 
+    func testExecutionTerminalsHandTheRawEventToTheNotifierHook() async {
+        let conversation = await loadedConversation()
+        let calls = CallLog()
+        let reconciler = reconciler(conversation, calls: calls)
+        reconciler.onExecutionTerminal = { event in
+            calls.record("terminal:\(event.type ?? "nil")")
+        }
+
+        await reconciler.handle(event("session.execution.started", ["sessionID": .string("ses_a")]))
+        XCTAssertEqual(
+            calls.calls, ["transcript"],
+            "a START is not a banner moment — only the canonical transitions are"
+        )
+
+        await reconciler.handle(event("session.execution.failed", ["sessionID": .string("ses_a")]))
+        XCTAssertEqual(
+            calls.calls,
+            ["transcript", "terminal:session.execution.failed", "transcript"],
+            "the raw event reaches the notifier BEFORE the authoritative refresh"
+        )
+    }
+
     func testFullRefreshReFetchesEverythingAndDistrustsTheOverlay() async {
         let conversation = await loadedConversation()
         conversation.applyStream(EventReconciler.StreamPatch(

@@ -22,6 +22,9 @@ struct ConversationView: View {
     var sessions: SessionsLibrary?
 
     @Environment(HostLibrary.self) private var library
+    /// W16 S17: banners are posted only while the app is NOT active —
+    /// the scenePhase observer below keeps the notifier's gate fresh.
+    @Environment(\.scenePhase) private var scenePhase
     @State private var conversation = ConversationLibrary()
     @State private var selection = SelectionLibrary()
     @State private var showingSelection = false
@@ -61,6 +64,10 @@ struct ConversationView: View {
     /// the on-screen reads (docs/api-contract.md W16).
     @State private var events = EventLibrary()
     @State private var reconciler: EventReconciler?
+    /// W16 S17 initial local notifications: execution terminal events
+    /// banner only when the app is not active, deduplicated by the
+    /// server's event id.
+    @State private var notifier = ExecutionNotifier()
     /// Which queued confirmation is on screen. The library's queue is
     /// the source of truth; the sequencer gives each question its own
     /// presentation cycle (SwiftUI ignores presented-data swaps on a
@@ -323,7 +330,14 @@ struct ConversationView: View {
             await openTranscript()
             await loadApprovals()
             await loadForms()
-            startEventStream()
+            notifier.sceneActive = (scenePhase == .active)
+            await startEventStream()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // The notifier reads this gate at delivery time — a
+            // terminal event that arrives while the app is active is
+            // watched live, not bannered.
+            notifier.sceneActive = (phase == .active)
         }
         .onDisappear {
             // A dismissed conversation stops watching — its dock and
@@ -545,7 +559,7 @@ struct ConversationView: View {
     /// `self` would cycle this view's State storage → reconciler →
     /// closure → State (the exact cycle the onAppear sequencer note
     /// warns about).
-    private func startEventStream() {
+    private func startEventStream() async {
         let conversation = self.conversation
         let approvals = self.approvals
         let forms = self.forms
@@ -554,6 +568,10 @@ struct ConversationView: View {
         let host = self.host
         let sessionID = session.id
         let directory = session.location?.directory
+        // One lazy consent ask per notifier lifetime, before the first
+        // terminal event could need it (the OS answers later calls
+        // from its cached decision).
+        await notifier.prepare()
 
         let reconciler = EventReconciler(conversation: conversation, sessionID: sessionID)
         reconciler.refreshTranscript = {
@@ -589,6 +607,11 @@ struct ConversationView: View {
         }
         events.onEvent = { event in
             await reconciler.handle(event)
+        }
+        reconciler.onExecutionTerminal = { event in
+            // Only this conversation's live terminal events reach the
+            // notifier; it applies the active/dedup/consent gates.
+            await notifier.handleTerminal(event, sessionTitle: session.title)
         }
         self.reconciler = reconciler
         events.watch(host: host)
