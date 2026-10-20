@@ -102,6 +102,17 @@ final class NotificationDedupStore {
 /// the user WATCHES arrive (app active) needs no banner — that gate
 /// is `sceneActive`, kept fresh by the view's scenePhase observer.
 ///
+/// The suspension truth (review W16 r7): iOS suspends the app a few
+/// seconds after it leaves the foreground, which stops the stream —
+/// so in practice banners cover the inactive/early-background window
+/// (app switcher, Control Center, a brief background), never a turn
+/// that ends AFTER suspension; that terminal is reconciled on the
+/// next foreground without a banner. A `beginBackgroundTask` was
+/// considered and deliberately rejected — it buys only a bounded ~30
+/// seconds in exchange for balanced-start/end lifecycle risk — and
+/// the entitlement-gated push provider (stage 1) is the real path
+/// for post-suspension delivery.
+///
 /// The three terminal outcomes are the contract's canonical
 /// notification transitions (succeeded / failed / interrupted).
 @MainActor

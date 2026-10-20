@@ -422,6 +422,16 @@ struct ConversationView: View {
                     .foregroundStyle(.red)
                     .accessibilityIdentifier("S08.banner.error")
             }
+            if case .repairRequired(let message) = events.phase {
+                // A stopped subscription is SILENT otherwise: live
+                // updates are over until the host is re-paired, and
+                // the docs promise this state surfaces (review W16
+                // r7).
+                Label(message, systemImage: "key.slash")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .accessibilityIdentifier("S08.banner.repairRequired")
+            }
             if let notice = conversation.notice {
                 Label(notice, systemImage: "info.circle")
                     .font(.footnote)
@@ -582,15 +592,16 @@ struct ConversationView: View {
         let sessionTitle = session.title
         let sessionID = session.id
         let directory = session.location?.directory
-        // One lazy consent ask per notifier lifetime, before the first
-        // terminal event could need it (the OS answers later calls
-        // from its cached decision).
-        await notifier.prepare()
-        // The consent await is not cancellation-aware: a view
-        // dismissed while the prompt is up resumes here. The
-        // subscription must not start for a screen whose onDisappear
-        // already stopped it (review W16 r1) — a loop started now
-        // would reconnect forever with no owner.
+        // Consent is asked IN PARALLEL, never in the stream's way
+        // (review W16 r7): on the first conversation open the OS
+        // alert would otherwise block every delta, dock event and
+        // execution status until it is answered. handleTerminal
+        // awaits the same single-flight ask if a terminal arrives
+        // first (ExecutionNotifier.prepare), so nothing is lost.
+        Task { await notifier.prepare() }
+        // The subscription must not start for a screen whose
+        // onDisappear already stopped it (review W16 r1) — a loop
+        // started now would reconnect forever with no owner.
         guard !Task.isCancelled else { return }
 
         let reconciler = EventReconciler(conversation: conversation, sessionID: sessionID)
