@@ -98,11 +98,14 @@ final class ConversationLibraryTests: XCTestCase {
 
     private struct StubTransport: OpenCodeTransport {
         var recorder: Recorder
-        var handler: @Sendable (APIRequest) throws -> APIResponse
+        /// Async so a test can GATE a call mid-flight (order two
+        /// overlapping loads without sleeps — the ApprovalLibrary
+        /// pattern); sync handlers still convert.
+        var handler: @Sendable (APIRequest) async throws -> APIResponse
 
         func perform(_ request: APIRequest) async throws -> APIResponse {
             recorder.record(request)
-            return try handler(request)
+            return try await handler(request)
         }
 
         func events() -> AsyncThrowingStream<OpenCodeEvent, Error> {
@@ -122,7 +125,7 @@ final class ConversationLibraryTests: XCTestCase {
 
     private func conversation(
         recorder: Recorder,
-        handler: @escaping @Sendable (APIRequest) throws -> APIResponse,
+        handler: @escaping @Sendable (APIRequest) async throws -> APIResponse,
         credentials: [String: BasicCredential?] = ["host_one": BasicCredential(secret: "t")]
     ) -> ConversationLibrary {
         let stub: @Sendable () -> StubTransport = { StubTransport(recorder: recorder, handler: handler) }
@@ -1041,5 +1044,45 @@ final class ConversationLibraryTests: XCTestCase {
 
         XCTAssertEqual(library.executionStatus, .idle, "the terminal event ends retry too")
         XCTAssertTrue(library.streaming.isEmpty)
+    }
+
+    // MARK: - Refresh supersession (review W16 r3, minor)
+
+    func testStaleRefreshCannotOverwriteANewerOne() async {
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let (release, releaseContinuation) = AsyncStream<Void>.makeStream()
+        let stalePage = Fixtures.response(Fixtures.page([
+            Fixtures.user("msg_stale", text: "stale", created: 100),
+        ]))
+        let freshPage = Fixtures.response(Fixtures.page([
+            Fixtures.user("msg_fresh", text: "fresh", created: 200),
+        ]))
+        let gate = Flip()
+        let library = conversation(recorder: Recorder()) { request in
+            guard request.operationID == "session.message.list" else {
+                return Fixtures.response(Fixtures.emptyPage)
+            }
+            guard gate.first() else { return freshPage }
+            // Hold the FIRST refresh mid-flight with its stale payload
+            // already decided; the newer refresh runs and lands while
+            // it waits (no sleeps to order the two calls).
+            enteredContinuation.yield()
+            for await _ in release { break }
+            return stalePage
+        }
+
+        let stale = Task { [one] in
+            await library.refresh(host: one, sessionID: "ses_a")
+        }
+        var enteredIterator = entered.makeAsyncIterator()
+        _ = await enteredIterator.next()
+        await library.refresh(host: one, sessionID: "ses_a")
+        releaseContinuation.yield()
+        await stale.value
+
+        XCTAssertEqual(
+            library.messages.map(\.id), ["msg_fresh"],
+            "a superseded refresh finishing late writes nothing — W16 fires refreshes from many sources and the transport orders no responses (review W16 r3)"
+        )
     }
 }

@@ -30,6 +30,13 @@ final class ConversationLibrary {
 
     /// Transcript in display order: oldest → newest.
     private(set) var messages: [SessionMessage] = []
+    /// Monotonic token for `refresh` (review W16 r3): W16 events fire
+    /// refreshes from many sources (debounced steps/tools, execution
+    /// terminals, `ended` patches, `server.connected`, post-send) and
+    /// the transport does not order responses — the older call may
+    /// land last, and its mid-turn snapshot must never overwrite a
+    /// newer page. Same rule as ApprovalLibrary.loadGeneration.
+    private var refreshGeneration = 0
     /// Active model context (messages since the last compaction) — kept
     /// separate from the full transcript.
     private(set) var activeContext: [SessionMessage] = []
@@ -280,10 +287,18 @@ final class ConversationLibrary {
             error = "Re-pair this host to read its messages."
             return
         }
+        // Bump and snapshot BEFORE the await; every mutation below is
+        // conditional on still being current (review W16 r3).
+        refreshGeneration += 1
+        let generation = refreshGeneration
         do {
             let page = try await service.messages(
                 at: host.address, credential: credential, sessionID: sessionID
             )
+            // A refresh superseded while in flight returns nothing —
+            // its page is a mid-turn snapshot of a turn that has since
+            // moved on (or ended).
+            guard generation == refreshGeneration else { return }
             // Session-switch bookkeeping before the new page lands.
             discardPreviousSessionState(keeping: sessionID)
             let fresh = Self.ordered(Self.deduped(page.data))
@@ -321,6 +336,9 @@ final class ConversationLibrary {
             await pruneProjected(host: host, sessionID: sessionID, credential: credential)
             carryProjected(sessionID: sessionID)
         } catch {
+            // A superseded refresh's failure is not this transcript's
+            // story either — the current generation owns the error.
+            guard generation == refreshGeneration else { return }
             if !Self.isSilent(error) { self.error = Self.message(for: error) }
         }
     }

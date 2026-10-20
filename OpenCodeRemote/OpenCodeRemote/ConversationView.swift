@@ -957,15 +957,17 @@ struct ConversationView: View {
         }
     }
 
-    /// The overlay entry whose LIVE (unsettled) parts still own their
-    /// row's same-index items. Once every part settled, the row's own
-    /// items are the host's authority — the next authoritative read
-    /// retires the entry.
+    /// The overlay entry for a row while it exists — settled or not:
+    /// the `ended` full value is the truth and a row's stale mid-turn
+    /// copy must not resurrect over it (or cover for a row that lacks
+    /// the part yet). No duplication risk: parts render IN PLACE of
+    /// same-index items (never alongside them), trailing parts only
+    /// fill items the row does not contain, and
+    /// pruneDeliveredStreaming retires the whole entry once every
+    /// part settled AND the transcript carries the row (review W16
+    /// r3).
     private func liveOverlay(for messageID: String) -> ConversationLibrary.StreamingMessage? {
-        guard let entry = conversation.streaming[messageID] else { return nil }
-        let hasLivePart = entry.text.values.contains { !$0.isSettled }
-            || entry.reasoning.values.contains { !$0.isSettled }
-        return hasLivePart ? entry : nil
+        conversation.streaming[messageID]
     }
 
     /// A row's content items with text and reasoning parts numbered
@@ -996,11 +998,12 @@ struct ConversationView: View {
         }
     }
 
-    /// The live part a row item renders INSTEAD of its own content:
-    /// the overlay's part at the item's index within its kind. An
-    /// empty or settled part does not supersede (the row's copy — the
-    /// host's authority — renders), and tool/unknown items are never
-    /// superseded.
+    /// The streamed part a row item renders INSTEAD of its own
+    /// content: the overlay's part at the item's index within its
+    /// kind. An empty part does not supersede (there is nothing to
+    /// show), and tool/unknown items are never superseded. Settled
+    /// parts DO supersede: the ended full value outranks the row's
+    /// mid-turn copy until the entry is pruned (review W16 r3).
     private func livePartReplacement(
         _ position: PositionedItem,
         live: ConversationLibrary.StreamingMessage?
@@ -1008,20 +1011,21 @@ struct ConversationView: View {
         guard let live else { return nil }
         if let textIndex = position.textIndex,
            let segment = live.text[textIndex],
-           !segment.isSettled, !segment.content.isEmpty {
+           !segment.content.isEmpty {
             return segment.content
         }
         if let reasoningIndex = position.reasoningIndex,
            let segment = live.reasoning[reasoningIndex],
-           !segment.isSettled, !segment.content.isEmpty {
+           !segment.content.isEmpty {
             return segment.content
         }
         return nil
     }
 
-    /// Live parts the row has not caught up with at all (indexes past
-    /// the row's items of that kind) — rendered after the row's
-    /// content, in ordinal order.
+    /// Parts the row has not caught up with at all (indexes past the
+    /// row's items of that kind, including ones already settled while
+    /// no list read has landed) — rendered after the row's content,
+    /// in ordinal order.
     @ViewBuilder
     private func trailingLiveParts(
         _ entry: ConversationLibrary.StreamingMessage,
@@ -1029,12 +1033,12 @@ struct ConversationView: View {
         reasoningCount: Int
     ) -> some View {
         let trailingReasoning = entry.reasoning
-            .filter { $0.key >= reasoningCount && !$0.value.isSettled }
+            .filter { $0.key >= reasoningCount }
             .sorted { $0.key < $1.key }
             .map(\.value.content)
             .filter { !$0.isEmpty }
         let trailingText = entry.text
-            .filter { $0.key >= textCount && !$0.value.isSettled }
+            .filter { $0.key >= textCount }
             .sorted { $0.key < $1.key }
             .map(\.value.content)
             .filter { !$0.isEmpty }
@@ -1064,10 +1068,10 @@ struct ConversationView: View {
             .padding(.vertical, 2)
 
         case .assistant(let agent, let model, let content, let error, _):
-            // W16: while a part of this message streams, the row's
-            // items are the host's mid-turn snapshot — stale beside
-            // the live overlay. Each live part renders IN PLACE of the
-            // row's same-index item (review W16 r1: never both) at the
+            // W16: while this message still has an overlay entry, the
+            // row's items may be the host's stale mid-turn snapshot —
+            // the streamed parts render IN PLACE of the row's
+            // same-index items (review W16 r1: never both) at the
             // item's OWN position, so the text/tool interleaving is
             // kept (review W16 r2); tool and unknown items always stay
             // authoritative from the list.
