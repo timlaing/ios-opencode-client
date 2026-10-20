@@ -648,7 +648,13 @@ struct ConversationView: View {
         reconciler.onExecutionTerminal = { event in
             // Only this conversation's live terminal events reach the
             // notifier; it applies the active/dedup/consent gates.
-            await notifier.handleTerminal(event, sessionTitle: sessionTitle)
+            // NEVER awaited on the serial event path (review W16 r9):
+            // handleTerminal can await the in-flight consent ask, and
+            // while the OS alert is up sceneActive is false — awaiting
+            // it here would stall every delta, dock event and refresh
+            // behind the user's answer. Event ids are unique (no
+            // replay), so the dedup stays correct off-path.
+            Task { await notifier.handleTerminal(event, sessionTitle: sessionTitle) }
         }
         reconciler.readActiveSessions = { [weak hostLibrary] in
             // Reconnect reconciliation of the working indicator (review
