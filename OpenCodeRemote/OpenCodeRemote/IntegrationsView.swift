@@ -173,9 +173,17 @@ struct IntegrationsView: View {
         .padding(.vertical, 2)
     }
 
-    /// The setup guide for MCP authentication (the currently
-    /// supported host path: `/mcps` on the host — verified
-    /// opencode.ai docs; http(s) link only, house rule).
+    /// The setup guide for MCP authentication — the V2 docs, matching
+    /// this client's pinned v2.0.25 baseline: the unversioned
+    /// `opencode.ai/docs/mcp-servers/` is the LEGACY v1 guide whose
+    /// `mcp.<name>` + `enabled` shape the baseline rejects (V2 uses
+    /// `mcp.servers` + `disabled`, and the v2 guide documents the
+    /// needs-auth flow this row shows). Both sign-in paths exist in
+    /// the baseline itself: `/mcps` registers as
+    /// `slash: { name: "mcps" }` in `packages/tui/src/app.tsx`, and
+    /// `packages/cli/src/commands/handlers/mcp/auth.ts` provides the
+    /// CLI alternative — both verified at pinned commit b44eea9e
+    /// (https links only, house rule).
     private static let mcpSetupGuide = URL(string: "https://opencode.ai/v2/docs/mcp-servers")!
 
     @ViewBuilder
@@ -225,10 +233,10 @@ struct IntegrationsView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("S16.mcp.intent.\(row.name)")
             if row.status.kind == .needsAuth {
-                // Sign-in runs on the HOST: show the state and the
-                // currently supported setup path — never a success
-                // toggle that could not succeed.
-                Text("Sign-in is completed on the host: open OpenCode, run /mcps, select this server and sign in.")
+                // Sign-in runs on the HOST: show the state and both
+                // documented setup paths — never a success toggle
+                // that could not succeed.
+                Text("Sign-in is completed on the host: open OpenCode, run /mcps, select this server and sign in — or run \"opencode mcp auth \(row.name)\" on the host's terminal.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityIdentifier("S16.mcp.authguide.\(row.name)")

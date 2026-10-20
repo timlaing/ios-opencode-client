@@ -74,6 +74,11 @@ final class W15RequestsTests: XCTestCase {
             disconnect.absoluteString,
             "https://host.example/api/experimental/mcp/org%2Fdocs/disconnect"
         )
+        // The two control builders DECLARE their pre-encoded form;
+        // every other route keeps the raw default (encoded once).
+        XCTAssertTrue(W15Requests.mcpConnect(server: "org/docs").pathIsPreEncoded)
+        XCTAssertTrue(W15Requests.mcpDisconnect(server: "org/docs").pathIsPreEncoded)
+        XCTAssertFalse(W15Requests.mcpList().pathIsPreEncoded)
     }
 
     private func decodeList(_ json: String) throws -> LocationEnvelope<[McpServer]> {

@@ -37,7 +37,8 @@ extension BasicCredential: CustomStringConvertible, CustomDebugStringConvertible
 }
 
 /// A typed API request. `path` and `query` carry raw values; encoding is applied
-/// when the URL is built (docs/api-contract.md encoding rules).
+/// when the URL is built (docs/api-contract.md encoding rules). The ONE exception
+/// is a pre-encoded path (see `pathIsPreEncoded`).
 public struct APIRequest: Sendable, Equatable {
     public var operationID: String
     public var method: HTTPMethod
@@ -55,6 +56,15 @@ public struct APIRequest: Sendable, Equatable {
     /// `Range` for a progressive `fs.read`. Never used to override
     /// `Authorization`, which is owned by `credential`/`omitsCredential`.
     public var headers: [String: String]
+    /// True when `path` is ALREADY fully percent-encoded and must be used
+    /// verbatim instead of running the raw-path encoder. Needed for a path
+    /// PARAMETER whose raw value can itself contain `/` (a user-chosen MCP
+    /// server name): `PercentCoding.encode` produces it as ONE segment before
+    /// interpolation, and re-encoding would turn `%2F` into `%252F`. Raw paths
+    /// (the default) are ALWAYS encoded exactly once — a literal `%` is
+    /// content (`%25`), never guessed from its shape to be an escape
+    /// (docs/api-contract.md encoding rules).
+    public var pathIsPreEncoded: Bool
 
     public init(
         operationID: String,
@@ -65,7 +75,8 @@ public struct APIRequest: Sendable, Equatable {
         contentType: String? = nil,
         credential: BasicCredential? = nil,
         omitsCredential: Bool = false,
-        headers: [String: String] = [:]
+        headers: [String: String] = [:],
+        pathIsPreEncoded: Bool = false
     ) {
         self.operationID = operationID
         self.method = method
@@ -76,6 +87,7 @@ public struct APIRequest: Sendable, Equatable {
         self.credential = credential
         self.omitsCredential = omitsCredential
         self.headers = headers
+        self.pathIsPreEncoded = pathIsPreEncoded
     }
 
     public static func jsonBody<T: Encodable>(
@@ -103,11 +115,13 @@ public struct APIRequest: Sendable, Equatable {
     public func url(baseURL: URL) throws -> URL {
         var base = baseURL.absoluteString
         while base.hasSuffix("/") { base.removeLast() }
-        let encodedPath = PercentCoding.encodePath(path)
+        // Raw paths encode exactly once; pre-encoded paths (a parameter
+        // escaped as ONE segment by the builder) ride through verbatim.
+        let resolvedPath = pathIsPreEncoded ? path : PercentCoding.encodePath(path)
         let queryString = query.isEmpty
             ? ""
             : "?" + query.map(\.encoded).joined(separator: "&")
-        guard let url = URL(string: base + encodedPath + queryString) else {
+        guard let url = URL(string: base + resolvedPath + queryString) else {
             throw TransportError.invalidURL
         }
         return url

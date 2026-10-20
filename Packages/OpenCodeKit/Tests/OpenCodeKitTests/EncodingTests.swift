@@ -26,23 +26,38 @@ final class EncodingTests: XCTestCase {
         XCTAssertEqual(PercentCoding.encode("unreserved-._~ABC123"), "unreserved-._~ABC123")
     }
 
-    func testEncodePathPreservesValidEscapesButStillEncodesRawContent() {
-        // A pre-encoded path PARAMETER (one segment that needed
-        // escaping, e.g. an MCP server name containing `/`) survives
-        // as-is: idempotent per segment, never `%252F`…
+    func testPathSegmentsAreEncodedExactlyOnceNeverGuessedAsEscapes() throws {
+        // A raw `%` is content, not a hint: a file literally named
+        // `a%20b.txt` routes as `a%2520b.txt` — the host decodes it
+        // back to the real name (api-contract.md Line 14; a heuristic
+        // escape-preserving encoder would wrongly request
+        // `report final.pdf` instead).
         XCTAssertEqual(
-            PercentCoding.encodePath("/api/experimental/mcp/org%2Fdocs/connect"),
-            "/api/experimental/mcp/org%2Fdocs/connect"
+            PercentCoding.encodePath("/api/fs/read/a%20b.txt"),
+            "/api/fs/read/a%2520b.txt"
         )
-        XCTAssertEqual(PercentCoding.encodePath("/api/mcp/50%25off"), "/api/mcp/50%25off")
-        // …raw content is still encoded exactly once…
+        let base = try XCTUnwrap(URL(string: "https://host.example"))
+        let raw = APIRequest(
+            operationID: "fs.read",
+            method: .get,
+            path: "/api/fs/read/a%20b.txt"
+        )
         XCTAssertEqual(
-            PercentCoding.encodePath("/a b/c?d#e"),
-            "/a%20b/c%3Fd%23e"
+            try raw.url(baseURL: base).absoluteString,
+            "https://host.example/api/fs/read/a%2520b.txt"
         )
-        // …and a `%` that is not a valid escape is raw content (→ %25).
-        XCTAssertEqual(PercentCoding.encodePath("/100%"), "/100%25")
-        XCTAssertEqual(PercentCoding.encodePath("/%zz"), "/%25zz")
+        // The ONE explicit pre-encoded form bypasses the encoder
+        // instead of guessing from content (W15 MCP server names).
+        let preEncoded = APIRequest(
+            operationID: "experimental.mcp.connect",
+            method: .post,
+            path: "/api/experimental/mcp/org%2Fdocs/connect",
+            pathIsPreEncoded: true
+        )
+        XCTAssertEqual(
+            try preEncoded.url(baseURL: base).absoluteString,
+            "https://host.example/api/experimental/mcp/org%2Fdocs/connect"
+        )
     }
 
     func testDeepObjectLocationQueryEncoding() throws {

@@ -31,11 +31,11 @@ public enum W15Requests {
     /// persisted enabled flag, and 204 is ADMISSION: only the
     /// refetched inventory decides which status is shown
     /// (api-contract.md W15). The server NAME is a config key that
-    /// may contain `/`, `?`, `%` or spaces, so it is pre-encoded as
-    /// ONE path component here — the transport's per-segment encoder
-    /// preserves those escapes, so the name can never become extra
-    /// path structure (api-contract.md Line 14: every path component
-    /// percent-encoded on its own, exactly once).
+    /// may contain `/`, `?`, `%` or spaces, so it is encoded as ONE
+    /// path component (`PercentCoding.encode`) and the request marks
+    /// its path pre-encoded — the raw-path encoder never re-processes
+    /// it, keeping the name exactly one segment, encoded exactly once
+    /// (api-contract.md Line 14).
     public static func mcpConnect(
         server: String,
         directory: String? = nil,
@@ -46,14 +46,15 @@ public enum W15Requests {
             method: .post,
             path: "/api/experimental/mcp/\(PercentCoding.encode(server))/connect",
             query: directory.map { [QueryPair(key: "location[directory]", value: $0)] } ?? [],
-            credential: credential
+            credential: credential,
+            pathIsPreEncoded: true
         )
     }
 
     /// `POST /api/experimental/mcp/{server}/disconnect` → 204 — the
     /// runtime counterpart of `mcpConnect` (same admission rule:
     /// refetch the inventory for the shown status; same one-segment
-    /// encoding of the server name).
+    /// pre-encoded server name).
     public static func mcpDisconnect(
         server: String,
         directory: String? = nil,
@@ -64,7 +65,8 @@ public enum W15Requests {
             method: .post,
             path: "/api/experimental/mcp/\(PercentCoding.encode(server))/disconnect",
             query: directory.map { [QueryPair(key: "location[directory]", value: $0)] } ?? [],
-            credential: credential
+            credential: credential,
+            pathIsPreEncoded: true
         )
     }
 }
