@@ -104,10 +104,11 @@ final class EventLibraryTests: XCTestCase {
                 let index = log.nextBuildIndex()
                 return ScriptedTransport(frames: index < scripts.count ? scripts[index] : [])
             },
-            sleep: { seconds in
-                // The documented ladder is observed in real seconds;
-                // tests wait on the RECORD, never on wall time.
-                log.recordSleep(Double(seconds))
+            sleep: { nanoseconds in
+                // The documented ladder is observed in real SECONDS
+                // (the library sleeps in nanoseconds — review W16
+                // r8); tests wait on the RECORD, never on wall time.
+                log.recordSleep(Double(nanoseconds) / 1_000_000_000)
                 try? await Task.sleep(nanoseconds: 30_000_000)
             },
             jitter: { $0 },

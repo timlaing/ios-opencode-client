@@ -46,7 +46,10 @@ final class EventLibrary {
     static let backoff: [Double] = [1, 2, 4, 8, 16, 32, 60]
 
     private let makeTransport: TransportFactory
-    /// Injectable sleep so tests observe the ladder without waiting on it.
+    /// Injectable sleep in NANOSECONDS so tests observe the ladder
+    /// without waiting on it — the jittered delay is fractional and
+    /// rounding it away would erase the ±20% on the 1s/2s rungs
+    /// (review W16 r8).
     private let sleep: (UInt64) async -> Void
     /// Injectable ±20% jitter; identity in tests pins the ladder exactly.
     private let jitter: (Double) -> Double
@@ -59,7 +62,7 @@ final class EventLibrary {
 
     init(
         makeTransport: @escaping TransportFactory = { URLSessionTransport(baseURL: $0, credential: $1) },
-        sleep: @escaping (UInt64) async -> Void = { try? await Task.sleep(nanoseconds: $0 * 1_000_000_000) },
+        sleep: @escaping (UInt64) async -> Void = { try? await Task.sleep(nanoseconds: $0) },
         jitter: @escaping (Double) -> Double = { delay in delay * Double.random(in: 0.8...1.2) },
         credentialProvider: CredentialProvider? = nil
     ) {
@@ -108,7 +111,11 @@ final class EventLibrary {
             if failures > 0 {
                 let delay = jitteredDelay(failures)
                 phase = .retrying(afterSeconds: delay)
-                await sleep(UInt64(delay.rounded()))
+                // Nanoseconds end to end: the phase reports THIS
+                // fractional delay, and rounding to whole seconds
+                // erased the jitter on the 1s and 2s rungs (review
+                // W16 r8).
+                await sleep(UInt64(delay * 1_000_000_000))
                 guard generation == token else { return }
             }
             phase = .connecting
