@@ -472,6 +472,41 @@ final class EventReconcilerTests: XCTestCase {
         )
     }
 
+    func testTheTerminalFlushesThePendingDebounceSoItCannotSupersedeTheRead() async {
+        let conversation = await loadedConversation()
+        let calls = CallLog()
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let (release, releaseContinuation) = AsyncStream<Void>.makeStream()
+        let reconciler = self.reconciler(conversation, nap: { _ in
+            enteredContinuation.yield()
+            for await _ in release { break }
+        }, calls: calls)
+
+        // A step/tool event opens a debounce window (its task parks
+        // in nap — the common case: the terminal lands inside the
+        // last frame's window).
+        await reconciler.handle(event("session.tool.updated", [
+            "sessionID": .string("ses_a"), "toolCallID": .string("call_1"),
+        ]))
+        var enteredIterator = entered.makeAsyncIterator()
+        _ = await enteredIterator.next() // the window is open (task parked)
+
+        await reconciler.handle(event("session.execution.succeeded", ["sessionID": .string("ses_a")]))
+
+        // Release the old window: unflushed, it would fire a SECOND
+        // read that supersedes the terminal's page (generation N+1)
+        // while clearAllStreaming already ran — re-exposing the
+        // mid-turn row for a round trip (review W16 r12).
+        releaseContinuation.yield()
+        try? await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(
+            calls.calls, ["transcript"],
+            "the terminal's read covers the pending debounce — never a superseding second read"
+        )
+        XCTAssertTrue(conversation.streaming.isEmpty, "the overlay still ends with the turn")
+    }
+
     func testExecutionTerminalsHandTheRawEventToTheNotifierHook() async {
         let conversation = await loadedConversation()
         let calls = CallLog()

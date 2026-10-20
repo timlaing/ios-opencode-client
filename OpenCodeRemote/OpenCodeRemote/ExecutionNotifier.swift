@@ -191,6 +191,12 @@ final class ExecutionNotifier {
             await prepare()
         }
         guard authorization == true else { return }
+        // The consent alert held the scene INACTIVE through the first
+        // check; answering it returns the app to the foreground — the
+        // user may be watching the screen again by now, and a banner
+        // then interrupts exactly who the gate protects (review W16
+        // r12).
+        guard !sceneActive else { return }
 
         let phrase: String
         switch event.type {

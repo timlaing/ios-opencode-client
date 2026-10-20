@@ -13,7 +13,16 @@ final class ExecutionNotifierTests: XCTestCase {
         private let lock = NSLock()
         private var _authorized = true
         private var _authorizationRequests = 0
+        private var _authorizationGate: AsyncStream<Void>?
         private var _posted: [(identifier: String, title: String, body: String)] = []
+
+        /// Optional gate so a test can hold the consent ask open and
+        /// flip sceneActive mid-flight (review W16 r12). Nil = the
+        /// instant behaviour every other test relies on.
+        var authorizationGate: AsyncStream<Void>? {
+            get { lock.lock(); defer { lock.unlock() }; return _authorizationGate }
+            set { lock.lock(); _authorizationGate = newValue; lock.unlock() }
+        }
 
         var authorized: Bool {
             get { lock.lock(); defer { lock.unlock() }; return _authorized }
@@ -30,7 +39,13 @@ final class ExecutionNotifierTests: XCTestCase {
             lock.lock()
             _authorizationRequests += 1
             let result = _authorized
+            let gate = _authorizationGate
             lock.unlock()
+            if let gate {
+                // Held until the test releases it — this models the
+                // OS alert being on screen.
+                for await _ in gate { break }
+            }
             return result
         }
 
@@ -107,6 +122,37 @@ final class ExecutionNotifierTests: XCTestCase {
         XCTAssertEqual(fake.posted.count, 1, "the gate suppresses only while active")
         XCTAssertEqual(fake.posted.first?.title, "OpenCode Client", "no session title falls back to the display name")
         XCTAssertEqual(fake.posted.first?.body, "The turn failed.")
+    }
+
+    func testAnsweringTheConsentAlertDoesNotPostAnInterruptingBanner() async {
+        let fake = FakeNotifier()
+        let (gate, gateContinuation) = AsyncStream<Void>.makeStream()
+        fake.authorizationGate = gate
+        let notifier = notifier(fake)
+        notifier.sceneActive = false // the app switcher, when the terminal arrives
+
+        let posting = Task {
+            await notifier.handleTerminal(
+                terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: nil
+            )
+        }
+        // Wait until the consent alert is actually on screen...
+        var polls = 0
+        while fake.authorizationRequests == 0, polls < 200 {
+            try? await Task.sleep(nanoseconds: 5_000_000)
+            polls += 1
+        }
+        XCTAssertEqual(fake.authorizationRequests, 1, "the consent ask is on screen")
+        // ...then the user taps Allow, which returns the app to the
+        // foreground while the post awaits the answer.
+        notifier.sceneActive = true
+        gateContinuation.yield()
+        await posting.value
+
+        XCTAssertTrue(
+            fake.posted.isEmpty,
+            "the user is watching the screen again by now — the re-check after the consent await suppresses exactly who the gate protects (review W16 r12)"
+        )
     }
 
     func testOutcomeCopyMatchesTheCanonicalTransition() async {

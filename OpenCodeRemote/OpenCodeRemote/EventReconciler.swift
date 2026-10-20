@@ -292,6 +292,13 @@ final class EventReconciler {
                 // Live delivery is the ONLY path to a banner (S17) —
                 // the notifier gates app-active, dedup and consent.
                 await onExecutionTerminal?(event)
+                // The terminal's own read covers any pending debounced
+                // refresh; a debounce firing mid-read would bump the
+                // generation, supersede it, and the clear below would
+                // expose the mid-turn row for one round trip — the
+                // very flash this order exists to prevent (review
+                // W16 r12). One less redundant list read too.
+                flush()
                 await refreshTranscript?()
                 conversation.clearAllStreaming()
             } else {
