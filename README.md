@@ -1,5 +1,20 @@
 # OpenCode Client for iOS
 
+[![License](https://img.shields.io/github/license/timlaing/ios-opencode-client)](LICENSE)
+
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=coverage)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=vulnerabilities)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Quality Gate Status](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Code Smells](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=code_smells)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=bugs)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+[![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
+
 Product design and implementation guide for a native iPhone/iPad client that preserves as much OpenCode web functionality as possible.
 
 ## Product decisions
