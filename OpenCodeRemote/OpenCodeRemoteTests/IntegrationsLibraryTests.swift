@@ -1442,12 +1442,11 @@ final class IntegrationsLibraryTests: XCTestCase {
     /// (W15 review round 4).
     func testAnActionRefreshSupersedesAStaleLoadError() async {
         let recorder = Recorder()
-        var pluginReads = 0
+        let pluginReads = Counter()
         let library = library(recorder: recorder) { request in
             switch request.operationID {
             case "plugin.list":
-                pluginReads += 1
-                if pluginReads == 1 {
+                if pluginReads.next() == 0 {
                     throw TransportError.connectionFailed("the first inventory read fails")
                 }
                 return Fixtures.response(Fixtures.pluginList)
