@@ -113,6 +113,11 @@ final class ConversationLibrary {
         }
         var text: [Int: Segment] = [:]
         var reasoning: [Int: Segment] = [:]
+        /// The `refreshGeneration` at which the latest part settled —
+        /// a page requested BEFORE that instant carries the host's
+        /// mid-turn row and must never retire the entry, even though
+        /// it is not itself superseded (review W16 r4).
+        var settledAtGeneration = 0
     }
 
     /// Incremental assistant state keyed by assistantMessageID, its
@@ -150,14 +155,23 @@ final class ConversationLibrary {
         var segment = segments[patch.ordinal] ?? StreamingMessage.Segment()
         switch patch.change {
         case .started:
-            // A part re-opening after its own earlier end (the stream
-            // can carry a restart) is live again — unprunable.
+            // A restarted part streams from the BEGINNING: dropping the
+            // earlier ended value stops deltas appending to it (the
+            // display would duplicate until the next ended), and a
+            // brand-new part is empty anyway (review W16 r4). Live
+            // again — unprunable.
+            segment.content = ""
             segment.isSettled = false
         case .delta(let delta):
             segment.content += delta
         case .ended(let full):
             segment.content = full
             segment.isSettled = true
+            // Record when this settled: only a page REQUESTED after
+            // this instant may retire the entry (a page in flight
+            // right now was requested before it and carries the
+            // mid-turn row).
+            message.settledAtGeneration = refreshGeneration
         }
         segments[patch.ordinal] = segment
         if patch.kind == .text {
@@ -190,17 +204,20 @@ final class ConversationLibrary {
     }
 
     /// The list owns every row it contains — but only once every part
-    /// of the overlay has settled: pruning an entry with a live part
+    /// of the overlay has settled AND the page carrying it was
+    /// requested AFTER that settle: pruning an entry with a live part
     /// against a mid-turn row would truncate the tail to the next
-    /// delta, restarting it per delta against the host's stale partial
-    /// copy (review W16 r1). While any part is live, the view renders
-    /// the overlay parts IN PLACE of the row's same-index items
-    /// instead of duplicating both.
-    private func pruneDeliveredStreaming() {
+    /// delta (review W16 r1), and even a settled entry must not be
+    /// retired by a page whose request predates its settle — that
+    /// page IS the mid-turn row (review W16 r4). While the entry
+    /// exists, the view renders the overlay parts IN PLACE of the
+    /// row's same-index items instead of duplicating both.
+    private func pruneDeliveredStreaming(pageGeneration: Int) {
         streaming = streaming.filter { key, message in
             let allSettled = message.text.values.allSatisfy(\.isSettled)
                 && message.reasoning.values.allSatisfy(\.isSettled)
-            return !(allSettled && messages.contains { $0.id == key })
+            let pageIsNewer = pageGeneration > message.settledAtGeneration
+            return !(allSettled && pageIsNewer && messages.contains { $0.id == key })
         }
     }
 
@@ -231,24 +248,31 @@ final class ConversationLibrary {
             error = "Re-pair this host to read its messages."
             return
         }
+        // Open is full authority: it supersedes any in-flight refresh
+        // and records its own request generation for the prune below —
+        // the same rule as refresh (review W16 r4).
+        refreshGeneration += 1
+        let generation = refreshGeneration
         isLoading = true
         defer { isLoading = false }
         do {
             let page = try await service.messages(
                 at: host.address, credential: credential, sessionID: sessionID
             )
+            guard generation == refreshGeneration else { return }
             // Session-switch bookkeeping before the new page lands.
             discardPreviousSessionState(keeping: sessionID)
             messages = Self.ordered(Self.deduped(page.data))
             nextCursor = page.cursor?.next
             hasMore = page.cursor?.next != nil
             loadedSessionID = sessionID
-            pruneDeliveredStreaming()
+            pruneDeliveredStreaming(pageGeneration: generation)
             error = nil
             // A re-open must not erase an admission whose delivery the
             // page does not cover yet.
             carryProjected(sessionID: sessionID)
         } catch {
+            guard generation == refreshGeneration else { return }
             if !Self.isSilent(error) { self.error = Self.message(for: error) }
         }
     }
@@ -326,8 +350,9 @@ final class ConversationLibrary {
             }
             loadedSessionID = sessionID
             // The fresh page is authoritative: overlay rows it now
-            // carries are retired (W16).
-            pruneDeliveredStreaming()
+            // carries are retired — and this page was requested after
+            // its generation, so only post-settle settles count (W16).
+            pruneDeliveredStreaming(pageGeneration: generation)
             error = nil
             // A projected-but-undelivered admission is NOT in the newest
             // page yet: the merge must not erase it. It survives while

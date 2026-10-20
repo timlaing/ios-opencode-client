@@ -446,6 +446,48 @@ final class EventReconcilerTests: XCTestCase {
         XCTAssertFalse(calls.calls.contains("active"), "an idle indicator is already the truth — no read needed")
     }
 
+    func testABurstKeepsTheOriginalWindowDeadline() async {
+        let conversation = await loadedConversation()
+        let calls = CallLog()
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let (release, releaseContinuation) = AsyncStream<Void>.makeStream()
+        let reconciler = EventReconciler(
+            conversation: conversation,
+            sessionID: "ses_a",
+            nap: { _ in
+                calls.record("nap")
+                enteredContinuation.yield()
+                for await _ in release { break }
+            }
+        )
+        reconciler.refreshTranscript = { calls.record("transcript") }
+
+        await reconciler.handle(event("session.step.streamed", ["sessionID": .string("ses_a")]))
+        var enteredIterator = entered.makeAsyncIterator()
+        _ = await enteredIterator.next() // the window is open (nap #1)
+
+        // Frames arriving mid-window JOIN it instead of restarting it —
+        // otherwise a continuous burst pushes the refresh away forever
+        // and tool cards stay stale for the whole burst (review W16 r4).
+        await reconciler.handle(event("session.step.streamed", ["sessionID": .string("ses_a")]))
+        await reconciler.handle(event("session.tool.progress", ["sessionID": .string("ses_a")]))
+        await reconciler.handle(event("session.tool.progress", ["sessionID": .string("ses_a")]))
+        XCTAssertEqual(
+            calls.calls.filter { $0 == "nap" }.count, 1,
+            "later frames join the pending window — never restart it"
+        )
+
+        releaseContinuation.yield()
+        await waitUntil { calls.calls == ["nap", "transcript"] }
+
+        // The window closed; the next frame opens a NEW one — a burst
+        // stays bounded at one refresh per window, not zero.
+        await reconciler.handle(event("session.tool.progress", ["sessionID": .string("ses_a")]))
+        _ = await enteredIterator.next() // nap #2
+        releaseContinuation.yield()
+        await waitUntil { calls.calls == ["nap", "transcript", "nap", "transcript"] }
+    }
+
     func testDockAndInventoryFamiliesRouteToTheirReads() async {
         let conversation = await loadedConversation()
         let calls = CallLog()

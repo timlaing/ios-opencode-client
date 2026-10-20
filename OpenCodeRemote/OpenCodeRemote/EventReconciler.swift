@@ -305,11 +305,18 @@ final class EventReconciler {
     }
 
     private func scheduleTranscriptRefresh() {
-        transcriptDebounce?.cancel()
+        // Coalesce into the PENDING window instead of restarting it
+        // (review W16 r4): a continuous burst of step/tool frames used
+        // to cancel and re-open the wait forever, so tool cards and
+        // step boundaries stayed stale for the whole burst. The first
+        // frame of a window opens it; later frames join; the window's
+        // deadline always arrives.
+        guard transcriptDebounce == nil else { return }
         transcriptDebounce = Task { [weak self] in
             guard let self else { return }
             await self.nap(Self.transcriptDebounceNanoseconds)
             guard !Task.isCancelled else { return }
+            self.transcriptDebounce = nil
             await self.refreshTranscript?()
         }
     }

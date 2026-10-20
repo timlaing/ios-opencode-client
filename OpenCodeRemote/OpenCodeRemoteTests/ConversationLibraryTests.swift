@@ -971,6 +971,25 @@ final class ConversationLibraryTests: XCTestCase {
         XCTAssertEqual(library.streaming["msg_live"]?.text[1]?.isSettled, true)
     }
 
+    func testARestartedPartStreamsFromScratch() async {
+        let library = conversation(recorder: Recorder()) { _ in
+            Fixtures.response(Fixtures.emptyPage)
+        }
+        await library.open(host: one, sessionID: "ses_a")
+
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .ended("Hello there.")))
+        // The stream restarts the SAME part after its ended (review
+        // W16 r4).
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .started))
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .delta("Hel")))
+
+        XCTAssertEqual(
+            library.streaming["msg_live"]?.text[0]?.content, "Hel",
+            "a restarted part streams from the beginning — deltas never append to the previous ended value"
+        )
+        XCTAssertEqual(library.streaming["msg_live"]?.text[0]?.isSettled, false, "and it is live again")
+    }
+
     func testApplyStreamNeverCrossesSessions() async {
         let library = conversation(recorder: Recorder()) { _ in
             Fixtures.response(Fixtures.emptyPage)
@@ -1011,6 +1030,66 @@ final class ConversationLibraryTests: XCTestCase {
         await library.refresh(host: one, sessionID: "ses_a")
 
         XCTAssertTrue(library.streaming.isEmpty, "a SETTLED entry the list carries is retired")
+        XCTAssertEqual(library.messages.map(\.id), ["msg_1", "msg_live"])
+    }
+
+    func testAPageRequestedBeforeTheSettleNeverRetiresTheEntry() async {
+        let (entered, enteredContinuation) = AsyncStream<Void>.makeStream()
+        let (release, releaseContinuation) = AsyncStream<Void>.makeStream()
+        let midTurn = Fixtures.response(Fixtures.page([
+            Fixtures.assistant("msg_live", created: 300),
+            Fixtures.user("msg_1", text: "hello", created: 100),
+        ]))
+        let firstCall = Flip()
+        let gatedCall = Flip()
+        let library = conversation(recorder: Recorder()) { request in
+            guard request.operationID == "session.message.list" else {
+                return Fixtures.response(Fixtures.emptyPage)
+            }
+            if firstCall.first() {
+                // open: a transcript with a placeholder row.
+                return Fixtures.response(Fixtures.page([
+                    Fixtures.assistant("msg_live", created: 300),
+                    Fixtures.user("msg_1", text: "hello", created: 100),
+                ]))
+            }
+            if gatedCall.first() {
+                // refresh A: REQUESTED first, lands last.
+                enteredContinuation.yield()
+                for await _ in release { break }
+                return midTurn
+            }
+            // refresh B: requested after the settle.
+            return Fixtures.response(Fixtures.page([
+                Fixtures.assistant("msg_live", created: 300),
+                Fixtures.user("msg_1", text: "hello", created: 100),
+            ]))
+        }
+
+        await library.open(host: one, sessionID: "ses_a")
+
+        let gated = Task { [one] in
+            await library.refresh(host: one, sessionID: "ses_a")
+        }
+        var enteredIterator = entered.makeAsyncIterator()
+        _ = await enteredIterator.next() // refresh A's page request is in flight
+
+        // The part settles NOW: refresh A's page was requested BEFORE
+        // this instant, so it is the host's mid-turn row (review W16
+        // r4).
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", ordinal: 0, kind: .text, change: .ended("Hello there.")))
+
+        releaseContinuation.yield()
+        await gated.value
+
+        XCTAssertNotNil(
+            library.streaming["msg_live"],
+            "a page requested before the settle carries the mid-turn row — it can never retire the entry"
+        )
+
+        await library.refresh(host: one, sessionID: "ses_a")
+
+        XCTAssertNil(library.streaming["msg_live"], "the post-settle page retires it")
         XCTAssertEqual(library.messages.map(\.id), ["msg_1", "msg_live"])
     }
 
