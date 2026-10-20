@@ -89,15 +89,26 @@ final class ConversationLibrary {
     struct StreamingMessage: Equatable {
         var text = ""
         var reasoning = ""
+        /// Set once the stream's `text.ended` full value arrived. Only
+        /// a SETTLED entry may be retired by the list (review W16 r1):
+        /// a mid-turn message-list row can carry partial content, and
+        /// pruning an unsettled overlay against it would truncate the
+        /// live tail to the next delta, restarting per delta. A
+        /// reasoning-only turn never settles — its entry is bounded by
+        /// the turn's execution terminal (markExecutionFinished) or a
+        /// full refresh, never pruned early.
+        var isSettled = false
     }
 
     /// Incremental assistant state keyed by assistantMessageID, fed by
     /// text/reasoning events while the host streams (docs/
-    /// api-contract.md W16). The message LIST stays authoritative: an
-    /// overlay entry is pruned the moment the transcript contains its
-    /// row, and a full refresh (server.connected) clears everything —
-    /// the volatile stream has no replay, so anything accumulated on a
-    /// dead connection is untrusted.
+    /// api-contract.md W16). The message LIST stays authoritative: a
+    /// SETTLED overlay entry is retired once the transcript contains
+    /// its row (an unsettled one is kept — the row may be the host's
+    /// mid-turn snapshot, not the turn's final text), and a full
+    /// refresh (server.connected) clears everything — the volatile
+    /// stream has no replay, so anything accumulated on a dead
+    /// connection is untrusted.
     private(set) var streaming: [String: StreamingMessage] = [:]
 
     /// Canonical working state from execution/status events. A
@@ -124,6 +135,9 @@ final class ConversationLibrary {
             entry.text += delta
         case (.text, .ended(let full)):
             entry.text = full
+            // The turn's full text arrived: the entry may now be
+            // retired by the list's next authoritative read.
+            entry.isSettled = true
         case (.reasoning, .delta(let delta)):
             entry.reasoning += delta
         case (.reasoning, .ended(let full)):
@@ -153,11 +167,15 @@ final class ConversationLibrary {
         executionStatus = status
     }
 
-    /// The list owns every row it contains: an overlay entry whose
-    /// message has landed is retired (its full text arrived).
+    /// The list owns every row it contains — but only once the turn
+    /// said so: pruning an UNSETTLED entry against a mid-turn row
+    /// would truncate the live tail to the next delta, restarting it
+    /// per delta against the host's stale partial copy (review W16
+    /// r1). While unsettled, the view renders the overlay IN PLACE of
+    /// that row's text/reasoning instead of duplicating both.
     private func pruneDeliveredStreaming() {
-        streaming = streaming.filter { key, _ in
-            !messages.contains { $0.id == key }
+        streaming = streaming.filter { key, entry in
+            !(entry.isSettled && messages.contains { $0.id == key })
         }
     }
 

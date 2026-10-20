@@ -118,6 +118,18 @@ final class SessionHistoryServiceTests: XCTestCase {
         XCTAssertEqual(files.first?.additions, 1)
     }
 
+    func testActiveSessionsReturnsTheDrainedSessionIDs() async throws {
+        let recorder = Recorder()
+        let body = #"{"data":{"ses_a":{"type":"running"},"ses_b":{"type":"running"}}}"#
+        let active = try await service([
+            "session.active": .success(json(body)),
+        ], recorder: recorder).activeSessions(at: host, credential: credential)
+
+        XCTAssertEqual(active, ["ses_a", "ses_b"], "only membership matters for reconnect reconciliation")
+        XCTAssertEqual(recorder.requests.map(\.operationID), ["session.active"])
+        XCTAssertEqual(recorder.requests[0].path, "/api/session/active")
+    }
+
     func testErrorsPropagateUnchanged() async throws {
         let service = service([
             "session.message.list": .failure(.http(status: 404, envelope: nil)),

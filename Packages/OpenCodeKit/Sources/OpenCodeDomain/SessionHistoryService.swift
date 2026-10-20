@@ -96,4 +96,20 @@ public struct SessionHistoryService: Sendable {
             .decodedJSON(SessionDiffResponse.self)
             .data
     }
+
+    /// `GET /api/session/active` — the session IDs this server is
+    /// actively draining RIGHT NOW. W16 reconnect reconciliation: the
+    /// event stream has no replay, so a terminal that landed while the
+    /// connection was down leaves the working indicator stale; the open
+    /// session's ABSENCE from this inventory is the authoritative fact
+    /// that its turn is over (docs/api-contract.md W16).
+    public func activeSessions(
+        at host: URL,
+        credential: BasicCredential?
+    ) async throws -> Set<String> {
+        let envelope = try await makeTransport(host)
+            .perform(W03Requests.activeSessions(credential: credential))
+            .decodedJSON(ActiveSessionsResponse.self)
+        return Set(envelope.data.keys)
+    }
 }

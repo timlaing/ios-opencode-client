@@ -69,6 +69,13 @@ final class EventReconciler {
     var loadForms: (() async -> Void)?
     var loadContext: (() async -> Void)?
     var reloadIntegrations: (() async -> Void)?
+    /// Reconnect reconciliation of the WORKING state (review W16 r1):
+    /// the stream has no replay, so a terminal that landed while the
+    /// connection was down left `executionStatus` — and its unpruned
+    /// overlay — stale forever. `GET /api/session/active` is the
+    /// authority for "is this session still running"; the view injects
+    /// the session-scoped read (credential from the paired host).
+    var readActiveSessions: (() async throws -> Set<String>)?
     /// W16 S17: the RAW event behind every execution terminal — the
     /// notifier needs the event's own id (stable identity) and type
     /// (canonical outcome), which the Action deliberately does not
@@ -210,6 +217,7 @@ final class EventReconciler {
             await loadInbox?()
             await loadApprovals?()
             await loadForms?()
+            await reestablishExecutionState()
         case .execution(let sessionID, let finished):
             if finished {
                 // The turn is over regardless of any stale overlay or
@@ -258,6 +266,26 @@ final class EventReconciler {
     func flush() {
         transcriptDebounce?.cancel()
         transcriptDebounce = nil
+    }
+
+    /// Reconnect reconciliation for the working indicator (review W16
+    /// r1). A missed terminal leaves busy/retry showing forever: the
+    /// stream never replays it. The active-session inventory answers —
+    /// the open session's ABSENCE means the turn ended while we were
+    /// down, so idle is the truth. A failed read keeps the old value:
+    /// transport trouble is not evidence of completion (the same rule
+    /// as a disconnect never showing it).
+    private func reestablishExecutionState() async {
+        guard conversation.executionStatus != .idle, let read = readActiveSessions else { return }
+        do {
+            let active = try await read()
+            if !active.contains(openSessionID) {
+                conversation.applyStatus(.idle)
+            }
+        } catch {
+            // Honest: keep the old indicator rather than guess from a
+            // failed read.
+        }
     }
 
     private func scheduleTranscriptRefresh() {

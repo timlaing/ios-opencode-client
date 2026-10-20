@@ -953,13 +953,14 @@ final class ConversationLibraryTests: XCTestCase {
         XCTAssertTrue(library.streaming.isEmpty, "another session's stream never renders under this transcript")
     }
 
-    func testRefreshPrunesOverlayRowsTheListNowCarries() async {
+    func testRefreshNeverPrunesALiveOverlayEntryEvenWhenTheListCarriesItsRow() async {
         let recorder = Recorder()
         let library = conversation(recorder: recorder) { request in
             guard request.operationID == "session.message.list" else {
                 throw TransportError.connectionFailed("unstubbed \(request.operationID)")
             }
-            // The authoritative list catches up with the streamed row.
+            // The host returns the IN-PROGRESS row: its content is the
+            // mid-turn snapshot, not the turn's final text.
             return Fixtures.response(Fixtures.page([
                 Fixtures.assistant("msg_live", created: 300),
                 Fixtures.user("msg_1", text: "hello", created: 100),
@@ -970,7 +971,17 @@ final class ConversationLibraryTests: XCTestCase {
 
         await library.refresh(host: one, sessionID: "ses_a")
 
-        XCTAssertTrue(library.streaming.isEmpty, "the list owns the row once it carries it")
+        XCTAssertNotNil(
+            library.streaming["msg_live"],
+            "a live entry survives the row's arrival — pruning against a mid-turn row would truncate the tail to the next delta, restarting per delta (review W16 r1)"
+        )
+
+        // The turn's full text arrives: only now is the entry settled
+        // enough for the list to retire it.
+        library.applyStream(.init(sessionID: "ses_a", messageID: "msg_live", kind: .text, change: .ended("Hello there.")))
+        await library.refresh(host: one, sessionID: "ses_a")
+
+        XCTAssertTrue(library.streaming.isEmpty, "a SETTLED entry the list carries is retired")
         XCTAssertEqual(library.messages.map(\.id), ["msg_1", "msg_live"])
     }
 

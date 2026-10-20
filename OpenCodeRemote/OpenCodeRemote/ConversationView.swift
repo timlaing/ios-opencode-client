@@ -331,6 +331,12 @@ struct ConversationView: View {
             await loadApprovals()
             await loadForms()
             notifier.sceneActive = (scenePhase == .active)
+            // Cancellation is cooperative: the awaits above complete
+            // even after the view disappeared (the OS consent prompt is
+            // not cancellation-aware). Never start a subscription the
+            // dismiss already stopped (onDisappear ran events.stop() —
+            // a loop started afterwards would own nothing).
+            guard !Task.isCancelled else { return }
             await startEventStream()
         }
         .onChange(of: scenePhase) { _, phase in
@@ -566,12 +572,20 @@ struct ConversationView: View {
         let integrations = self.integrations
         let sessions = self.sessions
         let host = self.host
+        let hostLibrary = self.library
+        let activeService = SessionHistoryService(makeTransport: { URLSessionTransport(baseURL: $0) })
         let sessionID = session.id
         let directory = session.location?.directory
         // One lazy consent ask per notifier lifetime, before the first
         // terminal event could need it (the OS answers later calls
         // from its cached decision).
         await notifier.prepare()
+        // The consent await is not cancellation-aware: a view
+        // dismissed while the prompt is up resumes here. The
+        // subscription must not start for a screen whose onDisappear
+        // already stopped it (review W16 r1) — a loop started now
+        // would reconnect forever with no owner.
+        guard !Task.isCancelled else { return }
 
         let reconciler = EventReconciler(conversation: conversation, sessionID: sessionID)
         reconciler.refreshTranscript = {
@@ -612,6 +626,17 @@ struct ConversationView: View {
             // Only this conversation's live terminal events reach the
             // notifier; it applies the active/dedup/consent gates.
             await notifier.handleTerminal(event, sessionTitle: session.title)
+        }
+        reconciler.readActiveSessions = { [weak hostLibrary] in
+            // Reconnect reconciliation of the working indicator (review
+            // W16 r1): the active-session inventory is the authority
+            // for "is this turn still running" — the stream has no
+            // replay, so a terminal missed while down left it stale.
+            guard let hostLibrary,
+                  let credential = hostLibrary.credential(for: host.id) else {
+                throw TransportError.connectionFailed("No credential for this host.")
+            }
+            return try await activeService.activeSessions(at: host.address, credential: credential)
         }
         self.reconciler = reconciler
         events.watch(host: host)
@@ -845,13 +870,18 @@ struct ConversationView: View {
                 }
             }
             // W16 live tail (docs/api-contract.md W16): in-flight
-            // assistant text/reasoning straight from the event stream
-            // while the authoritative list has not caught up. The
-            // library prunes every key the list already carries, so a
-            // row here is never a duplicate of a row above.
-            if !conversation.streaming.isEmpty {
+            // assistant text/reasoning straight from the event stream.
+            // A row lives here ONLY while the list has not caught up
+            // at all — once the host returns the in-progress row, the
+            // row renders the overlay IN PLACE of its text/reasoning
+            // (review W16 r1: the text is never shown twice, and tool
+            // cards from the mid-turn row keep rendering).
+            let unlistedStreaming = conversation.streaming.keys.filter { key in
+                !conversation.messages.contains { $0.id == key }
+            }.sorted()
+            if !unlistedStreaming.isEmpty {
                 Section {
-                    ForEach(Array(conversation.streaming.keys.sorted()), id: \.self) { key in
+                    ForEach(unlistedStreaming, id: \.self) { key in
                         streamingRow(conversation.streaming[key], id: key)
                     }
                 }
@@ -862,6 +892,23 @@ struct ConversationView: View {
 
     // MARK: - Message rendering
 
+    /// The overlay's own rendering — shared by the tail row (the list
+    /// has not caught up) and the in-place substitution inside an
+    /// assistant row (review W16 r1: the overlay REPLACES the row's
+    /// text/reasoning rather than duplicating it).
+    @ViewBuilder
+    private func streamingContent(_ entry: ConversationLibrary.StreamingMessage) -> some View {
+        if !entry.reasoning.isEmpty {
+            Text(entry.reasoning)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .italic()
+        }
+        if !entry.text.isEmpty {
+            markdown(entry.text)
+        }
+    }
+
     /// W16 live tail row: the assistant's in-flight reasoning and text
     /// as the deltas arrive. Reasoning renders dimmed above the text
     /// (the same thinking treatment as the transcript); an empty entry
@@ -870,15 +917,7 @@ struct ConversationView: View {
     private func streamingRow(_ entry: ConversationLibrary.StreamingMessage?, id: String) -> some View {
         if let entry {
             VStack(alignment: .leading, spacing: 6) {
-                if !entry.reasoning.isEmpty {
-                    Text(entry.reasoning)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .italic()
-                }
-                if !entry.text.isEmpty {
-                    markdown(entry.text)
-                }
+                streamingContent(entry)
                 if entry.text.isEmpty, entry.reasoning.isEmpty {
                     HStack(spacing: 8) {
                         ProgressView()
@@ -891,6 +930,29 @@ struct ConversationView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 2)
             .accessibilityIdentifier("S08.streaming.\(id)")
+        }
+    }
+
+    /// The LIVE (non-settled) overlay entry for a row, if any. A
+    /// settled entry no longer owns the row: its full text arrived and
+    /// the list's next authoritative read retires it.
+    private func liveOverlay(for messageID: String) -> ConversationLibrary.StreamingMessage? {
+        conversation.streaming[messageID].flatMap { $0.isSettled ? nil : $0 }
+    }
+
+    /// An item is superseded only when the overlay actually carries
+    /// that KIND of content — reasoning the stream never delivered
+    /// still renders from the list (the overlay cannot replace what it
+    /// never saw), and tool/unknown items always stay authoritative.
+    private func isSupersededByOverlay(
+        _ item: SessionMessage.ContentItem,
+        live: ConversationLibrary.StreamingMessage?
+    ) -> Bool {
+        guard let live else { return false }
+        switch item.type {
+        case "text": return !live.text.isEmpty
+        case "reasoning": return !live.reasoning.isEmpty
+        default: return false
         }
     }
 
@@ -912,12 +974,24 @@ struct ConversationView: View {
             .padding(.vertical, 2)
 
         case .assistant(let agent, let model, let content, let error, _):
+            // W16 review r1: while the turn streams and the host has
+            // already returned its in-progress row, the row's
+            // text/reasoning are the host's mid-turn snapshot — stale
+            // beside the live overlay. The overlay renders IN PLACE of
+            // exactly the items it covers (kind by kind); tool and
+            // unknown items stay authoritative from the list.
+            let live = liveOverlay(for: message.id)
             VStack(alignment: .leading, spacing: 6) {
                 Text([agent, model.map { "\($0.providerID)/\($0.id)" }].compactMap { $0 }.joined(separator: " · "))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
+                if let live {
+                    streamingContent(live)
+                }
                 ForEach(Array(content.enumerated()), id: \.offset) { _, item in
-                    contentItemView(item)
+                    if !isSupersededByOverlay(item, live: live) {
+                        contentItemView(item)
+                    }
                 }
                 if let error {
                     Label(error.message ?? error.name ?? "The assistant failed.", systemImage: "exclamationmark.triangle")

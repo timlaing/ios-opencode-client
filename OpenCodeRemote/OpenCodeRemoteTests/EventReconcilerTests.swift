@@ -333,6 +333,67 @@ final class EventReconcilerTests: XCTestCase {
         XCTAssertEqual(calls.calls, ["transcript", "inbox", "approvals", "forms"], "authoritative state is fetched, never replayed")
     }
 
+    func testReconnectClearsAStaleIndicatorTheMissedTerminalLeftBehind() async {
+        let conversation = await loadedConversation()
+        // A retry status arrived live, then the connection dropped and
+        // the terminal landed during the gap — no replay will ever
+        // deliver it.
+        conversation.applyStatus(.retry(attempt: 2, message: "still trying"))
+        let calls = CallLog()
+        let reconciler = reconciler(conversation, calls: calls)
+        reconciler.readActiveSessions = {
+            calls.record("active")
+            return []
+        }
+
+        await reconciler.handle(event("server.connected"))
+
+        XCTAssertEqual(calls.calls, ["transcript", "inbox", "approvals", "forms", "active"])
+        XCTAssertEqual(
+            conversation.executionStatus, .idle,
+            "the open session's absence from the active inventory is the authoritative end of the turn"
+        )
+    }
+
+    func testReconnectKeepsTheIndicatorWhileTheSessionIsStillRunning() async {
+        let conversation = await loadedConversation()
+        conversation.applyStatus(.busy)
+        let reconciler = reconciler(conversation, calls: CallLog())
+        reconciler.readActiveSessions = { ["ses_a"] }
+
+        await reconciler.handle(event("server.connected"))
+
+        XCTAssertEqual(conversation.executionStatus, .busy, "a still-running turn keeps its indicator")
+    }
+
+    func testReconnectKeepsTheIndicatorWhenTheActiveReadFails() async {
+        let conversation = await loadedConversation()
+        conversation.applyStatus(.retry(attempt: 1, message: nil))
+        let reconciler = reconciler(conversation, calls: CallLog())
+        reconciler.readActiveSessions = { throw TransportError.connectionFailed("dropped") }
+
+        await reconciler.handle(event("server.connected"))
+
+        XCTAssertEqual(
+            conversation.executionStatus, .retry(attempt: 1, message: nil),
+            "transport trouble is not evidence of completion — never guess idle"
+        )
+    }
+
+    func testReconnectSkipsTheActiveReadWhileIdle() async {
+        let conversation = await loadedConversation()
+        let calls = CallLog()
+        let reconciler = reconciler(conversation, calls: calls)
+        reconciler.readActiveSessions = {
+            calls.record("active")
+            return []
+        }
+
+        await reconciler.handle(event("server.connected"))
+
+        XCTAssertFalse(calls.calls.contains("active"), "an idle indicator is already the truth — no read needed")
+    }
+
     func testDockAndInventoryFamiliesRouteToTheirReads() async {
         let conversation = await loadedConversation()
         let calls = CallLog()
