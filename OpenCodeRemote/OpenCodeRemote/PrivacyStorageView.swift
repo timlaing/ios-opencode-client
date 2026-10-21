@@ -61,6 +61,11 @@ struct PrivacyStorageView: View {
     /// the toggle is off it reads and writes nothing, so this call is
     /// safe at every screen open.
     private func reconcileSync() {
+        // An unreadable host store is NOT "every host removed" — the
+        // same guard as the shell's triggers (review W17 r8): deriving
+        // tombstones from an inventory we could not load would delete
+        // this device's synced hosts everywhere.
+        guard hosts.storageError == nil else { return }
         cloud.reconcile(
             settings: settings,
             hostAddresses: Dictionary(

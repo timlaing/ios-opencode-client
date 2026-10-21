@@ -75,6 +75,18 @@ struct ContentView: View {
             guard phase == .active else { return }
             Self.reconcileCloudSync(cloud: cloud, settings: settings, library: library)
         }
+        .onChange(of: settings.state.appearance) { _, _ in
+            // Local sync-scope edit → push on the edit itself (review
+            // W17 r8). Opt-in gated in the engine: sync off no-ops.
+            Self.reconcileCloudSync(cloud: cloud, settings: settings, library: library)
+        }
+        .onChange(of: library.entries.map { $0.id.rawValue + "|" + $0.host.address.absoluteString }) { _, _ in
+            // Host add/remove/re-pair → push on the change (review
+            // W17 r8). Connection state is deliberately NOT in the
+            // fingerprint: probe results (checking → reachable) are
+            // not sync-scope edits.
+            Self.reconcileCloudSync(cloud: cloud, settings: settings, library: library)
+        }
         // W17 drafts retention: one sweep per launch removes drafts
         // older than the active policy's cutoff (until-discarded
         // sweeps nothing — see ComposerDraftStore.applyRetention).
@@ -98,6 +110,13 @@ struct ContentView: View {
     private static func reconcileCloudSync(
         cloud: CloudSettingsSync, settings: SettingsLibrary, library: HostLibrary
     ) {
+        // An unreadable host store is NOT "every host removed":
+        // hostAddresses would be empty, and the tombstone loop would
+        // delete every synced host for every device (review W17 r8).
+        // HostLibrary.reload() runs synchronously in init, so with no
+        // storage error the inventory IS authoritative — genuinely
+        // empty means genuinely empty.
+        guard library.storageError == nil else { return }
         cloud.reconcile(
             settings: settings,
             hostAddresses: Dictionary(
