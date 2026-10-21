@@ -133,6 +133,32 @@ test("tick defers to another instance's unexpired lease", async () => {
   assert.equal(s.relay.pushes.length, 1)
 })
 
+test("overlapping ticks never double-send in-flight items", async () => {
+  const s = setup()
+  await s.store.saveDevice(makeDevice("dev_a"))
+  await s.engine.enqueue(makeDraft())
+  // Hold the first push in flight while more ticks pile up (the realistic
+  // case: an enqueue's kick() lands mid-drain, and the lease is re-entrant
+  // for this instance — without serialisation the second tick re-selects
+  // the in-flight outbox item and sends it again).
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const send = s.relay.push.bind(s.relay)
+  s.relay.push = async (request) => {
+    await gate
+    return send(request)
+  }
+  const first = s.engine.tick()
+  const overlapping = s.engine.tick()
+  const alsoOverlapping = s.engine.tick()
+  release()
+  await Promise.all([first, overlapping, alsoOverlapping])
+  assert.equal(s.relay.pushes.length, 1)
+  assert.equal((await s.store.listOutbox()).length, 0)
+})
+
 test("retryable results back off, then succeed on a later tick", async () => {
   const s = setup()
   await s.store.saveDevice(makeDevice("dev_a"))

@@ -161,8 +161,35 @@ export class DeliveryEngine {
     return { alert: { title: draft.title, body, category: draft.category }, sealed }
   }
 
-  /** One lease-governed pass: drain, prune, renew. Never throws. */
+  /**
+   * One lease-governed pass (never throws). Overlapping calls are
+   * serialised: a call during an active pass marks `rerun` and joins that
+   * pass, then exactly one extra pass runs. The store lease is re-entrant
+   * for this instance, so without this guard a `kick()` mid-drain would
+   * re-select in-flight outbox items and double-send them.
+   */
   async tick(): Promise<void> {
+    if (this.ticking !== null) {
+      this.rerun = true
+      return this.ticking
+    }
+    this.ticking = (async () => {
+      try {
+        do {
+          this.rerun = false
+          await this.tickOnce()
+        } while (this.rerun)
+      } finally {
+        this.ticking = null
+      }
+    })()
+    return this.ticking
+  }
+
+  private ticking: Promise<void> | null = null
+  private rerun = false
+
+  private async tickOnce(): Promise<void> {
     try {
       const now = this.now()
       const owner = await this.store.lease(this.instanceID, now, LEASE_MS)

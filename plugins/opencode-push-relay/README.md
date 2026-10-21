@@ -4,7 +4,7 @@ OpenCode **server plugin** that registers this host with an
 [apns-push-relay](../../docs/notifications.md) instance and delivers
 session/permission notifications to paired iOS clients over APNs.
 
-Status: implemented and unit-tested (89 tests) against a fake relay and the
+Status: implemented and unit-tested (91 tests) against a fake relay and the
 relay's golden signing fixture, and verified to load in a real OpenCode
 v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
 **Not yet verified against a live relay or device** — see
@@ -34,7 +34,10 @@ v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
   The event subscription is pumped: if the stream ends or throws, the plugin
   resubscribes (capped backoff) instead of going silent for the process
   lifetime. Each device's own `contentLevel` pref is applied when its copy of
-  a notification is built.
+  a notification is built. Overlapping `tick()` calls inside one instance are
+  serialised (an enqueue's kick mid-drain can never double-send), and every
+  relay call carries a bounded 15 s timeout that degrades to a retryable
+  status-0 error.
 - **Rotation.** `/push-key-rotate` calls `POST /v1/rotate` (proof-of-
   possession, spec §2.7): token + signing key are replaced atomically and
   paired devices re-enroll. Before any device has enrolled, rotation only

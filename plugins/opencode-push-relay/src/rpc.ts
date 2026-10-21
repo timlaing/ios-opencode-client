@@ -196,7 +196,7 @@ export const PushRpc = Rpc.define({
           app: { type: ["string", "null"] },
           tenant: { type: ["string", "null"] },
           registered: { type: "boolean" },
-          tenantPubkey: { type: ["string", "null"] },
+          tenantPubkeyFingerprint: { type: ["string", "null"] },
           probe: { type: ["string", "null"] },
           health: {
             type: ["object", "null"],
@@ -264,7 +264,7 @@ export const PushRpc = Rpc.define({
           "app",
           "tenant",
           "registered",
-          "tenantPubkey",
+          "tenantPubkeyFingerprint",
           "probe",
           "health",
           "devices",

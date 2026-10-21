@@ -279,6 +279,10 @@ test("status returns the structured report (configured and unconfigured)", async
   assert.equal(status.registered, true)
   assert.equal(status.probe, "bound")
   assert.ok(Array.isArray(status.devices))
+  // The status payload carries the short fingerprint — never the full key
+  // that `info.tenantPubkey` returns (one meaning per field name).
+  assert.equal(status.tenantPubkeyFingerprint, "FIXTURE_PUBK")
+  assert.equal(status.tenantPubkey, undefined)
 
   const unconfigured = setup({ config: undefined })
   const off = (await unconfigured.call("status", {})) as Record<string, unknown>

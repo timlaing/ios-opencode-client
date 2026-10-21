@@ -278,7 +278,11 @@ export function statusToRpc(report: StatusReport): Record<string, unknown> {
     app: report.config?.app ?? null,
     tenant: report.config?.tenant ?? null,
     registered: report.registration !== undefined,
-    tenantPubkey: report.registration === undefined ? null : report.registration.publicFingerprint,
+    // Renamed from `tenantPubkey`: `info.tenantPubkey` is the FULL key, while
+    // this status payload only ever carries the short fingerprint — one
+    // meaning per field name (CodeRabbit finding).
+    tenantPubkeyFingerprint:
+      report.registration === undefined ? null : report.registration.publicFingerprint,
     probe:
       report.probe === undefined
         ? null

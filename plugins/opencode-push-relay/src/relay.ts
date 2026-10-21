@@ -150,13 +150,23 @@ function requireNumber(record: Record<string, unknown>, key: string, what: strin
   return value
 }
 
+/**
+ * Bound for every relay call. Node's undici defaults wait minutes for a
+ * hung server; a bounded timeout converts that into a retryable
+ * status-0 `network_error` instead of stalling the lease window or a
+ * user-visible command report.
+ */
+export const REQUEST_TIMEOUT_MS = 15_000
+
 export class RelayClient implements RelayApi {
   private readonly baseUrl: string
   private readonly creds: () => Creds | undefined
+  private readonly timeoutMs: number
 
-  constructor(baseUrl: string, creds: () => Creds | undefined) {
+  constructor(baseUrl: string, creds: () => Creds | undefined, timeoutMs = REQUEST_TIMEOUT_MS) {
     this.baseUrl = baseUrl.replace(/\/+$/, "")
     this.creds = creds
+    this.timeoutMs = timeoutMs
   }
 
   private async request(
@@ -175,9 +185,27 @@ export class RelayClient implements RelayApi {
     }
     let response: Response
     try {
-      response = await fetch(`${this.baseUrl}${path}`, { method, headers, body: payload })
+      // Bounded: a hung relay must not stall the engine's lease window,
+      // /push-status, enroll, or info. The abort lands in the same catch
+      // as a connection failure and becomes a retryable status-0 error.
+      response = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        headers,
+        body: payload,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      })
     } catch (cause) {
-      throw new RelayError(0, "network_error", cause instanceof Error ? cause.message : String(cause))
+      const timedOut =
+        cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError")
+      throw new RelayError(
+        0,
+        "network_error",
+        timedOut
+          ? `timeout after ${this.timeoutMs}ms`
+          : cause instanceof Error
+            ? cause.message
+            : String(cause),
+      )
     }
     if (!response.ok) throw await RelayClient.errorFrom(response)
     const text = await response.text()

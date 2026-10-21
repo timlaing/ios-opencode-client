@@ -237,6 +237,31 @@ test("probeBinding surfaces unreachable relays instead of guessing", async () =>
   await assert.rejects(client.probeBinding(), (error: unknown) => error instanceof RelayError && error.status === 0)
 })
 
+test("a hung relay is cut off by the request timeout as network_error", async () => {
+  // Accepts the connection but never answers — the client's bounded
+  // timeout must turn the hang into a retryable status-0 error instead of
+  // stalling the engine lease window or a command report for minutes.
+  const server = createServer(() => {
+    /* intentionally never respond */
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const { port } = server.address() as AddressInfo
+  try {
+    const client = new RelayClient(`http://127.0.0.1:${port}`, () => undefined, 25)
+    await assert.rejects(
+      client.health(),
+      (error: unknown) =>
+        error instanceof RelayError &&
+        error.status === 0 &&
+        error.code === "network_error" &&
+        error.detail.includes("timeout after 25ms"),
+    )
+  } finally {
+    server.closeAllConnections()
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
 test("signed calls without stored credentials fail as not_configured", async () => {
   const client = new RelayClient("http://127.0.0.1:1", () => undefined)
   await assert.rejects(
