@@ -63,9 +63,15 @@ struct ContentView: View {
             }
             cloud.observeExternalChanges()
         }
-        .onChange(of: scenePhase) { _, phase in
-            // The foreground pull (review W17 r2). The engine is
-            // opt-in gated: sync off converges nothing.
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            // The foreground pull (review W17 r2) — and the COLD
+            // LAUNCH pull (review W17 r6): without initial: true the
+            // action never fires for the first render, and a relaunch
+            // receives no external-change notification for edits that
+            // already landed, so a change from another device would
+            // stay unapplied until the first background/foreground
+            // cycle or an S19 open. The engine is opt-in gated: sync
+            // off converges nothing.
             guard phase == .active else { return }
             Self.reconcileCloudSync(cloud: cloud, settings: settings, library: library)
         }
