@@ -205,9 +205,12 @@ struct PrivacyStorageView: View {
     private var draftRetentionFooter: String {
         switch settings.state.draftRetention {
         case .untilDiscarded:
-            return "Drafts are kept until you send or discard them. Each draft's expiry appears on it once a limited retention is active."
+            // Review W17 r10: the previous copy promised a per-draft
+            // expiry display that no view renders — the honesty rule
+            // forbids describing UI with no mechanism behind it.
+            return "Drafts are kept until you send or discard them. Drafts never sync to iCloud."
         case .days(let days):
-            return "Drafts expire \(days) days after their last edit; each draft shows its expiry date. Drafts never sync to iCloud."
+            return "Drafts expire \(days) days after their last edit. Drafts never sync to iCloud."
         }
     }
 
