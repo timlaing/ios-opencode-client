@@ -217,9 +217,22 @@ final class CloudSettingsSync {
         // --- Appearance: last recorded edit per field.
         var mirror = localMirror
         var localAppearance = mirror.appearance
-        if localAppearance?.value != settings.state.appearance {
+        if let recorded = localAppearance {
+            if recorded.value != settings.state.appearance {
+                // This device's RECORDED value changed locally — its
+                // edit, stamped now.
+                localAppearance = Record(value: settings.state.appearance, modifiedAt: now(), deviceID: deviceID)
+            }
+        } else if cloud.appearance == nil {
+            // First record anywhere: establish it from local state.
             localAppearance = Record(value: settings.state.appearance, modifiedAt: now(), deviceID: deviceID)
         }
+        // Mirror nil while the cloud carries an edit: the cloud edit
+        // is authoritative on this device's FIRST pass — an
+        // UNRECORDED local value never beats a recorded edit, and
+        // stamping the untouched default with now() would beat every
+        // earlier edit on every other device and push the default
+        // back over the user's choice (review W17 r1).
         var mergedAppearance = localAppearance
         if let cloudAppearance = cloud.appearance {
             let beatsOurs = mergedAppearance.map {
@@ -246,23 +259,47 @@ final class CloudSettingsSync {
         for (hostID, address) in hostAddresses {
             let stripped = Self.strippedAddress(address)
             if let existing = mergedHosts[hostID] {
-                if existing.address == stripped, existing.deletedAt == nil {
+                if existing.deletedAt != nil {
+                    // A tombstone stands against a STALE unchanged
+                    // copy: this device still records exactly what it
+                    // recorded before, so it has nothing new to say —
+                    // a slower device's stale upload cannot resurrect
+                    // a removed entry (docs I6 / W17; review W17 r1).
+                    // Only a genuine NEW local edit reinstates: a
+                    // changed address (a re-pair), or a host this
+                    // device removed earlier and paired again (no
+                    // mirror entry — the tombstone pass drops it).
+                    if mirror.hosts[hostID]?.address == stripped {
+                        // Unchanged: the deletion stands; this
+                        // device's own record stays in the mirror,
+                        // nothing re-stamped.
+                        if let recorded = mirror.hosts[hostID] {
+                            ownHosts[hostID] = recorded
+                        }
+                    } else {
+                        let candidate = HostRecord(
+                            address: stripped, modifiedAt: now(), deviceID: deviceID, deletedAt: nil
+                        )
+                        mergedHosts[hostID] = candidate
+                        ownHosts[hostID] = candidate
+                    }
+                } else if existing.address == stripped {
                     ownHosts[hostID] = existing
-                    continue
+                } else {
+                    // Changed locally (a re-pair): a NEW edit,
+                    // stamped and merged by the same rule as every
+                    // other field.
+                    let candidate = HostRecord(
+                        address: stripped, modifiedAt: now(), deviceID: deviceID, deletedAt: nil
+                    )
+                    if Self.wins(
+                        (candidate.modifiedAt, candidate.deviceID),
+                        over: (existing.modifiedAt, existing.deviceID)
+                    ) {
+                        mergedHosts[hostID] = candidate
+                    }
+                    ownHosts[hostID] = mergedHosts[hostID] ?? candidate
                 }
-                // Changed locally (a re-pair) or reinstating a
-                // tombstone: a NEW edit, stamped and merged by the
-                // same rule as every other field.
-                let candidate = HostRecord(
-                    address: stripped, modifiedAt: now(), deviceID: deviceID, deletedAt: nil
-                )
-                if existing.deletedAt != nil || Self.wins(
-                    (candidate.modifiedAt, candidate.deviceID),
-                    over: (existing.modifiedAt, existing.deviceID)
-                ) {
-                    mergedHosts[hostID] = candidate
-                }
-                ownHosts[hostID] = mergedHosts[hostID] ?? candidate
             } else {
                 let candidate = HostRecord(
                     address: stripped, modifiedAt: now(), deviceID: deviceID, deletedAt: nil

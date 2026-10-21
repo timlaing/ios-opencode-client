@@ -27,6 +27,14 @@ final class DiagnosticsLogTests: XCTestCase {
         DiagnosticsLogStore(directory: directory, ceiling: ceiling, now: now)
     }
 
+    /// Mutable clock, safe to hand to the engine's `@Sendable` `now`
+    /// closure — a captured `var` is a warning today and a hard
+    /// error under stricter concurrency (review W17 r1).
+    private final class Clock: @unchecked Sendable {
+        var now: Date
+        init(_ now: Date) { self.now = now }
+    }
+
     func testDocumentedDefaultsArePinned() {
         XCTAssertEqual(DiagnosticsLogStore.retention, 7 * 86_400, "kept 7 days")
         XCTAssertEqual(DiagnosticsLogStore.byteCeiling, 5 * 1024 * 1024, "capped at 5 MiB")
@@ -62,11 +70,11 @@ final class DiagnosticsLogTests: XCTestCase {
 
     func testRetentionDropsEntriesOlderThanSevenDays() {
         let start = Date(timeIntervalSince1970: 1_000_000)
-        var clock = start
-        let log = store(now: { clock })
+        let clock = Clock(start)
+        let log = store(now: { clock.now })
 
         log.record(.storage, "old event")
-        clock = start.addingTimeInterval(8 * 86_400)
+        clock.now = start.addingTimeInterval(8 * 86_400)
         log.record(.storage, "fresh event")
 
         XCTAssertEqual(log.entries().map(\.message), ["fresh event"], "the 7-day window applies on write")

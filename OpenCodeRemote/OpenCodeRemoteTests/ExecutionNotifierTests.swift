@@ -82,6 +82,13 @@ final class ExecutionNotifierTests: XCTestCase {
         )
     }
 
+    /// The copy these tests pin is the DETAILED mode: the session
+    /// title and the outcome phrase, with every category enabled.
+    private let detailed = NotificationDeliveryPolicy(
+        contentPrivacy: .detailed,
+        categories: NotificationCategories()
+    )
+
     // MARK: - Delivery gates
 
     func testPostsOnceForAStableEventIdentity() async {
@@ -90,10 +97,12 @@ final class ExecutionNotifierTests: XCTestCase {
         notifier.sceneActive = false
 
         await notifier.handleTerminal(
-            terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: "Demo session"
+            terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: "Demo session",
+            policy: detailed
         )
         await notifier.handleTerminal(
-            terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: "Demo session"
+            terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: "Demo session",
+            policy: detailed
         )
 
         XCTAssertEqual(fake.posted.count, 1, "the server's event id is a stable identity: one banner")
@@ -108,7 +117,8 @@ final class ExecutionNotifierTests: XCTestCase {
         notifier.sceneActive = true
 
         await notifier.handleTerminal(
-            terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: nil
+            terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: nil,
+            policy: detailed
         )
         XCTAssertTrue(fake.posted.isEmpty, "a watched terminal needs no banner")
 
@@ -117,7 +127,8 @@ final class ExecutionNotifierTests: XCTestCase {
         // different event) still banners.
         notifier.sceneActive = false
         await notifier.handleTerminal(
-            terminal("session.execution.failed", id: "evt_2"), sessionTitle: nil
+            terminal("session.execution.failed", id: "evt_2"), sessionTitle: nil,
+            policy: detailed
         )
         XCTAssertEqual(fake.posted.count, 1, "the gate suppresses only while active")
         XCTAssertEqual(fake.posted.first?.title, "OpenCode Client", "no session title falls back to the display name")
@@ -133,7 +144,8 @@ final class ExecutionNotifierTests: XCTestCase {
 
         let posting = Task {
             await notifier.handleTerminal(
-                terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: nil
+                terminal("session.execution.succeeded", id: "evt_1"), sessionTitle: nil,
+                policy: detailed
             )
         }
         // Wait until the consent alert is actually on screen...
@@ -160,8 +172,8 @@ final class ExecutionNotifierTests: XCTestCase {
         let notifier = notifier(fake)
         notifier.sceneActive = false
 
-        await notifier.handleTerminal(terminal("session.execution.failed", id: "f"), sessionTitle: nil)
-        await notifier.handleTerminal(terminal("session.execution.interrupted", id: "i"), sessionTitle: nil)
+        await notifier.handleTerminal(terminal("session.execution.failed", id: "f"), sessionTitle: nil, policy: detailed)
+        await notifier.handleTerminal(terminal("session.execution.interrupted", id: "i"), sessionTitle: nil, policy: detailed)
 
         XCTAssertEqual(fake.posted.map(\.body), ["The turn failed.", "The turn was stopped."])
     }
@@ -173,9 +185,9 @@ final class ExecutionNotifierTests: XCTestCase {
         notifier.sceneActive = false
 
         await notifier.prepare()
-        await notifier.handleTerminal(terminal("session.execution.succeeded", id: "d1"), sessionTitle: nil)
+        await notifier.handleTerminal(terminal("session.execution.succeeded", id: "d1"), sessionTitle: nil, policy: detailed)
         await notifier.prepare()
-        await notifier.handleTerminal(terminal("session.execution.failed", id: "d2"), sessionTitle: nil)
+        await notifier.handleTerminal(terminal("session.execution.failed", id: "d2"), sessionTitle: nil, policy: detailed)
 
         XCTAssertTrue(fake.posted.isEmpty, "denied consent never posts")
         XCTAssertEqual(fake.authorizationRequests, 1, "one lazy ask — the OS decision is cached, never re-prompted")
@@ -194,15 +206,52 @@ final class ExecutionNotifierTests: XCTestCase {
 
         // An id-less event cannot be deduplicated — a duplicate
         // banner is worse than a missed one.
-        await notifier.handleTerminal(terminal("session.execution.succeeded", id: nil), sessionTitle: nil)
+        await notifier.handleTerminal(terminal("session.execution.succeeded", id: nil), sessionTitle: nil, policy: detailed)
         // Only the three canonical transitions banner.
-        await notifier.handleTerminal(terminal("session.execution.vibing", id: "v"), sessionTitle: nil)
+        await notifier.handleTerminal(terminal("session.execution.vibing", id: "v"), sessionTitle: nil, policy: detailed)
 
         XCTAssertTrue(fake.posted.isEmpty)
         XCTAssertFalse(
             NotificationDedupStore(defaults: defaults).alreadyPosted("v"),
             "an unknown type never consumes the identity — a later canonical event may still banner"
         )
+    }
+
+    // MARK: - The S17 policy (review W17 r1)
+
+    func testGenericContentNeverNamesTheSessionOrTheOutcome() async {
+        let fake = FakeNotifier()
+        let notifier = notifier(fake)
+        notifier.sceneActive = false
+
+        // nil privacy = onboarding has not asked yet: content stays
+        // GENERIC (S17 footer; WelcomeView promise).
+        await notifier.handleTerminal(
+            terminal("session.execution.succeeded", id: "g1"),
+            sessionTitle: "Demo session",
+            policy: NotificationDeliveryPolicy(contentPrivacy: nil, categories: NotificationCategories())
+        )
+
+        XCTAssertEqual(fake.posted.count, 1)
+        XCTAssertEqual(fake.posted.first?.title, "OpenCode Client", "generic content never carries the session title")
+        XCTAssertEqual(fake.posted.first?.body, "Open the app for details.", "generic content never carries outcome text")
+    }
+
+    func testDisabledCategoryNeverPostsAndNeverSpendsTheAsk() async {
+        let fake = FakeNotifier()
+        let notifier = notifier(fake)
+        notifier.sceneActive = false
+        var categories = NotificationCategories()
+        categories.failed = false
+
+        await notifier.handleTerminal(
+            terminal("session.execution.failed", id: "c1"),
+            sessionTitle: nil,
+            policy: NotificationDeliveryPolicy(contentPrivacy: .detailed, categories: categories)
+        )
+
+        XCTAssertTrue(fake.posted.isEmpty, "only the enabled outcomes notify (S17)")
+        XCTAssertEqual(fake.authorizationRequests, 0, "a disabled category never spends the OS consent ask")
     }
 
     // MARK: - The dedup window

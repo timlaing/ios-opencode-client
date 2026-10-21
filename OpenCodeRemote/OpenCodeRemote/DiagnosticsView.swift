@@ -57,7 +57,9 @@ struct DiagnosticsView: View {
                 Text("No events recorded yet.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(entries.prefix(20).reversed()) { entry in
+                // entries() is oldest-first — suffix keeps the
+                // NEWEST 20 (review W17 r1).
+                ForEach(entries.suffix(20).reversed()) { entry in
                     VStack(alignment: .leading, spacing: 2) {
                         Text(entry.message)
                             .font(.footnote)

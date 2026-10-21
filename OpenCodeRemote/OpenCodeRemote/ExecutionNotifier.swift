@@ -143,6 +143,17 @@ final class NotificationDedupStore {
 /// The three terminal outcomes are the contract's canonical
 /// notification transitions (succeeded / failed / interrupted).
 @MainActor
+/// The S17 delivery policy, snapshotted from the user's settings at
+/// the moment a terminal arrives: which outcomes are enabled (the
+/// category switches) and whether content may name the session and
+/// the outcome. A nil privacy choice means onboarding has not asked
+/// yet — content stays GENERIC (implementation-defaults.md
+/// "Notifications"; review W17 r1).
+struct NotificationDeliveryPolicy: Sendable {
+    var contentPrivacy: NotificationContentPrivacy?
+    var categories: NotificationCategories
+}
+
 final class ExecutionNotifier {
     private let notifier: UserNotifying
     private let dedup: NotificationDedupStore
@@ -200,10 +211,35 @@ final class ExecutionNotifier {
     /// banner; unauthorized → no banner; an id-less event cannot be
     /// deduplicated → never posted (a duplicate banner is worse than
     /// a missed one on an event whose identity we do not know).
-    func handleTerminal(_ event: OpenCodeEvent, sessionTitle: String?) async {
+    func handleTerminal(
+        _ event: OpenCodeEvent,
+        sessionTitle: String?,
+        policy: NotificationDeliveryPolicy
+    ) async {
         guard !sceneActive else { return }
         guard let identifier = event.id, !identifier.isEmpty else { return }
         guard !dedup.alreadyPosted(identifier) else { return }
+        // The outcome phrase, the S17 CATEGORY switch and the
+        // canonical-type gate — evaluated before the consent ask and
+        // the dedup write so a disabled or unknown type spends
+        // neither the OS ask nor the banner identity ("only the
+        // enabled outcomes notify" — S17 footer, review W17 r1).
+        let phrase: String
+        switch event.type {
+        case "session.execution.succeeded":
+            guard policy.categories.succeeded else { return }
+            phrase = "The turn completed."
+        case "session.execution.failed":
+            guard policy.categories.failed else { return }
+            phrase = "The turn failed."
+        case "session.execution.interrupted":
+            guard policy.categories.interrupted else { return }
+            phrase = "The turn was stopped."
+        default:
+            // Only canonical terminal types banner — an unknown type
+            // never invents an outcome.
+            return
+        }
         if authorization == nil {
             await prepare()
         }
@@ -215,24 +251,15 @@ final class ExecutionNotifier {
         // r12).
         guard !sceneActive else { return }
 
-        let phrase: String
-        switch event.type {
-        case "session.execution.succeeded":
-            phrase = "The turn completed."
-        case "session.execution.failed":
-            phrase = "The turn failed."
-        case "session.execution.interrupted":
-            phrase = "The turn was stopped."
-        default:
-            // Only canonical terminal types banner — an unknown type
-            // never invents an outcome.
-            return
-        }
         dedup.markPosted(identifier)
+        // S17 content privacy: GENERIC until the user chooses
+        // detailed — a generic banner never carries the session title
+        // or the outcome text (S17 footer; WelcomeView promise).
+        let detailed = policy.contentPrivacy == .detailed
         await notifier.post(
             identifier: "opencode.execution.\(identifier)",
-            title: sessionTitle ?? "OpenCode Client",
-            body: phrase
+            title: detailed ? (sessionTitle ?? "OpenCode Client") : "OpenCode Client",
+            body: detailed ? phrase : "Open the app for details."
         )
         diagnostics?.record(.notifications, "Banner posted: \(event.type)")
     }

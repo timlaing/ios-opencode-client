@@ -20,9 +20,15 @@ struct StorageLibrary: Sendable {
         self.draftsDirectory = draftsDirectory
     }
 
+    /// An APP-OWNED subdirectory: the Caches root also holds the
+    /// shared `URLCache` store (open while URLSession runs) and
+    /// framework caches — neither is this screen's refetchable
+    /// content, and neither may be measured or deleted here (review
+    /// W17 r1).
     static var defaultCacheDirectory: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
+        (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory)
+            .appendingPathComponent("OpenCodeRemote", isDirectory: true)
     }
 
     static var defaultDraftsDirectory: URL {
@@ -62,8 +68,11 @@ struct StorageLibrary: Sendable {
     /// directory is already the desired state.
     func clearCache() throws {
         let fm = FileManager.default
+        // Same visibility as the usage walk (.skipsHiddenFiles): the
+        // size the screen shows and the content this removes must
+        // agree (review W17 r1).
         guard let contents = try? fm.contentsOfDirectory(
-            at: cacheDirectory, includingPropertiesForKeys: nil
+            at: cacheDirectory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
         ) else { return }
         for item in contents {
             try fm.removeItem(at: item)

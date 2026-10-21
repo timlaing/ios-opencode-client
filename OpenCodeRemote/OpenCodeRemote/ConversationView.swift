@@ -49,6 +49,11 @@ struct ConversationView: View {
     /// conversation, opened when the subscription starts.
     @State private var composerDrafts: ComposerDraftStore?
     @State private var draftSaveTask: Task<Void, Never>?
+    /// The text last known to be PERSISTED — a value that merely
+    // re-states it (a restore, the admission clear) schedules no
+    /// save, so the retention clock's "last edit" only moves when
+    /// the user actually edits (review W17 r1).
+    @State private var lastPersistedDraft: String?
     /// W08 attachments (S09): prepared per the web inline/staging rule;
     /// chips mirror the tray beside the draft.
     @State private var attachments = AttachmentLibrary()
@@ -335,6 +340,23 @@ struct ConversationView: View {
             forms.attach(hosts: library)
             integrations.attach(hosts: library)
             events.attach(hosts: library)
+            // W17 drafts: open the durable store and restore any
+            // text that survived a crash or relaunch (expiry is
+            // applied on sight) BEFORE the loads — a keystroke
+            // during a load would otherwise schedule a save that
+            // overwrites the persisted text the restore never got
+            // to (review W17 r1).
+            composerDrafts = (try? DraftStore(writingAt: StorageLibrary.defaultDraftsDirectory))
+                .map(ComposerDraftStore.init(drafts:))
+            if draft.isEmpty,
+               let restored = composerDrafts?.restore(
+                   hostUUID: host.id.rawValue,
+                   sessionID: session.id,
+                   settings: settings
+               ) {
+                lastPersistedDraft = restored
+                draft = restored
+            }
             await openTranscript()
             await loadApprovals()
             await loadForms()
@@ -597,22 +619,14 @@ struct ConversationView: View {
         // reconciler lives in @State, so capturing self would chain
         // State → reconciler → captured view value → State.
         let notifier = self.notifier
+        // Stored closures capture REFERENCES (nextHead lesson): the
+        // banner's delivery policy is read from settings at the
+        // MOMENT a terminal arrives — never snapshotted when the
+        // subscription starts (review W17 r1).
+        let settings = self.settings
         // S20 (W17): banner posts and the lazy permission outcome
         // join the redacted diagnostic log.
         notifier.diagnostics = DiagnosticsLogStore()
-        // W17 drafts: open the durable store for this conversation and
-        // restore any text that survived a crash or relaunch (expiry
-        // is applied on sight — see ComposerDraftStore.restore).
-        composerDrafts = (try? DraftStore(writingAt: StorageLibrary.defaultDraftsDirectory))
-            .map(ComposerDraftStore.init(drafts:))
-        if draft.isEmpty,
-           let restored = composerDrafts?.restore(
-               hostUUID: host.id.rawValue,
-               sessionID: session.id,
-               settings: settings
-           ) {
-            draft = restored
-        }
         let sessionTitle = session.title
         let sessionID = session.id
         let directory = session.location?.directory
@@ -678,7 +692,16 @@ struct ConversationView: View {
             // it here would stall every delta, dock event and refresh
             // behind the user's answer. Event ids are unique (no
             // replay), so the dedup stays correct off-path.
-            Task { await notifier.handleTerminal(event, sessionTitle: sessionTitle) }
+            Task {
+                await notifier.handleTerminal(
+                    event,
+                    sessionTitle: sessionTitle,
+                    policy: NotificationDeliveryPolicy(
+                        contentPrivacy: settings.state.notificationContentPrivacy,
+                        categories: settings.state.notificationCategories
+                    )
+                )
+            }
         }
         reconciler.readActiveSessions = { [weak hostLibrary] in
             // Reconnect reconciliation of the working indicator (review
@@ -777,6 +800,14 @@ struct ConversationView: View {
                             files: files.isEmpty ? nil : files
                         ) {
                             if draft == text {
+                                // The field now states exactly what is
+                                // persisted-and-sent: record that FIRST so
+                                // the onChange below cancels any pending
+                                // keystroke write and schedules nothing (a
+                                // stale write would resurrect the sent text,
+                                // a re-save would reset its retention
+                                // clock — review W17 r1).
+                                lastPersistedDraft = ""
                                 draft = ""
                                 // Durable admission also deletes the
                                 // persisted draft at once — the debounced
@@ -842,15 +873,21 @@ struct ConversationView: View {
         .padding(.vertical, 8)
         // W17 drafts: keystrokes coalesce into one durable write per
         // ~300 ms of quiet; an emptied field (sent, discarded) takes
-        // the same path and deletes the record.
+        // the same path and deletes the record. Cancel FIRST — a
+        // pending write must never outlive the value it wrote — and
+        // re-stating what is already persisted schedules nothing: a
+        // re-save would move the retention clock's "last edit" for a
+        // draft nobody edited (review W17 r1).
         .onChange(of: draft) { _, newValue in
             draftSaveTask?.cancel()
+            guard newValue != lastPersistedDraft else { return }
             let hostUUID = host.id.rawValue
             let sessionID = session.id
             draftSaveTask = Task {
                 try? await Task.sleep(nanoseconds: 300_000_000)
                 guard !Task.isCancelled else { return }
                 composerDrafts?.save(newValue, hostUUID: hostUUID, sessionID: sessionID)
+                lastPersistedDraft = newValue
             }
         }
     }

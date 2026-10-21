@@ -134,7 +134,8 @@ final class CloudSettingsSyncTests: XCTestCase {
             $0.appearance = .light
         }
 
-        let report = makeSync().reconcile(
+        let sync = makeSync()
+        let report = sync.reconcile(
             settings: settings,
             hostAddresses: ["h1": "https://user:pw@example.com/path?q=1"]
         )
@@ -145,7 +146,7 @@ final class CloudSettingsSyncTests: XCTestCase {
         XCTAssertEqual(snapshot.hosts["h1"]?.address, "https://example.com/path", "userinfo and query stripped before acceptance")
         XCTAssertNil(snapshot.hosts["h1"]?.deletedAt)
         XCTAssertEqual(report.syncedHostCount, 1)
-        XCTAssertEqual(sync_lastError(), nil)
+        XCTAssertEqual(sync.status, .upToDate, "a successful reconcile leaves no error")
     }
 
     // MARK: - Download and merge
@@ -166,21 +167,55 @@ final class CloudSettingsSyncTests: XCTestCase {
     }
 
     func testLocalAppearanceEditBeatsAnOlderCloudRecord() throws {
+        let settings = makeSettings()
+        settings.update {
+            $0.icloudSyncRequested = true
+            $0.appearance = .light
+        }
+        let sync = makeSync()
+
+        // First pass: the cloud is empty, so this device's value is
+        // RECORDED as its edit (the clock is pinned at 1_000_000).
+        _ = sync.reconcile(settings: settings, hostAddresses: [:])
+        XCTAssertEqual(sync_snapshot().appearance?.value, .light)
+
+        // Second pass: the cloud carries an OLDER edit from another
+        // device — a slower device's stale upload. This device's
+        // recorded value has not changed, so it stands and wins.
+        seed(CloudSettingsSync.Snapshot(appearance: .init(
+            value: .dark,
+            modifiedAt: Date(timeIntervalSince1970: 500_000),
+            deviceID: "device-remote"
+        )))
+        let report = sync.reconcile(settings: settings, hostAddresses: [:])
+
+        XCTAssertEqual(settings.state.appearance, .light, "the recorded local edit is newer — it stands")
+        XCTAssertEqual(sync_snapshot().appearance?.value, .light, "and wins the merge into the cloud record")
+        XCTAssertFalse(report.appearanceApplied, "the local value already is the winner — nothing was applied over it")
+    }
+
+    func testFreshOptInAdoptsTheCloudEditInsteadOfStampingItsDefault() throws {
+        // Another device already chose .dark; THIS device has never
+        // recorded an appearance (fresh install, untouched default).
+        // An unrecorded value must never be stamped with now() — that
+        // clock would beat the recorded edit on every other device
+        // (review W17 r1).
         seed(CloudSettingsSync.Snapshot(appearance: .init(
             value: .dark,
             modifiedAt: Date(timeIntervalSince1970: 500_000),
             deviceID: "device-remote"
         )))
         let settings = makeSettings()
-        settings.update {
-            $0.icloudSyncRequested = true
-            $0.appearance = .light
-        }
+        settings.update { $0.icloudSyncRequested = true }
 
-        _ = makeSync().reconcile(settings: settings, hostAddresses: [:])
+        let report = makeSync().reconcile(settings: settings, hostAddresses: [:])
 
-        XCTAssertEqual(settings.state.appearance, .light, "the local edit is newer — it stands")
-        XCTAssertEqual(sync_snapshot().appearance?.value, .light, "and wins the merge into the cloud record")
+        XCTAssertEqual(settings.state.appearance, .dark, "the recorded cloud edit beats an unrecorded local default")
+        XCTAssertTrue(report.appearanceApplied)
+        let stored = try XCTUnwrap(sync_snapshot().appearance)
+        XCTAssertEqual(stored.value, .dark)
+        XCTAssertEqual(stored.deviceID, "device-remote", "adopted, never re-stamped with this device's clock")
+        XCTAssertEqual(stored.modifiedAt, Date(timeIntervalSince1970: 500_000), "the original stamp survives")
     }
 
     func testPendingCandidatesAreSurfacedNotMerged() {
@@ -211,13 +246,16 @@ final class CloudSettingsSyncTests: XCTestCase {
         let record = try XCTUnwrap(sync_snapshot().hosts["h1"])
         XCTAssertNotNil(record.deletedAt, "the deletion stays recorded (tombstone)")
 
-        // A device whose copy is UNCHANGED never re-stamps: even when
-        // it still has the host locally, the tombstone survives its
-        // upload — a stale copy cannot resurrect a removed entry.
+        // A second ABSENCE pass never re-stamps the recorded
+        // deletion: this device's mirror no longer holds the host, so
+        // the recorded time stands. (The still-LOCAL case — an
+        // unchanged stale copy — is pinned by
+        // testAnUnchangedLocalCopyCannotResurrectATombstone.)
         clock.now = clock.now.addingTimeInterval(100)
         _ = sync.reconcile(settings: settings, hostAddresses: [:])
         let stillGone = try XCTUnwrap(sync_snapshot().hosts["h1"])
         XCTAssertNotNil(stillGone.deletedAt)
+        XCTAssertEqual(stillGone.modifiedAt, record.modifiedAt, "no re-stamp — the recorded deletion time stands")
     }
 
     func testRepairedHostReinstatesItsTombstone() throws {
@@ -234,6 +272,34 @@ final class CloudSettingsSyncTests: XCTestCase {
         let record = try XCTUnwrap(sync_snapshot().hosts["h1"])
         XCTAssertNil(record.deletedAt, "a real re-pair is a new edit — it reinstates the address")
         XCTAssertEqual(report.syncedHostCount, 1)
+    }
+
+    func testAnUnchangedLocalCopyCannotResurrectATombstone() throws {
+        let settings = makeSettings()
+        settings.update { $0.icloudSyncRequested = true }
+        let sync = makeSync()
+
+        // This device records the host…
+        sync.reconcile(settings: settings, hostAddresses: ["h1": "https://a.example.com"])
+        // …and then another device's removal arrives as a tombstone.
+        var seeded = sync_snapshot()
+        seeded.hosts["h1"] = CloudSettingsSync.HostRecord(
+            address: "https://a.example.com",
+            modifiedAt: Date(timeIntervalSince1970: 999_999),
+            deviceID: "device-remote",
+            deletedAt: Date(timeIntervalSince1970: 999_999)
+        )
+        seed(seeded)
+
+        // The local copy is UNCHANGED — a stale copy must never
+        // resurrect a removed entry (docs I6; review W17 r1).
+        let report = sync.reconcile(settings: settings, hostAddresses: ["h1": "https://a.example.com"])
+
+        let record = try XCTUnwrap(sync_snapshot().hosts["h1"])
+        XCTAssertNotNil(record.deletedAt, "an unchanged stale copy cannot resurrect a removed entry")
+        XCTAssertEqual(record.modifiedAt, Date(timeIntervalSince1970: 999_999), "nothing was re-stamped")
+        XCTAssertEqual(report.syncedHostCount, 0)
+        XCTAssertEqual(sync.status, .upToDate, "the standing tombstone is not an error")
     }
 
     // MARK: - Quota and corruption
@@ -297,8 +363,4 @@ final class CloudSettingsSyncTests: XCTestCase {
         return try! JSONDecoder().decode(CloudSettingsSync.Snapshot.self, from: Data(raw.utf8))
     }
 
-    private func sync_lastError() -> String? {
-        if case .error(let message) = makeSync().status { return message }
-        return nil
-    }
 }
