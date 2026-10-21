@@ -171,6 +171,12 @@ final class ExecutionNotifier {
     private var authorization: Bool?
     private var authorizing: Task<Bool, Never>?
 
+    /// The process-wide last RECORDED permission outcome (review W17
+    /// r5): notifiers are per-view, so the "one record per process"
+    /// gate must outlive any single instance. MainActor-isolated via
+    /// the class. Tests reset it directly.
+    static var lastRecordedAuthorization: Bool?
+
     init(
         notifier: UserNotifying = NotificationCenterNotifier(),
         dedup: NotificationDedupStore = NotificationDedupStore(),
@@ -194,10 +200,18 @@ final class ExecutionNotifier {
         authorizing = ask
         authorization = await ask.value
         authorizing = nil
-        // One record per process: the lazy ask's outcome is the fact
-        // S20's last-error display needs when delivery later proves
-        // silent.
-        if let diagnostics {
+        // One record per OUTCOME per process — the lazy ask's
+        // outcome is the fact S20's last-error display needs when
+        // delivery later proves silent. Every conversation open builds
+        // a fresh notifier (per-view state), so the gate cannot be
+        // this instance's `authorization`: a denied permission used to
+        // append an identical .error entry on every open, filling S20
+        // with copies (review W17 r5). The gate sits INSIDE the
+        // `diagnostics` check so a pass with no log handle never
+        // burns the outcome; a mid-process change is a new outcome and
+        // does record.
+        if let diagnostics, Self.lastRecordedAuthorization != authorization {
+            Self.lastRecordedAuthorization = authorization
             if authorization == true {
                 diagnostics.record(.notifications, "Notification permission granted")
             } else {

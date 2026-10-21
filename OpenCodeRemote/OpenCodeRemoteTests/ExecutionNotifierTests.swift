@@ -254,6 +254,41 @@ final class ExecutionNotifierTests: XCTestCase {
         XCTAssertEqual(fake.authorizationRequests, 0, "a disabled category never spends the OS consent ask")
     }
 
+    func testPermissionOutcomeIsRecordedOncePerProcessNotOncePerOpen() async {
+        let logDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ExecutionNotifierTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: logDirectory) }
+        let log = DiagnosticsLogStore(directory: logDirectory)
+        ExecutionNotifier.lastRecordedAuthorization = nil
+
+        // Denied is the spam case: every conversation open used to
+        // append another identical .error entry (review W17 r5).
+        let fake = FakeNotifier()
+        fake.authorized = false
+
+        let first = notifier(fake)
+        first.diagnostics = log
+        await first.prepare()
+        // A second open — a FRESH notifier, same process.
+        let second = notifier(fake)
+        second.diagnostics = log
+        await second.prepare()
+
+        let copies = log.entries().filter { $0.message.contains("not granted") }
+        XCTAssertEqual(copies.count, 1, "the permission outcome records once per process, not once per conversation open")
+
+        // A mid-process change IS a new outcome — it records again.
+        fake.authorized = true
+        let third = notifier(fake)
+        third.diagnostics = log
+        await third.prepare()
+        XCTAssertEqual(
+            log.entries().filter { $0.message == "Notification permission granted" }.count,
+            1,
+            "an outcome change records the new fact"
+        )
+    }
+
     // MARK: - The dedup window
 
     func testDedupStorePrunesBeyondSevenDays() async {
