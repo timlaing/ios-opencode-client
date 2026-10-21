@@ -169,7 +169,7 @@ Integrations shows Plugins / MCP segments. Every row separates configured intent
 
 ## S17–S20: Preferences, notifications, and support
 
-Use the exact controls/defaults in [implementation-defaults.md](implementation-defaults.md). Group settings by outcomes and keep advanced details collapsed. Before configuration, generic notification content is the safe default but no categories or automatic activities are assumed enabled. Show the user's choice alongside iOS permission status: these are separate states. Initial Live Activities show freshness and can become stale while the main app is suspended.
+Use the exact controls/defaults in [implementation-defaults.md](implementation-defaults.md). Group settings by outcomes and keep advanced details collapsed. Before configuration, generic notification content is the safe default; the alert-category switches start enabled (the user opts out rather than in) while no automatic activity starts on its own, and a banner still requires iOS permission plus the app's recorded consent. Show the user's choice alongside iOS permission status: these are separate states. Initial Live Activities show freshness and can become stale while the main app is suspended.
 
 S17 presents NO delivery status: local push was removed (21 October 2026), so there is no manager/stream health, no received/relevant/scheduled counts, and no Retry Local Push to show — a row with no mechanism behind it must not exist.
 
