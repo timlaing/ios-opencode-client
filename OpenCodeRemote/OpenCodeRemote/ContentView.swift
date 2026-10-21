@@ -97,9 +97,11 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingConnectSheet) {
             // Injected explicitly rather than relying on sheet environment
-            // inheritance — a missing HostLibrary is a fatal SwiftUI error.
+            // inheritance — a missing HostLibrary or CloudSettingsSync is
+            // a fatal SwiftUI error.
             ConnectHostView()
                 .environment(library)
+                .environment(cloud)
         }
     }
 

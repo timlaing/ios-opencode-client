@@ -15,6 +15,10 @@ struct ConnectHostView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @Environment(HostLibrary.self) private var library
+    /// Injected at the sheet site (ContentView), like HostLibrary: the
+    /// synced-candidate OFFER reads the engine's last report — a
+    /// missing instance is a fatal SwiftUI error (follow-on 3b).
+    @Environment(CloudSettingsSync.self) private var cloud
 
     // Manual fallback (password form): server URL, username, password, name.
     @State private var serverURL = ""
@@ -33,6 +37,9 @@ struct ConnectHostView: View {
     /// retries against the same host without re-spending the single-use code
     /// (docs/navigation-screens.md). Never displayed or logged.
     @State private var redeemedToken: String?
+    /// The confirmation gate for an address that iCloud settings sync
+    /// already carries from another device (follow-on 3b).
+    @State private var showingSyncedCandidate = false
 
     // Pairing progress and failure variants (idle → working → saved).
     @State private var phase: Phase = .idle
@@ -90,6 +97,27 @@ struct ConnectHostView: View {
             // a pairing code spent with no host persisted, then re-entered
             // blindly because the sheet "closed successfully".
             .interactiveDismissDisabled(phase == .working)
+            // The pairing-flow OFFER for synced candidates (follow-on 3b,
+            // docs I6): an address iCloud already carries from another
+            // device is confirmed on whichever path (review or manual)
+            // proposed it. Connect continues exactly as before; Cancel
+            // stays local — the engine never merges silently either way.
+            .confirmationDialog(
+                "Address Already Syncs from Another Device",
+                isPresented: $showingSyncedCandidate,
+                titleVisibility: .visible
+            ) {
+                Button("Connect") {
+                    if let review {
+                        Task { await redeemAndConnect(review) }
+                    } else {
+                        Task { await connectManually() }
+                    }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("iCloud settings sync already carries a record for this address, from another device. Connecting lets this device recognise it as one host matched by address — credentials stay on each device.")
+            }
             .fullScreenCover(isPresented: $showScanner, onDismiss: { scannerMessage = nil }) {
                 scannerSheet
             }
@@ -248,7 +276,17 @@ struct ConnectHostView: View {
                 placeholder: "e.g. Home server"
             )
             Button {
-                Task { await connectManually() }
+                // A synced candidate is OFFERED before connecting
+                // (follow-on 3b). An unparseable URL skips the prompt
+                // and lets connectManually surface its usual error.
+                if let destination = try? PairingParser.manualAddress(
+                    serverURL,
+                    allowsInsecureHTTP: Self.allowsInsecureHTTP
+                ), syncedCandidate(for: destination) {
+                    showingSyncedCandidate = true
+                } else {
+                    Task { await connectManually() }
+                }
             } label: {
                 if phase == .working {
                     ProgressView()
@@ -303,7 +341,11 @@ struct ConnectHostView: View {
             }
             labeledField("Display name (optional)", text: $displayName, placeholder: "e.g. Home server")
             Button {
-                Task { await redeemAndConnect(review) }
+                if syncedCandidate(for: review.selectedDestination) {
+                    showingSyncedCandidate = true
+                } else {
+                    Task { await redeemAndConnect(review) }
+                }
             } label: {
                 if phase == .working {
                     ProgressView()
@@ -327,6 +369,16 @@ struct ConnectHostView: View {
     }
 
     // MARK: - Pairing actions
+
+    /// True when settings sync already carries this address from ANOTHER
+    /// device. Candidates are address-matched in the engine and clear on
+    /// their own once this device pairs the address; the pair flow's only
+    /// job here is to OFFER (docs I6) — never to merge credentials.
+    private func syncedCandidate(for destination: URL) -> Bool {
+        cloud.lastReport.pendingCandidates.contains(
+            CloudSettingsSync.strippedAddress(destination.absoluteString)
+        )
+    }
 
     /// Redeem flow: the single-use code exchanges for a token (spent exactly
     /// once — a retained token from a previous attempt is reused), the token
