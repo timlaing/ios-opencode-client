@@ -33,9 +33,8 @@ public struct Draft: Codable, Equatable, Sendable, FetchableRecord, PersistableR
     }
 }
 
-/// GRDB-backed draft persistence. App-private storage for now; the App Group
-/// location for the shared push-extension store is wired once entitlements
-/// exist (docs/implementation-defaults.md §I1).
+/// GRDB-backed draft persistence: app-private, backed-up drafts
+/// (docs/implementation-defaults.md §I1).
 public struct DraftStore: Sendable {
     private let db: DatabaseQueue
 

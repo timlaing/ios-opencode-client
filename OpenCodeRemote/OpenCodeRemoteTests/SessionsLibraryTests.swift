@@ -660,8 +660,8 @@ final class SessionsLibraryTests: XCTestCase {
         let key = SessionKey(hostID: HostID(rawValue: "host_one"), sessionID: "ses_a")
 
         XCTAssertTrue(library.localState.toggleFollowed(key))
-        XCTAssertEqual(library.followedSessionIDs, ["ses_a"], "feeds the push payload's followedSessions")
+        XCTAssertEqual(library.localState.followedSessionIDs, ["ses_a"], "the flat scope unwraps the per-host key")
         XCTAssertFalse(library.localState.toggleFollowed(key))
-        XCTAssertTrue(library.followedSessionIDs.isEmpty)
+        XCTAssertTrue(library.localState.followedSessionIDs.isEmpty)
     }
 }

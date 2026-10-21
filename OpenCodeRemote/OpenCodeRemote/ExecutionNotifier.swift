@@ -118,8 +118,7 @@ final class NotificationDedupStore {
 /// app is NOT active — the user sent a prompt, left the app, and the
 /// turn's outcome arrives over the live event stream.
 ///
-/// Honest scope, deliberately narrower than the dormant push
-/// extension: only events RECEIVED live on the on-screen
+/// Honest scope: only events RECEIVED live on the on-screen
 /// conversation's subscription can notify. A reconnect fetches state
 /// and never emits a backlog of historical completion alerts; a
 /// conversation that is not mounted is not subscribed; and a terminal
@@ -137,8 +136,8 @@ final class NotificationDedupStore {
 /// still foreground-ish, review W16 r10). A `beginBackgroundTask`
 /// was considered and deliberately rejected — it buys only a
 /// bounded ~30 seconds in exchange for balanced-start/end lifecycle
-/// risk — and the entitlement-gated push provider (stage 1) is the
-/// real path for post-suspension delivery.
+/// risk — and no delivery path exists past suspension since local
+/// push was removed (21 October 2026).
 ///
 /// The three terminal outcomes are the contract's canonical
 /// notification transitions (succeeded / failed / interrupted).

@@ -13,7 +13,7 @@
 
 Local alerts, Live Activities, and remote alerts have independent user preferences. Do not make cloud enrollment a prerequisite for notifications or core app operation.
 
-Ordinary notification scope is sessions started from this app plus sessions explicitly followed by the user, filtered by enabled alert categories. Viewing a session does not subscribe it. Persist the follow choice and support unfollowing; use the same scope for future plugin/relay delivery.
+Today, notifications come only from the conversation on screen: its terminal events banner while the app is not active, filtered by enabled alert categories, and nothing subscribes a session that is not on screen. Sessions started from this app plus sessions explicitly followed by the user are the persisted SCOPE for later delivery releases (the APNs relay) — following persists that choice and supports unfollowing.
 
 During onboarding, ask users which alert categories to enable (session succeeded, failed, or interrupted), what content notifications may show, and whether Live Activities start automatically for sessions started in the app or manually through Follow Session. Keep all choices editable in Settings. Do not automatically start an activity or enable alert categories before the user configures them. App preferences and Apple's notification/Live Activity permissions must both be respected.
 
@@ -21,7 +21,7 @@ During onboarding, ask users which alert categories to enable (session succeeded
 
 Local push was removed by decision: the `NEAppPushProvider` extension, the per-SSID `NEAppPushManager` configuration, per-host enablement and eligible-Wi-Fi settings, the notification pipeline (classifier, supervisor, ledger, planner), and the delivery status rows are all gone, and Apple's `app-push-provider` entitlement was never requested. `docs/local-push-implementation.md` (the Home Assistant-derived guide) was deleted in the same change.
 
-What remains of initial delivery is app-side and foreground-honest: banners posted while the app is not active, from live delivery only (so a reconnect never replays a backlog), covering the inactive/early-background window and never a turn that ends after suspension — specified and tested in `docs/api-contract.md` W16. Local Live Activities follow below; the later APNs release is unaffected by this decision.
+What remains of initial delivery is app-side and foreground-honest: banners for the conversation on screen, posted while the app is not active, from live delivery only (so a reconnect never replays a backlog), covering the inactive/early-background window and never a turn that ends after suspension — specified and tested in `docs/api-contract.md` W16. A session that is not on screen has no live subscription and produces no banner. Local Live Activities follow below; the later APNs release is unaffected by this decision.
 
 
 ## Local Live Activities

@@ -67,10 +67,6 @@ final class SessionsLibrary {
         credentialProvider = { [weak hosts] in hosts?.credential(for: $0) }
     }
 
-    /// Session IDs followed on any host — the value the push payload
-    /// carries once S17 eligibility reconciliation runs (W17).
-    var followedSessionIDs: Set<String> { localState.followedSessionIDs }
-
     // MARK: - Loading
 
     func load(_ entries: [HostLibrary.Entry]) async {

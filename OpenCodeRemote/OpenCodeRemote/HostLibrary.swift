@@ -100,10 +100,9 @@ final class HostLibrary {
             // (id + createdAt), so the new credential replaces the old
             // one under the same Keychain account, no duplicate row
             // appears for one address, and every per-host surface —
-            // projects, sessions, approvals, local-state caches, the
-            // push provider's `secretsByHost` comparison (its comment
-            // assumes exactly this) — sees a credential CHANGE, not a
-            // new host. The freshly proven displayName/version from
+            // projects, sessions, approvals, local-state caches —
+            // sees a credential CHANGE, not a new host. The freshly
+            // proven displayName/version from
             // THIS pairing are still adopted below.
             paired.host.id = existing.host.id
             paired.host.createdAt = existing.host.createdAt

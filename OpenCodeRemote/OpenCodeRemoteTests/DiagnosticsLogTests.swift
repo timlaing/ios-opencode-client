@@ -59,7 +59,7 @@ final class DiagnosticsLogTests: XCTestCase {
 
     func testRedactionScrubsURLsAndAddressesBeforeStorage() throws {
         let log = store()
-        log.record(.push, "reconnect to https://host.internal:4096/api/event failed at 192.168.1.24")
+        log.record(.notifications, "reconnect to https://host.internal:4096/api/event failed at 192.168.1.24")
 
         let stored = try XCTUnwrap(log.entries().first)
         XCTAssertFalse(stored.message.contains("host.internal"), "URLs never reach storage")

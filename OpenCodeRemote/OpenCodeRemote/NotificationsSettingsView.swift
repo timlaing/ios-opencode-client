@@ -99,7 +99,7 @@ struct NotificationsSettingsView: View {
         } header: {
             Text("Scope")
         } footer: {
-            Text("Follow sessions from a row's menu in Sessions — only app-started or followed sessions can notify. Live Activities show their last update time and can go stale while the app is suspended.")
+            Text("Follow sessions from a row's menu in Sessions — following persists delivery scope for later releases; banners today come only from the conversation on screen, while the app is not active. Live Activities show their last update time and can go stale while the app is suspended.")
         }
     }
 

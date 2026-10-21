@@ -76,9 +76,9 @@ final class SessionLocalStateStore {
     @discardableResult func toggleFollowed(_ key: SessionKey) -> Bool { toggle(\.followed, key.storage) }
     @discardableResult func toggleHidden(_ key: SessionKey) -> Bool { toggle(\.hidden, key.storage) }
 
-    /// Session IDs followed across any host, for the push payload. The
-    /// payload carries BARE session IDs — events reference `sessionID`
-    /// directly — so the per-host storage keys are unwrapped here.
+    /// Session IDs followed across any host. Followed rows are stored
+    /// as per-host keys while events reference BARE `sessionID`s —
+    /// the keys are unwrapped here to produce the flat scope.
     var followedSessionIDs: Set<String> {
         Set(state.followed.compactMap { SessionKey(storage: $0)?.sessionID })
     }

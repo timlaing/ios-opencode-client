@@ -6,7 +6,7 @@ import Foundation
 /// at 5 MiB, never uploaded automatically).
 struct DiagnosticsEntry: Codable, Equatable, Sendable, Identifiable {
     enum Category: String, Codable, Sendable {
-        case notifications, push, storage
+        case notifications, storage
     }
 
     enum Severity: String, Codable, Sendable {
@@ -48,9 +48,8 @@ struct DiagnosticsLogStore: Sendable {
         self.now = now
     }
 
-    /// Same Application Support fallback shape as the drafts store
-    /// (the App Group entitlement is still pending, so nothing here
-    /// is shared with the extension).
+    /// Same Application Support location shape as the drafts store —
+    /// single-process, nothing shared with another process.
     static var defaultDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.temporaryDirectory
