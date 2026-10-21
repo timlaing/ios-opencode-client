@@ -440,6 +440,10 @@ final class CloudSettingsSyncTests: XCTestCase {
 
         sync.clearSyncedSettings()
 
+        XCTAssertEqual(
+            sync.status, .upToDate,
+            "clear leaves a consistent empty record — Off means NOT opted in, and the toggle stays on (review W17 r9)"
+        )
         XCTAssertNil(store.storage[CloudSettingsSync.key], "the cloud record is gone")
         XCTAssertNil(UserDefaults(suiteName: suiteName)!.data(forKey: CloudSettingsSync.mirrorKey), "the local mirror goes too")
         XCTAssertEqual(settings.state.appearance, .system, "clearing synced settings never touches local settings")

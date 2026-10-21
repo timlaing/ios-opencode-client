@@ -397,7 +397,14 @@ final class CloudSettingsSync {
     func clearSyncedSettings() {
         store.removeValue(forKey: Self.key)
         defaults.removeObject(forKey: Self.mirrorKey)
-        status = .off
+        // Cloud record and mirror are BOTH gone — consistent, so the
+        // status is Up to Date, never Off: Off is reserved for "not
+        // opted in" (reconcile's gate), and the S19 toggle stays on
+        // after this action, so .off showed "Status: Off" beside an
+        // enabled toggle (review W17 r9). The S19 action reconciles
+        // next, re-uploading fresh records to match the dialog's
+        // "the next sync uploads them again".
+        status = .upToDate
         lastReport = SyncReport()
     }
 

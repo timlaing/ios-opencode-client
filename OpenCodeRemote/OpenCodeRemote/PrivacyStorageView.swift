@@ -114,6 +114,12 @@ struct PrivacyStorageView: View {
         ) {
             Button("Clear Synced Settings", role: .destructive) {
                 cloud.clearSyncedSettings()
+                // The dialog's "the next sync uploads them again" is
+                // immediate (review W17 r9): the mirror is empty, so
+                // this pass re-uploads fresh records with no
+                // tombstones, and the status beside the still-on
+                // toggle is a real one.
+                reconcileSync()
             }
         } message: {
             Text("Removes the appearance and host-address records this app stored in iCloud, including removals it was keeping. Local settings, hosts, and credentials are untouched — the next sync uploads them again.")
