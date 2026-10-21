@@ -8,19 +8,52 @@ import { signHeaders, type Creds } from "./signing.ts"
  * Signed routes carry `Authorization: Bearer tnt_…`, `x-relay-time`,
  * `x-relay-nonce` and `x-relay-signature` over the canonical message (see
  * `signing.ts`). Failures become `RelayError` with the relay's stable machine
- * code; `status === 0` means the relay was never reached.
+ * code; `status === 0` means the relay was never reached or answered with an
+ * unusable body (`malformed_response`).
+ *
+ * Trust boundary: everything the relay supplies is relay-controlled text.
+ * Codes are reduced to a machine-safe alphabet and length here, and details
+ * are control-stripped and capped — details are for the server log only and
+ * must never reach prompt-bound command reports (see commands.ts). Successful
+ * responses are validated per method so a malformed 2xx surfaces as
+ * `malformed_response` (transport-class, retried with backoff) instead of
+ * silently becoming `{}`.
  */
+
+/** Machine-token shape for relay-supplied codes: `[A-Za-z0-9_.:/-]{1,64}`. */
+export function safeCode(value: string, fallback = "unknown"): string {
+  const cleaned = value.replace(/[^A-Za-z0-9_.:/-]/g, "").slice(0, 64)
+  return cleaned.length > 0 ? cleaned : fallback
+}
+
+/** Single-line, bounded relay detail for log lines (never for prompt text). */
+export function safeDetail(value: string): string {
+  let out = ""
+  for (const ch of value) {
+    const code = ch.codePointAt(0) ?? 0
+    out += code < 0x20 || code === 0x7f ? " " : ch
+  }
+  return out.trim().slice(0, 200)
+}
+
+/** Display form for an error in prompt-bound reports: status+code, no detail. */
+export function describeError(error: unknown): string {
+  if (error instanceof RelayError) return `${error.status === 0 ? "-" : error.status} ${error.code}`
+  return error instanceof Error ? error.message : String(error)
+}
+
 export class RelayError extends Error {
   readonly status: number
   readonly code: string
   readonly detail: string
 
   constructor(status: number, code: string, detail = "") {
-    super(`${status === 0 ? "-" : status} ${code}${detail ? `: ${detail}` : ""}`)
+    const safe = safeDetail(detail)
+    super(`${status === 0 ? "-" : status} ${safeCode(code)}${safe ? `: ${safe}` : ""}`)
     this.name = "RelayError"
     this.status = status
-    this.code = code
-    this.detail = detail
+    this.code = safeCode(code)
+    this.detail = safe
   }
 }
 
@@ -92,6 +125,31 @@ export interface RelayApi {
   revoke(grant: string): Promise<{ revoked: string }>
 }
 
+const PUSH_RESULTS = ["accepted", "invalidDestination", "retryable", "rejected"] as const
+
+function asRecord(body: unknown, what: string): Record<string, unknown> {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    throw new RelayError(0, "malformed_response", `${what}: body is not an object`)
+  }
+  return body as Record<string, unknown>
+}
+
+function requireString(record: Record<string, unknown>, key: string, what: string): string {
+  const value = record[key]
+  if (typeof value !== "string" || value.length === 0) {
+    throw new RelayError(0, "malformed_response", `${what}: missing ${key}`)
+  }
+  return value
+}
+
+function requireNumber(record: Record<string, unknown>, key: string, what: string): number {
+  const value = record[key]
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new RelayError(0, "malformed_response", `${what}: missing ${key}`)
+  }
+  return value
+}
+
 export class RelayClient implements RelayApi {
   private readonly baseUrl: string
   private readonly creds: () => Creds | undefined
@@ -146,30 +204,68 @@ export class RelayClient implements RelayApi {
   }
 
   async register(input: { id: string; app: string }): Promise<RegisterResponse> {
-    return (await this.request("POST", "/v1/register", input, false)) as RegisterResponse
+    const body = asRecord(await this.request("POST", "/v1/register", input, false), "register")
+    return {
+      tenant: requireString(body, "tenant", "register"),
+      app: requireString(body, "app", "register"),
+      token: requireString(body, "token", "register"),
+      registered_at: requireNumber(body, "registered_at", "register"),
+      expires_at: requireNumber(body, "expires_at", "register"),
+    }
   }
 
   /** Rotate token + signing key under proof of possession (spec §2.7). */
   async rotate(newPubkey: string): Promise<RotateResponse> {
-    return (await this.request("POST", "/v1/rotate", { pubkey: newPubkey }, true)) as RotateResponse
+    const body = asRecord(
+      await this.request("POST", "/v1/rotate", { pubkey: newPubkey }, true),
+      "rotate",
+    )
+    return {
+      tenant: requireString(body, "tenant", "rotate"),
+      app: requireString(body, "app", "rotate"),
+      token: requireString(body, "token", "rotate"),
+      rotated_at: requireNumber(body, "rotated_at", "rotate"),
+    }
   }
 
   async push(request: PushRequest): Promise<PushResponse> {
-    return (await this.request("POST", "/v1/push", request, true)) as PushResponse
+    const body = asRecord(await this.request("POST", "/v1/push", request, true), "push")
+    const result = body["result"]
+    if (typeof result !== "string" || !(PUSH_RESULTS as readonly string[]).includes(result)) {
+      throw new RelayError(0, "malformed_response", "push: unknown result")
+    }
+    const apnsId = body["apnsId"]
+    const detail = body["detail"]
+    const retryAfter = body["retryAfter"]
+    return {
+      result: result as PushResponse["result"],
+      apnsId: typeof apnsId === "string" ? apnsId : null,
+      detail: typeof detail === "string" ? safeDetail(detail) : null,
+      retryAfter: typeof retryAfter === "number" ? retryAfter : null,
+    }
   }
 
   async renew(grant: string, ttl?: number): Promise<RelayedGrant> {
-    const body: { grant: string; ttl?: number } = { grant }
-    if (ttl !== undefined) body.ttl = ttl
-    return (await this.request("POST", "/v1/enroll/renew", body, true)) as RelayedGrant
+    const input: { grant: string; ttl?: number } = { grant }
+    if (ttl !== undefined) input.ttl = ttl
+    const body = asRecord(
+      await this.request("POST", "/v1/enroll/renew", input, true),
+      "enroll/renew",
+    )
+    return {
+      grant: requireString(body, "grant", "enroll/renew"),
+      expiresAt: requireNumber(body, "expiresAt", "enroll/renew"),
+    }
   }
 
   async revoke(grant: string): Promise<{ revoked: string }> {
-    return (await this.request("POST", "/v1/revoke", { grant }, true)) as { revoked: string }
+    const body = asRecord(await this.request("POST", "/v1/revoke", { grant }, true), "revoke")
+    return { revoked: requireString(body, "revoked", "revoke") }
   }
 
   async health(): Promise<{ status: string }> {
-    return (await this.request("GET", "/health", undefined, false)) as { status: string }
+    const body = asRecord(await this.request("GET", "/health", undefined, false), "health")
+    return { status: safeCode(requireString(body, "status", "health")) }
   }
 
   /**

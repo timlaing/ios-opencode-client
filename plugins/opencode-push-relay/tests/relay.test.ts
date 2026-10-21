@@ -113,6 +113,24 @@ test("relay errors map to RelayError with the machine code and detail", async ()
   )
 })
 
+test("malformed 2xx bodies fail as transport-class malformed_response", async () => {
+  await withServer(
+    () => ({ status: 200, body: { grant: 123 } }), // expiresAt missing, grant not a string
+    async (base) => {
+      const keypair = generateKeyPair()
+      const client = new RelayClient(base, () => ({
+        token: "tnt_t",
+        privateKeyB64: keypair.privateKeyB64,
+      }))
+      await assert.rejects(
+        client.renew("v1.x.y"),
+        (error: unknown) =>
+          error instanceof RelayError && error.status === 0 && error.code === "malformed_response",
+      )
+    },
+  )
+})
+
 test("non-JSON error bodies degrade to a status-derived code", async () => {
   await withServer(
     () => ({ status: 502, body: "<html>bad gateway</html>" }),
@@ -151,14 +169,24 @@ test("unsigned routes: register and health carry no signature", async () => {
 })
 
 test("signed route bodies carry the documented field names", async () => {
+  // The client validates 2xx bodies per method (malformed_response guard), so
+  // the fixture must answer each route with the real relay's shape.
   const captured = await withServer(
-    () => ({ status: 200, body: { grant: "v1.renewed", expiresAt: 99 } }),
+    (request) =>
+      request.path === "/v1/revoke"
+        ? { status: 200, body: { revoked: "jti-1" } }
+        : request.path === "/v1/rotate"
+          ? {
+              status: 200,
+              body: { tenant: "host-a", app: "opencode", token: "tnt_new", rotated_at: 99 },
+            }
+          : { status: 200, body: { grant: "v1.renewed", expiresAt: 99 } },
     async (base) => {
       const keypair = generateKeyPair()
       const client = new RelayClient(base, () => ({ token: "tnt_t", privateKeyB64: keypair.privateKeyB64 }))
       await client.renew("v1.g.s", 7200)
       await client.renew("v1.g.s")
-      await client.revoke("v1.g.s")
+      assert.deepEqual(await client.revoke("v1.g.s"), { revoked: "jti-1" })
       await client.rotate("NEW_PUBKEY")
     },
   )

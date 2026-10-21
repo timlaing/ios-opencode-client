@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto"
 
-import type { PushDraft } from "./classifier.ts"
+import type { ContentLevel, PushDraft } from "./classifier.ts"
 import type { PushConfig } from "./config.ts"
 import {
   RelayError,
@@ -35,8 +35,10 @@ export interface EngineHooks {
 export interface TestResult {
   readonly deviceID: string
   readonly ok: boolean
+  /** Machine outcome: relay result, `needsEnroll`, or an error code. */
   readonly result?: string
   readonly apnsId?: string | null
+  /** Diagnostic text — server log only, never rendered into prompt reports. */
   readonly detail?: string
   readonly ms: number
 }
@@ -46,7 +48,7 @@ export function eventIdFor(ledgerKey: string): string {
   return sha256hex(ledgerKey).slice(0, 48)
 }
 
-/** Exponential backoff,15s base,5 minutes cap. */
+/** Exponential backoff, 15s base, 5 minutes cap. */
 export function backoffMs(attempts: number): number {
   return Math.min(300_000, 15_000 * 2 ** Math.max(0, attempts - 1))
 }
@@ -58,7 +60,20 @@ const RETRY_WINDOW_MS = 6 * 60 * 60 * 1000
 const SENT_RETENTION_MS = 24 * 60 * 60 * 1000
 const RENEW_RETRY_MS = 60_000
 
-const GRANT_PROBLEMS = ["grant_expired", "grant_revoked", "grant_mismatch", "tenant_mismatch"]
+// Relay codes meaning "this stored grant can never deliver again as-is":
+// policy failures surface as their own 403 code, while malformed grants and
+// bad signatures collapse to 400 `invalid_grant` (_map_grant_error). All of
+// them send the device back to re-enrollment instead of dying silently.
+const GRANT_PROBLEMS = [
+  "grant_expired",
+  "grant_revoked",
+  "grant_mismatch",
+  "tenant_mismatch",
+  "app_mismatch",
+  "destination_mismatch",
+  "kind_not_allowed",
+  "invalid_grant",
+]
 const BINDING_PROBLEMS = ["unknown_tenant", "invalid_signature", "enrollment_required"]
 
 function messageOf(error: unknown): string {
@@ -92,7 +107,6 @@ export class DeliveryEngine {
   async enqueue(draft: PushDraft): Promise<number> {
     const eventId = eventIdFor(draft.ledgerKey)
     if (await this.store.isSent(eventId)) return 0
-    const content = this.buildContent(draft)
     const now = this.now()
     let queued = 0
     for (const device of await this.store.listDevices()) {
@@ -102,7 +116,9 @@ export class DeliveryEngine {
         eventId,
         deviceID: device.id,
         ledgerKey: draft.ledgerKey,
-        content,
+        // Content is per device: each alert body honours that device's own
+        // contentLevel (minimal copy vs server-provided failure summary).
+        content: this.buildContent(draft, device.prefs.contentLevel),
         createdAt: now,
         nextAttemptAt: now,
         attempts: 0,
@@ -125,7 +141,9 @@ export class DeliveryEngine {
     return device.prefs.sessions.includes(draft.sessionID)
   }
 
-  private buildContent(draft: PushDraft): PushContent {
+  private buildContent(draft: PushDraft, level: ContentLevel): PushContent {
+    const body =
+      level === "summaries" && draft.failureSummary !== null ? draft.failureSummary : draft.body
     // Standard base64 alphabet: the relay validates sealed with
     // b64decode(validate=True). Decoded size must stay ≤1024 bytes.
     const sealed = Buffer.from(
@@ -140,7 +158,7 @@ export class DeliveryEngine {
       }),
       "utf8",
     ).toString("base64")
-    return { alert: { title: draft.title, body: draft.body, category: draft.category }, sealed }
+    return { alert: { title: draft.title, body, category: draft.category }, sealed }
   }
 
   /** One lease-governed pass: drain, prune, renew. Never throws. */
@@ -199,7 +217,11 @@ export class DeliveryEngine {
       case "accepted": {
         await this.store.removeOutbox(item.id)
         await this.store.markSent(item.eventId, now)
-        await this.store.saveDevice({ ...device, lastPushAt: now, lastResult: "accepted", updatedAt: now })
+        await this.store.patchDevice(device.id, {
+          lastPushAt: now,
+          lastResult: "accepted",
+          updatedAt: now,
+        })
         await this.store.updateStats({ accepted: stats.accepted + 1, lastPushAt: now, lastError: undefined })
         return
       }
@@ -212,16 +234,32 @@ export class DeliveryEngine {
         return
       }
       case "retryable": {
-        await this.store.updateStats({ retryable: stats.retryable + 1, lastError: response.detail ?? "retryable" })
-        await this.retryOrDrop(item, now, response.detail ?? "retryable")
+        // stats/outbox keep the machine code; the relay's free-text detail
+        // goes to the server log only (prompt reports must not carry it).
+        if (response.detail !== undefined && response.detail !== null && response.detail !== "") {
+          this.hooks.log(`relay retryable for ${device.id}: ${response.detail}`)
+        }
+        await this.store.updateStats({ retryable: stats.retryable + 1, lastError: "retryable" })
+        await this.retryOrDrop(item, now, "retryable")
         return
       }
       case "rejected": {
         // No automatic retry until corrected; the transition stays deduped.
+        if (response.detail !== undefined && response.detail !== null && response.detail !== "") {
+          this.hooks.log(`relay rejected for ${device.id}: ${response.detail}`)
+        }
         await this.store.removeOutbox(item.id)
         await this.store.markSent(item.eventId, now)
-        await this.store.saveDevice({ ...device, lastResult: "rejected", updatedAt: now })
-        await this.store.updateStats({ rejected: stats.rejected + 1, lastError: response.detail ?? "rejected" })
+        await this.store.patchDevice(device.id, { lastResult: "rejected", updatedAt: now })
+        await this.store.updateStats({ rejected: stats.rejected + 1, lastError: "rejected" })
+        return
+      }
+      default: {
+        // A 2xx whose result we do not recognise: never leave the item
+        // immediately due forever — route it through retry/backoff like a
+        // transient, and record the attempt (malformed-success finding).
+        await this.store.updateStats({ retryable: stats.retryable + 1, lastError: "unexpected_result" })
+        await this.retryOrDrop(item, now, "unexpected_result")
         return
       }
     }
@@ -284,8 +322,14 @@ export class DeliveryEngine {
   }
 
   private async markNeedsEnroll(device: Device, reason: string): Promise<void> {
-    await this.store.saveDevice({ ...device, needsEnroll: true, lastResult: reason, updatedAt: this.now() })
-    this.hooks.onDeviceNeedsEnroll(device.id)
+    // Patch (never snapshot-write): a device removed meanwhile is not
+    // resurrected, and concurrent enrollment/prefs writes are preserved.
+    const updated = await this.store.patchDevice(device.id, {
+      needsEnroll: true,
+      lastResult: reason,
+      updatedAt: this.now(),
+    })
+    if (updated) this.hooks.onDeviceNeedsEnroll(device.id)
   }
 
   /** Renew grants at half-life (spec §2.4 keeps every other claim unchanged). */
@@ -298,8 +342,7 @@ export class DeliveryEngine {
       try {
         const renewed = await this.relay.renew(device.grant, this.config.grantTtlSeconds)
         const renewAt = nowSeconds + Math.max(60, Math.floor((renewed.expiresAt - nowSeconds) / 2))
-        await this.store.saveDevice({
-          ...device,
+        await this.store.patchDevice(device.id, {
           grant: renewed.grant,
           grantExpiresAt: renewed.expiresAt,
           grantRenewAt: renewAt,
@@ -317,7 +360,10 @@ export class DeliveryEngine {
           this.hooks.onRegistrationLost(error.code)
           continue
         }
-        await this.store.saveDevice({ ...device, renewRetryAt: now + RENEW_RETRY_MS, updatedAt: now })
+        await this.store.patchDevice(device.id, {
+          renewRetryAt: now + RENEW_RETRY_MS,
+          updatedAt: now,
+        })
         this.hooks.log(`grant renewal for ${device.id} failed: ${messageOf(error)}`)
       }
     }
@@ -344,7 +390,7 @@ export class DeliveryEngine {
     for (const device of await this.store.listDevices()) {
       if (deviceIDs !== undefined && !deviceIDs.includes(device.id)) continue
       if (device.needsEnroll) {
-        results.push({ deviceID: device.id, ok: false, detail: "needs re-enrollment", ms: 0 })
+        results.push({ deviceID: device.id, ok: false, result: "needsEnroll", ms: 0 })
         continue
       }
       const started = Date.now()
@@ -373,7 +419,13 @@ export class DeliveryEngine {
           ms: Date.now() - started,
         })
       } catch (error) {
-        results.push({ deviceID: device.id, ok: false, detail: messageOf(error), ms: Date.now() - started })
+        results.push({
+          deviceID: device.id,
+          ok: false,
+          result: error instanceof RelayError ? error.code : "failed",
+          detail: messageOf(error),
+          ms: Date.now() - started,
+        })
       }
     }
     return results

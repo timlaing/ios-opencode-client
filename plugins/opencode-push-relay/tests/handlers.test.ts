@@ -5,7 +5,7 @@ import { test } from "node:test"
 
 import type { PushConfig } from "../src/config.ts"
 import { makeRpcHandlers, type HandlerContext, type HandlerDeps } from "../src/handlers.ts"
-import type { RelayClient } from "../src/relay.ts"
+import { RelayError, type RelayClient } from "../src/relay.ts"
 import { sha256hex } from "../src/signing.ts"
 import { buildStatus } from "../src/status.ts"
 import type { PushStore, Registration } from "../src/store.ts"
@@ -75,11 +75,15 @@ function setup(options: { config?: PushConfig | undefined; registration?: Regist
 
 test("unconfigured plugin: enroll/info report not_configured", async () => {
   const s = setup({ config: undefined })
-  const failure = (await s.call("enroll", {})) as { type: string }
-  assert.equal(failure.type, "not_configured")
-  const [first] = s.context.errors
-  assert.ok(first)
-  assert.equal(first.type, "not_configured")
+  const enrollFailure = (await s.call("enroll", {})) as { type: string }
+  assert.equal(enrollFailure.type, "not_configured")
+  // The unconfigured path must answer every read handler too (finding:
+  // missing unconfigured-info test), not only the mutating one.
+  const infoFailure = (await s.call("info", {})) as { type: string }
+  assert.equal(infoFailure.type, "not_configured")
+  assert.equal(s.context.errors.length, 2)
+  assert.equal(s.context.errors[0]?.type, "not_configured")
+  assert.equal(s.context.errors[1]?.type, "not_configured")
 })
 
 test("configured but unregistered: enroll reports registration_missing", async () => {
@@ -88,34 +92,52 @@ test("configured but unregistered: enroll reports registration_missing", async (
   assert.equal(failure.type, "registration_missing")
 })
 
-test("enroll stores a validated device and computes half-life renewal", async () => {
+test("enroll verifies the grant through the relay and stores the re-issued one", async () => {
   const registration = makeRegistration()
   const s = setup({ registration })
-  const iat = Math.floor(Date.now() / 1000) - 60
-  const exp = iat + 86_460
+  // A fixed renewed expiry keeps the renewal math deterministic.
+  const renewedExp = 1_800_000_000
+  s.relay.renewResponse = { grant: "v1.reissued.grant", expiresAt: renewedExp }
   const result = (await s.call("enroll", {
     destinationToken: "cd".repeat(16),
-    grant: makeGrant(
-      makeClaims({ iat, exp, tok: `sha256:${sha256hex("cd".repeat(16))}` }),
-    ),
+    grant: makeGrant(makeClaims({ tok: `sha256:${sha256hex("cd".repeat(16))}` })),
     deviceID: "dev_phone",
     prefs: { sessions: ["ses_1"], categories: ["sessionCompleted"], contentLevel: "summaries" },
   })) as Record<string, unknown>
   assert.equal(s.context.errors.length, 0)
   assert.equal(result.deviceID, "dev_phone")
+  // The grant stored is the relay's re-issue — signed proof the relay
+  // accepted ours — not the grant the client handed us.
+  assert.equal(s.relay.renewCalls.length, 1)
+  assert.equal(s.relay.renewCalls[0]?.ttl, makeConfig().grantTtlSeconds)
   const device = await s.store.getDevice("dev_phone")
   assert.ok(device)
+  assert.equal(device.grant, "v1.reissued.grant")
   assert.equal(device.destinationToken, "cd".repeat(16))
   assert.equal(device.needsEnroll, false)
   assert.equal(device.environment, "sandbox")
-  assert.equal(device.grantExpiresAt, exp)
-  // Renewal is computed at half-life between iat and exp.
-  assert.equal(device.grantRenewAt, iat + Math.floor((exp - iat) / 2))
+  assert.equal(device.grantExpiresAt, renewedExp)
+  // Renewal is computed at half-life between now and the renewed expiry.
+  const nowSeconds = Math.floor(Date.now() / 1000)
+  const expectedRenewAt = nowSeconds + Math.floor((renewedExp - nowSeconds) / 2)
+  assert.ok(Math.abs(device.grantRenewAt - expectedRenewAt) <= 1)
   assert.deepEqual(device.prefs.sessions, ["ses_1"])
   assert.deepEqual(device.prefs.categories, ["sessionCompleted"])
   assert.equal(device.prefs.contentLevel, "summaries")
-  assert.equal(result.grantExpiresAt, exp)
+  assert.equal(result.grantExpiresAt, renewedExp)
   assert.equal(result.environment, "sandbox")
+})
+
+test("enroll refuses a grant the relay cannot verify and stores nothing", async () => {
+  const s = setup({ registration: makeRegistration() })
+  s.relay.renewError = new RelayError(400, "invalid_grant", "malformed grant")
+  const failure = (await s.call("enroll", {
+    destinationToken: "cd".repeat(16),
+    grant: makeGrant(makeClaims({ tok: `sha256:${sha256hex("cd".repeat(16))}` })),
+  })) as { type: string; data?: { problem: string } }
+  assert.equal(failure.type, "invalid_grant")
+  assert.equal(failure.data?.problem, "invalid_grant")
+  assert.equal((await s.store.listDevices()).length, 0)
 })
 
 test("enroll without prefs applies plugin defaults", async () => {

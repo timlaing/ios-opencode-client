@@ -7,10 +7,13 @@ import type { Creds, StoredKeyPair } from "./signing.ts"
 /**
  * Typed access over `ctx.storage`.
  *
- * Storage is one server-global KV table namespaced by plugin id, so every
- * plugin instance (one per location) shares registration, devices and outbox.
- * Values are JSON; keys are `registration`, `device/<id>`, `outbox/<id>`,
- * `sent/<eventId>` and `lease`.
+ * Storage is one server-global KV table namespaced by plugin id. Keys are
+ * `registration`, `device/<id>`, `outbox/<id>`, `sent/<eventId>`, `lease`
+ * and `stats`; when constructed with a config scope every key is prefixed
+ * `<scope>:` so setups with different relay/app/tenant options never share
+ * registration, devices, outbox, dedupe markers, stats or the delivery lease
+ * (identical options share one scope on purpose — one binding per tenant).
+ * Values are JSON.
  */
 export interface Kv {
   get(key: string): Promise<unknown | undefined>
@@ -138,19 +141,49 @@ const SCAN_LIMIT = 1000
 
 export class PushStore {
   private readonly kv: Kv
+  /** Config-scope prefix (`"<hash>:"`, or "" when unscoped). */
+  private readonly scope: string
 
-  constructor(kv: Kv) {
+  constructor(kv: Kv, scope = "") {
     this.kv = kv
+    this.scope = scope === "" ? "" : `${scope}:`
   }
 
-  private async read<T>(key: string): Promise<T | undefined> {
-    const value = await this.kv.get(key)
+  /** Fully qualified storage key for one unscoped base key. */
+  private key(base: string): string {
+    return this.scope + base
+  }
+
+  private async read<T>(base: string): Promise<T | undefined> {
+    const value = await this.kv.get(this.key(base))
     if (value === undefined || value === null) return undefined
     return value as T
   }
 
-  private async write(key: string, value: unknown): Promise<void> {
-    await this.kv.set(key, value)
+  private async write(base: string, value: unknown): Promise<void> {
+    await this.kv.set(this.key(base), value)
+  }
+
+  /**
+   * Drain every page of a prefix scan: `kv.scan` may cap a page below the
+   * requested limit and returns a continuation cursor — following it keeps
+   * records beyond the first page from disappearing from fan-out, delivery,
+   * status and pruning.
+   */
+  private async scanAll(base: string): Promise<{ key: string; value: unknown }[]> {
+    const prefix = this.key(base)
+    const entries: { key: string; value: unknown }[] = []
+    let after: string | undefined
+    for (;;) {
+      const page = await this.kv.scan(
+        after === undefined ? { prefix, limit: SCAN_LIMIT } : { prefix, after, limit: SCAN_LIMIT },
+      )
+      entries.push(...page.entries)
+      const next = page.next
+      // Stop on no cursor, a non-advancing cursor, or an empty page.
+      if (next === undefined || next === after || page.entries.length === 0) return entries
+      after = next
+    }
   }
 
   // -- registration ---------------------------------------------------------
@@ -170,16 +203,37 @@ export class PushStore {
   }
 
   async listDevices(): Promise<Device[]> {
-    const result = await this.kv.scan({ prefix: KEY_DEVICE, limit: SCAN_LIMIT })
-    return result.entries.map((entry) => entry.value as Device)
+    const entries = await this.scanAll(KEY_DEVICE)
+    return entries.map((entry) => entry.value as Device)
   }
 
+  /** Full replace, serialised against `patchDevice`/`removeDevice`. */
   async saveDevice(device: Device): Promise<void> {
-    await this.write(KEY_DEVICE + device.id, device)
+    await withLock(this.key(`push-store:device:${device.id}`), async () => {
+      await this.write(KEY_DEVICE + device.id, device)
+    })
   }
 
   async removeDevice(id: string): Promise<void> {
-    await this.kv.remove(KEY_DEVICE + id)
+    await withLock(this.key(`push-store:device:${id}`), async () => {
+      await this.kv.remove(this.key(KEY_DEVICE + id))
+    })
+  }
+
+  /**
+   * Merge `patch` into the CURRENTLY stored device — never a snapshot taken
+   * earlier, and never a resurrection: returns false when the device no
+   * longer exists (a revoke won the race). Delivery and renewal bookkeeping
+   * use this so a delayed engine save cannot clobber newer enrollment,
+   * preferences or revocation.
+   */
+  async patchDevice(id: string, patch: Partial<Device>): Promise<boolean> {
+    return withLock(this.key(`push-store:device:${id}`), async () => {
+      const current = await this.read<Device>(KEY_DEVICE + id)
+      if (current === undefined) return false
+      await this.write(KEY_DEVICE + id, { ...current, ...patch })
+      return true
+    })
   }
 
   async markAllDevicesNeedsEnroll(now: number): Promise<number> {
@@ -188,8 +242,7 @@ export class PushStore {
       let changed = 0
       for (const device of devices) {
         if (device.needsEnroll) continue
-        await this.saveDevice({ ...device, needsEnroll: true, updatedAt: now })
-        changed += 1
+        if (await this.patchDevice(device.id, { needsEnroll: true, updatedAt: now })) changed += 1
       }
       return changed
     })
@@ -208,8 +261,8 @@ export class PushStore {
   }
 
   async listOutbox(): Promise<OutboxItem[]> {
-    const result = await this.kv.scan({ prefix: KEY_OUTBOX, limit: SCAN_LIMIT })
-    return result.entries.map((entry) => entry.value as OutboxItem)
+    const entries = await this.scanAll(KEY_OUTBOX)
+    return entries.map((entry) => entry.value as OutboxItem)
   }
 
   async updateOutbox(id: string, patch: Partial<OutboxItem>): Promise<void> {
@@ -221,7 +274,9 @@ export class PushStore {
   }
 
   async removeOutbox(id: string): Promise<void> {
-    await this.kv.remove(KEY_OUTBOX + id)
+    await withLock(`push-store:outbox:${id}`, async () => {
+      await this.kv.remove(this.key(KEY_OUTBOX + id))
+    })
   }
 
   // -- transition dedupe ------------------------------------------------------
@@ -235,9 +290,9 @@ export class PushStore {
   }
 
   async pruneSent(olderThan: number): Promise<number> {
-    const result = await this.kv.scan({ prefix: KEY_SENT, limit: SCAN_LIMIT })
+    const entries = await this.scanAll(KEY_SENT)
     let removed = 0
-    for (const entry of result.entries) {
+    for (const entry of entries) {
       if (typeof entry.value === "number" && entry.value < olderThan) {
         await this.kv.remove(entry.key)
         removed += 1
@@ -275,7 +330,7 @@ export class PushStore {
   async releaseLease(owner: string): Promise<void> {
     await withLock(KEY_LEASE, async () => {
       const current = await this.read<Lease>(KEY_LEASE)
-      if (current?.owner === owner) await this.kv.remove(KEY_LEASE)
+      if (current?.owner === owner) await this.kv.remove(this.key(KEY_LEASE))
     })
   }
 

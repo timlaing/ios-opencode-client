@@ -3,9 +3,9 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 
-import { withLock, type OutboxItem } from "../src/store.ts"
+import { withLock, PushStore, type OutboxItem, type Registration } from "../src/store.ts"
 
-import { makeDevice, makeStore } from "./helpers.ts"
+import { makeDevice, makeStore, MemoryKv } from "./helpers.ts"
 
 function makeItem(overrides: Partial<OutboxItem> = {}): OutboxItem {
   return {
@@ -137,3 +137,75 @@ test("stats accumulate and merge", async () => {
   assert.equal(stats.accepted, 2)
   assert.equal(stats.lastError, undefined)
 })
+
+test("scans follow next cursors across every page", async () => {
+  // Page size 2: nothing may be lost after the first storage.list call.
+  const store = makeStore({ kv: new MemoryKv(2) })
+  for (const id of ["dev_a", "dev_b", "dev_c", "dev_d", "dev_e"]) {
+    await store.saveDevice(makeDevice(id))
+  }
+  const devices = await store.listDevices()
+  assert.deepEqual(
+    devices.map((device) => device.id).sort(),
+    ["dev_a", "dev_b", "dev_c", "dev_d", "dev_e"],
+  )
+  // Outbox pages too.
+  for (let index = 0; index < 4; index += 1) {
+    await store.enqueueItem(
+      makeItem({ id: `evt_${index}::dev_a`, eventId: `evt_${index}` }),
+    )
+  }
+  assert.equal((await store.listOutbox()).length, 4)
+})
+
+test("storage scopes isolate registrations, devices, dedupe and leases", async () => {
+  const kv = new MemoryKv()
+  const alpha = new PushStore(kv, "scope-a")
+  const beta = new PushStore(kv, "scope-b")
+  await alpha.saveDevice(makeDevice("dev_a"))
+  await alpha.saveRegistration(makeRegistrationInScope())
+  await alpha.markSent("evt_1", 1_760_000_000_000)
+  assert.equal(await alpha.lease("owner-a", 1_760_000_000_000, 30_000), true)
+
+  // Same physical KV, but a different options-scope sees none of it.
+  assert.equal(await beta.getDevice("dev_a"), undefined)
+  assert.equal((await beta.listDevices()).length, 0)
+  assert.equal(await beta.getRegistration(), undefined)
+  assert.equal(await beta.isSent("evt_1"), false)
+  assert.equal(await beta.getLease(), undefined)
+  // …while the owning scope still reads everything back.
+  assert.equal((await alpha.getDevice("dev_a"))?.id, "dev_a")
+  assert.ok(await alpha.isSent("evt_1"))
+})
+
+test("patchDevice merges without resurrecting removed devices", async () => {
+  const store = makeStore()
+  await store.saveDevice(makeDevice("dev_a", { lastResult: "accepted" }))
+  assert.equal(
+    await store.patchDevice("dev_a", { needsEnroll: true, updatedAt: 1_760_000_100_000 }),
+    true,
+  )
+  const patched = await store.getDevice("dev_a")
+  assert.equal(patched?.needsEnroll, true)
+  // Untouched fields survive the patch (no stale-snapshot overwrite).
+  assert.equal(patched?.lastResult, "accepted")
+  assert.equal(patched?.destinationToken, "ab".repeat(16))
+
+  await store.removeDevice("dev_a")
+  // A patch after removal reports false and must NOT recreate the device.
+  assert.equal(await store.patchDevice("dev_a", { needsEnroll: true }), false)
+  assert.equal(await store.getDevice("dev_a"), undefined)
+})
+
+function makeRegistrationInScope(): Registration {
+  return {
+    tenant: "host-a",
+    app: "opencode",
+    token: "tnt_scope",
+    privateKeyB64: "priv",
+    publicB64: "pub",
+    registeredAt: 1,
+    rotatedAt: undefined,
+    generation: 1,
+  }
+}

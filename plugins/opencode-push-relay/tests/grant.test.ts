@@ -10,6 +10,7 @@ import { makeClaims, makeGrant } from "./helpers.ts"
 
 const expectation = {
   tenant: "host-a",
+  app: "opencode",
   publicB64: "FIXTURE_PUBKEY_BASE64URL",
   destinationToken: "ab".repeat(16),
 }
@@ -44,6 +45,7 @@ test("mismatch problems are reported precisely", () => {
     return result.problem
   }
   assert.equal(bad({ ten: "host-b" }), "tenant_mismatch")
+  assert.equal(bad({ app: "other-app" }), "app_mismatch")
   assert.equal(bad({ tpk: "OTHER_PUBLIC_KEY" }), "pubkey_mismatch")
   assert.equal(bad({ tok: `sha256:${sha256hex("cd".repeat(16))}` }), "token_mismatch")
   assert.equal(bad({ exp: Math.floor(Date.now() / 1000) - 10 }), "grant_expired")

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 import type { PushConfig } from "./config.ts"
-import { RelayError, type BindingProbe, type RelayClient } from "./relay.ts"
+import { describeError, type BindingProbe, type RelayClient } from "./relay.ts"
 import { sha256hex } from "./signing.ts"
 import { emptyStats, type PushStore, type Stats } from "./store.ts"
 
@@ -68,10 +68,6 @@ export interface StatusDeps {
   readonly instanceHoldsLease?: boolean
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 export async function buildStatus(deps: StatusDeps): Promise<StatusReport> {
   const notes: string[] = []
   const registration = await deps.store.getRegistration()
@@ -111,10 +107,7 @@ export async function buildStatus(deps: StatusDeps): Promise<StatusReport> {
     health = { ok: response.status === "ok", latencyMs: Date.now() - started }
     if (response.status !== "ok") health = { ok: false, error: `relay status: ${response.status}` }
   } catch (error) {
-    health = {
-      ok: false,
-      error: error instanceof RelayError ? `${error.status} ${error.code}` : messageOf(error),
-    }
+    health = { ok: false, error: describeError(error) }
   }
 
   let probe: BindingProbe | undefined
@@ -122,7 +115,7 @@ export async function buildStatus(deps: StatusDeps): Promise<StatusReport> {
     try {
       probe = await relay.probeBinding()
     } catch (error) {
-      notes.push(`binding probe failed: ${error instanceof RelayError ? `${error.status} ${error.code}` : messageOf(error)}`)
+      notes.push(`binding probe failed: ${describeError(error)}`)
     }
     if (probe?.state === "no-binding") {
       notes.push(

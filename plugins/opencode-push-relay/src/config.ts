@@ -10,7 +10,10 @@ import { ALL_CATEGORIES, type ContentLevel, type PushCategory } from "./classifi
  * inert (commands still load so `/push-status` can explain what is missing).
  */
 export interface PushConfig {
-  /** Relay base URL, no trailing slash (e.g. https://push.example.org). */
+  /**
+   * Relay base URL, no trailing slash, no query/fragment, `https://` unless
+   * loopback (e.g. https://push.example.org).
+   */
   readonly relayUrl: string
   /** Relay App id (operator-configured in the relay's config.yaml). */
   readonly app: string
@@ -50,6 +53,12 @@ function numberOption(
   return fallback
 }
 
+/** Loopback hosts that may use cleartext `http://` (development relays). */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[/, "").replace(/\]$/, "").toLowerCase()
+  return host === "localhost" || host === "127.0.0.1" || host === "::1"
+}
+
 /** Parse and validate plugin options. Never throws — returns a result. */
 export function parseConfig(options: unknown): ConfigResult {
   const raw: Record<string, unknown> =
@@ -69,7 +78,19 @@ export function parseConfig(options: unknown): ConfigResult {
       if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
         throw new Error("unsupported scheme")
       }
-      relayUrl = rawUrl.replace(/\/+$/, "")
+      if (parsed.search !== "" || parsed.hash !== "") {
+        // `RelayClient` appends `/v1/...` to the raw value — a query or
+        // fragment would silently route requests to the wrong path.
+        problems.push("relayUrl: must not include a query string or fragment")
+      } else if (parsed.protocol === "http:" && !isLoopbackHost(parsed.hostname)) {
+        // Registration tokens, grants and destination tokens would cross an
+        // untrusted network in cleartext.
+        problems.push(
+          "relayUrl: must use https:// (http:// is accepted only for loopback development endpoints)",
+        )
+      } else {
+        relayUrl = rawUrl.replace(/\/+$/, "")
+      }
     } catch {
       problems.push("relayUrl: must be an http(s) URL")
     }

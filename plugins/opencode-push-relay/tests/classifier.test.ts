@@ -5,7 +5,7 @@ import { test } from "node:test"
 
 import { ALL_CATEGORIES, classify, ledgerKey } from "../src/classifier.ts"
 
-const all = { categories: ALL_CATEGORIES, contentLevel: "minimal" } as const
+const all = { categories: ALL_CATEGORIES } as const
 
 test("session success maps to sessionCompleted with a stable ledger key", () => {
   const draft = classify(
@@ -21,31 +21,31 @@ test("session success maps to sessionCompleted with a stable ledger key", () => 
   assert.equal(draft.ledgerKey, ledgerKey("host-a", "ses_1", null, "evt_1"))
   assert.equal(draft.ledgerKey, "host:host-a|session:ses_1|owner:-|transition:evt_1")
   assert.equal(draft.title, "Session completed")
+  assert.equal(draft.failureSummary, null)
 })
 
-test("failure copy depends on content level", () => {
-  const event = {
-    type: "session.execution.failed",
-    id: "evt_2",
-    data: { sessionID: "ses_1", error: { message: "model timeout" } },
-  }
-  const minimal = classify(event, "host-a", all)
-  assert.equal(minimal?.body, "The session stopped with an error.")
-  const summaries = classify(event, "host-a", {
-    categories: ALL_CATEGORIES,
-    contentLevel: "summaries",
-  })
-  assert.equal(summaries?.body, "model timeout")
+test("failure drafts carry the minimal body and the summaries variant separately", () => {
+  const draft = classify(
+    {
+      type: "session.execution.failed",
+      id: "evt_2",
+      data: { sessionID: "ses_1", error: { message: "model timeout" } },
+    },
+    "host-a",
+    all,
+  )
+  assert.equal(draft?.body, "The session stopped with an error.")
+  assert.equal(draft?.failureSummary, "model timeout")
 })
 
 test("failure summary shapes: string, nested data, unusable", () => {
-  const summaries = { categories: ALL_CATEGORIES, contentLevel: "summaries" } as const
   const stringy = classify(
     { type: "session.execution.failed", id: "e", data: { sessionID: "s", error: "boom" } },
     "h",
-    summaries,
+    all,
   )
-  assert.equal(stringy?.body, "boom")
+  assert.equal(stringy?.body, "The session stopped with an error.")
+  assert.equal(stringy?.failureSummary, "boom")
   const nested = classify(
     {
       type: "session.execution.failed",
@@ -53,15 +53,15 @@ test("failure summary shapes: string, nested data, unusable", () => {
       data: { sessionID: "s", error: { data: { message: "nested boom" } } },
     },
     "h",
-    summaries,
+    all,
   )
-  assert.equal(nested?.body, "nested boom")
+  assert.equal(nested?.failureSummary, "nested boom")
   const unusable = classify(
     { type: "session.execution.failed", id: "e", data: { sessionID: "s", error: {} } },
     "h",
-    summaries,
+    all,
   )
-  assert.equal(unusable?.body, "The session stopped with an error.")
+  assert.equal(unusable?.failureSummary, null)
 })
 
 test("permission and form events route to their owner", () => {
@@ -121,7 +121,7 @@ test("noise events are never alert material", () => {
 })
 
 test("host-disabled categories are dropped", () => {
-  const onlyFailure = { categories: ["sessionFailed"], contentLevel: "minimal" } as const
+  const onlyFailure = { categories: ["sessionFailed"] } as const
   assert.equal(
     classify(
       { type: "session.execution.succeeded", id: "e", data: { sessionID: "s" } },

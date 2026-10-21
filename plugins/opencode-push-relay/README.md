@@ -4,7 +4,7 @@ OpenCode **server plugin** that registers this host with an
 [apns-push-relay](../../docs/notifications.md) instance and delivers
 session/permission notifications to paired iOS clients over APNs.
 
-Status: implemented and unit-tested (73 tests) against a fake relay and the
+Status: implemented and unit-tested (89 tests) against a fake relay and the
 relay's golden signing fixture, and verified to load in a real OpenCode
 v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
 **Not yet verified against a live relay or device** — see
@@ -22,13 +22,19 @@ v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
   re-enrollment whenever the binding changes.
 - **Pairing.** The iOS app reads tenant info through the `push` RPC
   (`info`), obtains a grant from the relay's enrollment flow, and delivers it
-  via `enroll`. The plugin cross-checks the grant's `ten`/`tpk`/`tok` claims
-  against the current binding before storing the device.
+  via `enroll`. The plugin cross-checks the grant's `ten`/`app`/`tpk`/`tok`
+  claims against the current binding, then verifies the signature **through
+  the relay** (a signed `POST /v1/enroll/renew` — v1 never ships the
+  grant-issuer key to tenants) and stores the relay's re-issued grant.
 - **Delivery.** The host event stream is classified (mirroring the iOS app's
   local `NotificationClassifier`) into category-only pushes with a routing
   `sealed` blob; a durable outbox persists items before transmission, a
   single installation-level lease gates draining, transients back off
   exponentially, and grants renew at half-life via `POST /v1/enroll/renew`.
+  The event subscription is pumped: if the stream ends or throws, the plugin
+  resubscribes (capped backoff) instead of going silent for the process
+  lifetime. Each device's own `contentLevel` pref is applied when its copy of
+  a notification is built.
 - **Rotation.** `/push-key-rotate` calls `POST /v1/rotate` (proof-of-
   possession, spec §2.7): token + signing key are replaced atomically and
   paired devices re-enroll. Before any device has enrolled, rotation only
@@ -36,17 +42,17 @@ v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
 
 ## Options (`plugins[].options` in opencode.json(c))
 
-| Option            | Default             | Notes                                                                        |
-| ----------------- | ------------------- | ---------------------------------------------------------------------------- |
-| `relayUrl`        | _(required)_        | Relay base URL, http(s), no trailing slash.                                  |
-| `app`             | _(required)_        | Relay App id (operator-configured in the relay's config.yaml).               |
-| `tenant`          | lowercased hostname | Tenant id for this host; must be unique on the relay.                        |
-| `autoRegister`    | `true`              | Register at startup when no credentials are stored.                          |
-| `categories`      | all four            | `sessionCompleted`, `sessionFailed`, `permissionRequested`, `formRequested`. |
-| `contentLevel`    | `minimal`           | `summaries` adds short failure reasons (never transcript text).              |
-| `defaultSessions` | `all`               | Session subscription default for newly paired devices.                       |
-| `pushTtlSeconds`  | `3600`              | APNs expiry for alert pushes.                                                |
-| `grantTtlSeconds` | relay App default   | TTL requested on grant renewal.                                              |
+| Option            | Default             | Notes                                                                             |
+| ----------------- | ------------------- | --------------------------------------------------------------------------------- |
+| `relayUrl`        | _(required)_        | Relay base URL, no trailing slash; `https://` except loopback; no query/fragment. |
+| `app`             | _(required)_        | Relay App id (operator-configured in the relay's config.yaml).                    |
+| `tenant`          | lowercased hostname | Tenant id for this host; must be unique on the relay.                             |
+| `autoRegister`    | `true`              | Register at startup when no credentials are stored.                               |
+| `categories`      | all four            | `sessionCompleted`, `sessionFailed`, `permissionRequested`, `formRequested`.      |
+| `contentLevel`    | `minimal`           | `summaries` adds short failure reasons (never transcript text).                   |
+| `defaultSessions` | `all`               | Session subscription default for newly paired devices.                            |
+| `pushTtlSeconds`  | `3600`              | APNs expiry for alert pushes.                                                     |
+| `grantTtlSeconds` | relay App default   | TTL requested on grant renewal.                                                   |
 
 ## Commands
 

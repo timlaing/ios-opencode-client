@@ -38,7 +38,7 @@ swift test --package-path Packages/OpenCodeKit   # package tests (SSE/encoding/s
 ```sh
 npm install
 npm run typecheck   # tsc --noEmit (strict)
-npm test            # node --test tests/ — signing fixture, classifier, config, grant, store, engine, handlers, commands, relay
+npm test            # node --test tests/ — signing fixture, classifier, config, grant, store, engine, events, handlers, commands, relay
 ```
 
 - `plugins/opencode-push-relay/` is an OpenCode **server plugin** (TypeScript executed by Node's native type stripping: `.ts`-extension relative imports, no parameter properties/enums/namespaces). `@opencode/plugin` is pinned to the installed server version — bump both together.

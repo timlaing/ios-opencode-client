@@ -102,9 +102,11 @@ export const PushRpc = Rpc.define({
 
     /**
      * Pair (or re-pair) one device: the client delivers a grant obtained from
-     * the relay's enrollment flow. The grant must be bound to this tenant,
-     * this host's current pubkey, and exactly this destination token — the
-     * same three claims the relay enforces on `/v1/push`.
+     * the relay's enrollment flow. The grant's claims must be bound to this
+     * tenant, this app, this host's current pubkey, and exactly this
+     * destination token, and the signature is verified through the relay
+     * (signed renew) before anything is stored — a forged grant can never
+     * replace a working device's grant.
      */
     enroll: {
       input: {

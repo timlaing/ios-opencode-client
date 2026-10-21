@@ -2,7 +2,7 @@
 
 import type { PushConfig } from "./config.ts"
 import type { DeliveryEngine } from "./engine.ts"
-import { RelayError, type RelayClient } from "./relay.ts"
+import { describeError, RelayError, type RelayClient } from "./relay.ts"
 import { formatStatus, type StatusReport } from "./status.ts"
 import { generateKeyPair, sha256hex } from "./signing.ts"
 import type { PushStore, Registration } from "./store.ts"
@@ -46,9 +46,12 @@ export interface CommandDeps {
   log(message: string): void
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
+/**
+ * Reports from these commands are submitted as session prompt text (see
+ * index.ts `io.submit`), so relay-controlled strings must never appear in
+ * them: machine codes only (`describeError`), and free-text details are
+ * routed to `deps.log` (the server log — a non-LLM path).
+ */
 
 function pushStatusCommand(deps: CommandDeps): CommandDefinitionLike {
   return {
@@ -59,7 +62,7 @@ function pushStatusCommand(deps: CommandDeps): CommandDefinitionLike {
       try {
         text = formatStatus(await deps.buildStatusReport())
       } catch (error) {
-        text = `push-status failed: ${messageOf(error)}`
+        text = `push-status failed: ${describeError(error)}`
       }
       await deps.io.submit(input.sessionID, input.delivery, text)
     },
@@ -94,7 +97,7 @@ function pushKeyRotateCommand(deps: CommandDeps): CommandDefinitionLike {
           text =
             "The relay rejected the rotation signature: the stored key no longer matches this host's key. The relay operator must run `relay tenant revoke <tenant-id>` on the relay host, then restart OpenCode to re-register."
         } else {
-          text = `Rotation failed: ${messageOf(error)}`
+          text = `Rotation failed: ${describeError(error)}`
         }
       }
       await deps.io.submit(input.sessionID, input.delivery, text)
@@ -199,20 +202,27 @@ function pushTestCommand(deps: CommandDeps): CommandDefinitionLike {
               "Push test: no paired devices — pair the iOS app first (its enrollment delivers a grant through the push RPC)."
           } else {
             const header = `Push test → ${config.relayUrl} (app ${config.app}, tenant ${config.tenant})`
+            // Report rows carry machine outcomes only; relay detail text goes
+            // to the server log (it would otherwise reach the model prompt).
             const rows = results.map((result) =>
               result.ok
                 ? `  ${result.deviceID.padEnd(12)} accepted (${result.ms} ms)${
                     result.apnsId ? ` · apns-id ${result.apnsId}` : ""
                   }`
                 : `  ${result.deviceID.padEnd(12)} FAILED ${
-                    result.result !== undefined ? `${result.result} ` : ""
-                  }${result.detail ?? ""} (${result.ms} ms)`,
+                    result.result !== undefined ? result.result : "error"
+                  } (${result.ms} ms)`,
             )
+            for (const result of results) {
+              if (!result.ok && result.detail !== undefined && result.detail !== "") {
+                deps.log(`push-test ${result.deviceID}: ${result.detail}`)
+              }
+            }
             text = [header, ...rows].join("\n")
           }
         }
       } catch (error) {
-        text = `Push test failed: ${messageOf(error)}`
+        text = `Push test failed: ${describeError(error)}`
       }
       await deps.io.submit(input.sessionID, input.delivery, text)
     },

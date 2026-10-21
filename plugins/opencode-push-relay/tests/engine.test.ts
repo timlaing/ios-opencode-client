@@ -146,7 +146,8 @@ test("retryable results back off, then succeed on a later tick", async () => {
   assert.ok(delayed)
   assert.equal(delayed.attempts, 1)
   assert.ok(delayed.nextAttemptAt > s.now())
-  assert.equal(delayed.lastError, "apns 500")
+  // Only the machine code is persisted; the relay detail goes to the log.
+  assert.equal(delayed.lastError, "retryable")
 
   // Not due yet: no second transmission.
   await s.engine.tick()
@@ -169,6 +170,50 @@ test("network errors are retryable and stay queued", async () => {
   await s.engine.tick()
   assert.equal((await s.store.listOutbox()).length, 1)
   assert.equal((await s.store.getStats()).retryable, 1)
+})
+
+test("per-device contentLevel builds each device's own body", async () => {
+  const s = setup()
+  await s.store.saveDevice(
+    makeDevice("dev_min", {
+      destinationToken: "11".repeat(16),
+      prefs: { sessions: "all", categories: ["sessionFailed"], contentLevel: "minimal" },
+    }),
+  )
+  await s.store.saveDevice(
+    makeDevice("dev_sum", {
+      destinationToken: "22".repeat(16),
+      prefs: { sessions: "all", categories: ["sessionFailed"], contentLevel: "summaries" },
+    }),
+  )
+  await s.engine.enqueue(
+    makeDraft({
+      category: "sessionFailed",
+      title: "Session failed",
+      body: "The session stopped with an error.",
+      failureSummary: "model timeout",
+    }),
+  )
+  await s.engine.tick()
+  assert.equal(s.relay.pushes.length, 2)
+  const bodyByToken = new Map(
+    s.relay.pushes.map((request) => [request.destinationToken, request.content.alert?.body]),
+  )
+  assert.equal(bodyByToken.get("11".repeat(16)), "The session stopped with an error.")
+  assert.equal(bodyByToken.get("22".repeat(16)), "model timeout")
+})
+
+test("extended grant problems re-pair the device", async () => {
+  for (const code of ["app_mismatch", "destination_mismatch", "kind_not_allowed"]) {
+    const s = setup()
+    await s.store.saveDevice(makeDevice("dev_a"))
+    await s.engine.enqueue(makeDraft())
+    s.relay.pushQueue.push(new RelayError(403, code))
+    await s.engine.tick()
+    assert.equal((await s.store.getDevice("dev_a"))?.needsEnroll, true, code)
+    assert.deepEqual(s.enrolled, ["dev_a"], code)
+    assert.equal((await s.store.getStats()).dropped, 1, code)
+  }
 })
 
 test("invalidDestination flags the device for re-enrollment and notifies", async () => {
@@ -295,7 +340,7 @@ test("sendTest bypasses prefs and reports per device", async () => {
   assert.ok(first.apnsId)
   assert.equal(second.deviceID, "dev_b")
   assert.equal(second.ok, false)
-  assert.match(second.detail ?? "", /re-enrollment/)
+  assert.equal(second.result, "needsEnroll")
   assert.equal(s.relay.pushes.length, 1)
   const [testPush] = s.relay.pushes
   assert.ok(testPush)

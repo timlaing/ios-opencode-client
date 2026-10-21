@@ -89,4 +89,34 @@ test("http URLs are accepted (loopback relays during development)", () => {
   const result = parseConfig({ relayUrl: "http://127.0.0.1:8787", app: "opencode" })
   assert.ok(result.ok)
   assert.equal(result.config.relayUrl, "http://127.0.0.1:8787")
+  // Loopback spellings all qualify.
+  for (const url of ["http://localhost:8787", "http://[::1]:8787"]) {
+    const loopback = parseConfig({ relayUrl: url, app: "opencode" })
+    assert.ok(loopback.ok, url)
+    assert.equal(loopback.config.relayUrl, url)
+  }
+})
+
+test("cleartext http to non-loopback hosts is rejected", () => {
+  const result = parseConfig({ relayUrl: "http://push.example.org", app: "opencode" })
+  assert.equal(result.ok, false)
+  assert.ok(!result.ok)
+  assert.match(result.problems.join(" "), /relayUrl: must use https:\/\//)
+})
+
+test("relayUrl with a query string or fragment is rejected", () => {
+  for (const url of [
+    "https://push.example.org?tenant=host-a",
+    "https://push.example.org/#frag",
+    "http://127.0.0.1:8787?x=1",
+  ]) {
+    const result = parseConfig({ relayUrl: url, app: "opencode" })
+    assert.equal(result.ok, false, url)
+    assert.ok(!result.ok)
+    assert.match(
+      result.problems.join(" "),
+      /relayUrl: must not include a query string or fragment/,
+      url,
+    )
+  }
 })

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto"
 import { ALL_CATEGORIES, type PushCategory } from "./classifier.ts"
 import type { PushConfig } from "./config.ts"
 import { validateEnrollment } from "./grant.ts"
-import type { RelayClient } from "./relay.ts"
+import { RelayError, type RelayClient } from "./relay.ts"
 import { statusToRpc, type StatusReport } from "./status.ts"
 import type { Device, DevicePrefs, PushStore, Registration } from "./store.ts"
 
@@ -152,6 +152,7 @@ export function makeRpcHandlers(deps: HandlerDeps): PushRpcHandlers {
       const grant = typeof input["grant"] === "string" ? input["grant"] : ""
       const check = validateEnrollment(grant, {
         tenant: registration.tenant,
+        app: config.app,
         publicB64: registration.publicB64,
         destinationToken,
       })
@@ -169,18 +170,34 @@ export function makeRpcHandlers(deps: HandlerDeps): PushRpcHandlers {
       if (!DEVICE_ID_PATTERN.test(deviceID)) {
         return context.error("bad_device_id", "deviceID must match [A-Za-z0-9._:-]{1,64}.")
       }
+      // Signature verification happens THROUGH the relay: v1 deliberately never
+      // ships the grant-issuer key to tenants (enrollment-spec A15), so a
+      // signed renew is the only verifier. Success also means the grant we
+      // store was minted by the relay for our authenticated call — a forged
+      // grant with plausible claims can never replace a working device's grant.
+      let verifiedGrant: string
+      let expiresAt: number
+      try {
+        const renewed = await relay.renew(grant, config.grantTtlSeconds)
+        verifiedGrant = renewed.grant
+        expiresAt = renewed.expiresAt
+      } catch (error) {
+        const problem = error instanceof RelayError ? error.code : "verification_unavailable"
+        return context.error(
+          "invalid_grant",
+          `The relay could not verify this grant (${problem}). Check /push-status, re-fetch a grant from the relay's enrollment flow, then retry.`,
+          { problem },
+        )
+      }
       const previous = await deps.store.getDevice(deviceID)
       const prefs = parsePrefs(input["prefs"], config, previous?.prefs)
       const now = Date.now()
       const nowSeconds = Math.floor(now / 1000)
-      // The relay only issues grants with iat/exp; fall back defensively.
-      const iat = typeof check.claims.iat === "number" ? check.claims.iat : nowSeconds
-      const expiresAt = typeof check.claims.exp === "number" ? check.claims.exp : iat + 86_400
-      const renewAt = iat + Math.max(60, Math.floor((expiresAt - iat) / 2))
+      const renewAt = nowSeconds + Math.max(60, Math.floor((expiresAt - nowSeconds) / 2))
       const device: Device = {
         id: deviceID,
         destinationToken,
-        grant,
+        grant: verifiedGrant,
         grantExpiresAt: expiresAt,
         grantRenewAt: renewAt,
         environment: typeof check.claims.env === "string" ? check.claims.env : null,
@@ -215,7 +232,12 @@ export function makeRpcHandlers(deps: HandlerDeps): PushRpcHandlers {
         return context.error("unknown_device", `No paired device ${deviceID} — enroll first.`)
       }
       const prefs = parsePrefs(input["prefs"], config, device.prefs)
-      await deps.store.saveDevice({ ...device, prefs, updatedAt: Date.now() })
+      // Patch only the prefs — never rewrite delivery/renewal fields from a
+      // snapshot that may have gone stale while this handler ran.
+      const applied = await deps.store.patchDevice(deviceID, { prefs, updatedAt: Date.now() })
+      if (!applied) {
+        return context.error("unknown_device", `No paired device ${deviceID} — enroll first.`)
+      }
       return { deviceID, ...prefsResult(prefs) }
     },
 

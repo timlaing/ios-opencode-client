@@ -7,11 +7,12 @@ import type { CommandDeps } from "./commands.ts"
 import { pushCommandDefinitions } from "./commands.ts"
 import { parseConfig, type ConfigResult } from "./config.ts"
 import { DeliveryEngine } from "./engine.ts"
+import { pumpEvents } from "./events.ts"
 import type { HandlerDeps } from "./handlers.ts"
 import { makeRpcHandlers } from "./handlers.ts"
 import { PushRpc } from "./rpc.ts"
-import { RelayClient, RelayError } from "./relay.ts"
-import { generateKeyPair } from "./signing.ts"
+import { describeError, RelayClient, RelayError } from "./relay.ts"
+import { generateKeyPair, sha256hex } from "./signing.ts"
 import { buildStatus, type StatusReport } from "./status.ts"
 import { PushStore, withLock, type Registration } from "./store.ts"
 
@@ -23,12 +24,14 @@ import { PushStore, withLock, type Registration } from "./store.ts"
  * - Exposes the narrow `push` RPC (info/enroll/update/status/revoke + config/
  *   device events) so paired iOS clients can enroll and manage prefs.
  * - Classifies the host event stream and delivers notifications through a
- *   durable, lease-governed outbox (engine.ts).
+ *   durable, lease-governed outbox (engine.ts); the event subscription is
+ *   pumped and resubscribed until shutdown (events.ts).
  * - Commands: /push-status, /push-key-rotate, /push-test.
  *
- * Storage is one server-global KV table namespaced by plugin id, so all
- * project locations share one registration, device set, and outbox; the
- * delivery lease keeps a single instance draining at a time.
+ * Storage is one server-global KV table namespaced by plugin id. Each
+ * config (relay/app/tenant) gets its own key scope: project locations with
+ * identical options share one registration, device set, outbox and delivery
+ * lease, while locations with different options never mix credentials.
  */
 
 function messageOf(error: unknown): string {
@@ -41,12 +44,20 @@ export default Plugin.define({
     const log = (message: string): void => console.log(`[opencode-push-relay] ${message}`)
 
     const configResult: ConfigResult = parseConfig(ctx.options)
-    const store = new PushStore(ctx.storage)
+    const config = configResult.ok ? configResult.config : undefined
+    // Storage scope: identical relay/app/tenant share one scope (one
+    // binding, one device set, one lease); different options are isolated
+    // so one project's registration can never satisfy or overwrite
+    // another's.
+    const scope =
+      config === undefined
+        ? ""
+        : sha256hex(`${config.relayUrl}|${config.app}|${config.tenant}`).slice(0, 16)
+    const store = new PushStore(ctx.storage, scope)
 
     let registration: Registration | undefined = await store.getRegistration()
     let ensureOutcome: string | undefined
 
-    const config = configResult.ok ? configResult.config : undefined
     const relay =
       config === undefined
         ? undefined
@@ -94,7 +105,7 @@ export default Plugin.define({
      */
     const ensureRegistration = async (): Promise<Registration | undefined> => {
       if (config === undefined || relay === undefined) return undefined
-      return withLock("opencode-push-relay:ensure", async () => {
+      return withLock(`opencode-push-relay:ensure:${scope}`, async () => {
         const existing = await store.getRegistration()
         if (existing !== undefined) {
           registration = existing
@@ -124,7 +135,10 @@ export default Plugin.define({
             ensureOutcome =
               "the tenant id is already registered on this relay, but this host holds no token for it — restore this plugin's storage, set a distinct options.tenant, or have the relay operator run `relay tenant revoke`"
           } else {
-            ensureOutcome = `registration failed: ${messageOf(error)}`
+            // `ensureOutcome` is surfaced in /push-status (prompt-bound):
+            // status+code only — the raw message goes to the log instead.
+            ensureOutcome = `registration failed: ${describeError(error)}`
+            log(`registration detail: ${messageOf(error)}`)
           }
           log(ensureOutcome)
           return undefined
@@ -252,25 +266,20 @@ export default Plugin.define({
         log(`startup registration failed: ${messageOf(error)}`),
       )
 
-      // Classify the host event stream into the durable outbox.
+      // Classify the host event stream into the durable outbox. The pump
+      // resubscribes whenever the iterator ends or throws — without that,
+      // one stream failure would silence notifications for the process
+      // lifetime.
       const controller = new AbortController()
-      void (async () => {
-        try {
-          for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-            try {
-              const draft = classify(event, config.tenant, {
-                categories: config.categories,
-                contentLevel: config.contentLevel,
-              })
-              if (draft !== null) await created.enqueue(draft)
-            } catch (error) {
-              log(`event handling failed: ${messageOf(error)}`)
-            }
-          }
-        } catch (error) {
-          if (!controller.signal.aborted) log(`event stream ended: ${messageOf(error)}`)
-        }
-      })()
+      void pumpEvents(
+        (signal) => ctx.event.subscribe({ signal }),
+        async (event) => {
+          const draft = classify(event, config.tenant, { categories: config.categories })
+          if (draft !== null) await created.enqueue(draft)
+        },
+        controller.signal,
+        log,
+      )
 
       const timer = setInterval(() => {
         void created.tick()

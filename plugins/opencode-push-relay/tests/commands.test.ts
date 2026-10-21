@@ -32,6 +32,7 @@ function setup(options: { configured?: boolean } = {}) {
         })
   const submissions: Array<{ sessionID: string; delivery: unknown; text: string }> = []
   const emitted: string[] = []
+  const logs: string[] = []
   let adopted = 0
   const deps: CommandDeps = {
     config: () => config,
@@ -57,7 +58,7 @@ function setup(options: { configured?: boolean } = {}) {
         submissions.push({ sessionID, delivery, text })
       },
     },
-    log: () => {},
+    log: (message) => logs.push(message),
   }
   const definitions = pushCommandDefinitions(deps)
   const run = async (name: string): Promise<string> => {
@@ -69,7 +70,7 @@ function setup(options: { configured?: boolean } = {}) {
     assert.equal(submission.sessionID, "ses_cmd")
     return submission.text
   }
-  return { run, store, relay, emitted, adopted: () => adopted, definitions }
+  return { run, store, relay, emitted, logs, adopted: () => adopted, definitions }
 }
 
 test("commands are registered with descriptions", () => {
@@ -180,4 +181,19 @@ test("push-test delivers to paired devices and reports each", async () => {
 test("push-test without devices says to pair first", async () => {
   const s = setup()
   assert.match(await s.run("push-test"), /no paired devices/)
+})
+
+test("push-test failure rows carry the machine code only; detail goes to the log", async () => {
+  const s = setup()
+  await s.store.saveDevice(makeDevice("dev_phone"))
+  s.relay.pushQueue.push(
+    new RelayError(401, "grant_expired", "grant is expired <script>alert(1)</script>"),
+  )
+  const text = await s.run("push-test")
+  assert.match(text, /dev_phone\s+FAILED grant_expired/)
+  // Relay-controlled free text must never reach the prompt-bound report.
+  assert.ok(!text.includes("<script>"))
+  assert.ok(!text.includes("grant is expired"))
+  // …but it is preserved in the server log for debugging.
+  assert.ok(s.logs.some((message) => message.includes("grant is expired")))
 })

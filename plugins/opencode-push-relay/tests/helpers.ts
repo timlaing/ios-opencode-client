@@ -23,6 +23,12 @@ import { PushStore as Store } from "../src/store.ts"
 
 export class MemoryKv implements Kv {
   private readonly map = new Map<string, unknown>()
+  private readonly pageSize: number | undefined
+
+  /** `pageSize` emulates the server's paginated storage.list (a `next` cursor). */
+  constructor(pageSize?: number) {
+    this.pageSize = pageSize
+  }
 
   async get(key: string): Promise<unknown | undefined> {
     return this.map.get(key)
@@ -45,13 +51,18 @@ export class MemoryKv implements Kv {
     const keys = [...this.map.keys()].filter((key) => key.startsWith(options.prefix)).sort()
     const ranged =
       options.after === undefined ? keys : keys.filter((key) => key > (options.after as string))
-    const limited = options.limit === undefined ? ranged : ranged.slice(0, options.limit)
-    return { entries: limited.map((key) => ({ key, value: this.map.get(key) })) }
+    const cap = options.limit ?? this.pageSize
+    const limited = cap === undefined ? ranged : ranged.slice(0, cap)
+    const last = limited.at(-1)
+    return {
+      entries: limited.map((key) => ({ key, value: this.map.get(key) })),
+      next: last !== undefined && ranged.length > limited.length ? last : undefined,
+    }
   }
 }
 
-export function makeStore(): PushStore {
-  return new Store(new MemoryKv())
+export function makeStore(options: { scope?: string; kv?: Kv } = {}): PushStore {
+  return new Store(options.kv ?? new MemoryKv(), options.scope)
 }
 
 export function makeConfig(overrides: Partial<PushConfig> = {}): PushConfig {
@@ -72,6 +83,7 @@ export function makeConfig(overrides: Partial<PushConfig> = {}): PushConfig {
 export function makeDraft(overrides: Partial<PushDraft> = {}): PushDraft {
   const sessionID = overrides.sessionID ?? "ses_1"
   const transitionID = overrides.transitionID ?? "evt_1"
+  const { failureSummary = null, ...rest } = overrides
   return {
     category: "sessionCompleted",
     sessionID,
@@ -80,7 +92,8 @@ export function makeDraft(overrides: Partial<PushDraft> = {}): PushDraft {
     ledgerKey: `host:host-a|session:${sessionID}|owner:-|transition:${transitionID}`,
     title: "Session completed",
     body: "The session finished successfully.",
-    ...overrides,
+    ...rest,
+    failureSummary,
   }
 }
 

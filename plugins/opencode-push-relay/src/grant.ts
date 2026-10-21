@@ -3,12 +3,18 @@
 import { sha256hex } from "./signing.ts"
 
 /**
- * Decode-only grant inspection — mirrors `relay_client.grant_claims`.
+ * Local claim inspection for enrollment — mirrors `relay_client.grant_claims`.
  *
- * This does NOT verify the grant signature; the relay verifies grants itself
- * on every delivery, so nothing security-relevant relies on this decode. The
- * checks below are pairing-time sanity checks so a mis-paired client fails
- * fast with a declared RPC error instead of a mystery at push time.
+ * The grant's Ed25519 signature is made by the RELAY's grant-issuer key,
+ * which v1 deliberately never ships to tenants ("single issuer key in v1, no
+ * key-set shipping" — enrollment-spec A15), so this module cannot verify it.
+ * The signature check happens through the relay instead: `handlers.ts` calls
+ * `POST /v1/enroll/renew` with the presented grant before storing anything —
+ * the relay verifies the signature and re-issues the grant it just minted.
+ * What is verified HERE are the claims the relay itself enforces on
+ * `/v1/push` (tenant, pubkey, app, destination-token hash, expiry): cheap
+ * pairing-time sanity checks so a mis-paired client fails fast with a
+ * declared RPC error instead of a mystery at push time.
  */
 export interface GrantClaims {
   readonly jti?: string
@@ -43,20 +49,24 @@ export type EnrollmentProblem =
   | "malformed_grant"
   | "grant_expired"
   | "tenant_mismatch"
+  | "app_mismatch"
   | "pubkey_mismatch"
   | "token_mismatch"
 
 export interface EnrollmentExpectation {
   readonly tenant: string
+  readonly app: string
   readonly publicB64: string
   readonly destinationToken: string
 }
 
 /**
- * Cross-check a delivered grant against the current binding before storing it.
- * The grant must be bound to this tenant, this host's signing key, and exactly
- * the destination token the client is pairing — the same three claims the
- * relay enforces on `/v1/push`.
+ * Cross-check a presented grant's claims against the current binding before
+ * it is handed to the relay for signature verification. The claims must bind
+ * this tenant, this app, this host's signing key, and exactly the destination
+ * token the client is pairing — the same claims the relay enforces on
+ * `/v1/push`. Claim checks alone cannot rule out forgery (see the module
+ * comment); callers must verify the signature through the relay.
  */
 export function validateEnrollment(
   grant: string,
@@ -68,6 +78,7 @@ export function validateEnrollment(
     return { ok: false, problem: "grant_expired" }
   }
   if (claims.ten !== expected.tenant) return { ok: false, problem: "tenant_mismatch" }
+  if (claims.app !== expected.app) return { ok: false, problem: "app_mismatch" }
   if (claims.tpk !== expected.publicB64) return { ok: false, problem: "pubkey_mismatch" }
   if (claims.tok !== `sha256:${sha256hex(expected.destinationToken)}`) {
     return { ok: false, problem: "token_mismatch" }

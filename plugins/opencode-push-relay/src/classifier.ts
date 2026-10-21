@@ -12,6 +12,9 @@
  * Privacy rule (docs/notifications.md): category copy only — never transcript
  * text, tool arguments, or file content. The `summaries` level may carry a
  * short server-provided failure summary, exactly like the local classifier.
+ * The level itself is a DEVICE preference: a draft carries both the minimal
+ * body and the optional failure summary, and the engine builds each device's
+ * alert from that device's own `contentLevel`.
  */
 
 export const ALL_CATEGORIES = [
@@ -36,6 +39,8 @@ export interface PushDraft {
   ledgerKey: string
   title: string
   body: string
+  /** Server-provided failure reason for `summaries` devices; null otherwise. */
+  failureSummary: string | null
 }
 
 /** Shape of one `ctx.event.subscribe()` item, narrowed defensively. */
@@ -47,7 +52,6 @@ export interface RawEvent {
 
 export interface ClassifyOptions {
   readonly categories: readonly PushCategory[]
-  readonly contentLevel: ContentLevel
 }
 
 function stringOf(value: unknown): string | null {
@@ -113,6 +117,7 @@ export function classify(
   let ownerID: string | null
   let title: string
   let body: string
+  let summary: string | null = null
   switch (type) {
     case "session.execution.succeeded":
       category = "sessionCompleted"
@@ -124,11 +129,10 @@ export function classify(
       category = "sessionFailed"
       ownerID = null
       title = "Session failed"
-      if (options.contentLevel === "summaries") {
-        body = failureSummary(data) ?? "The session stopped with an error."
-      } else {
-        body = "The session stopped with an error."
-      }
+      body = "The session stopped with an error."
+      // Carried for devices at the `summaries` level; the minimal body above
+      // stays the copy for `minimal` devices (per-device contentLevel).
+      summary = failureSummary(data)
       break
     case "permission.asked":
       category = "permissionRequested"
@@ -163,5 +167,6 @@ export function classify(
     ledgerKey: ledgerKey(hostID, sessionID, ownerID, transitionID),
     title,
     body,
+    failureSummary: summary,
   }
 }
