@@ -33,8 +33,7 @@ public struct Host: Identifiable, Hashable, Codable, Sendable {
         self.lastVersion = lastVersion
     }
 
-    /// Diagnostics-safe description: identifiers only, addresses redacted
-    /// (docs/local-push-implementation.md §11).
+    /// Diagnostics-safe description: identifiers only, addresses redacted.
     public var redactedDiagnosticsDescription: String {
         "host \(id.rawValue) (address redacted)"
     }

@@ -7,7 +7,7 @@ The user selected **completely free** on 17 October 2026.
 - No paid download, advertising, sponsorship placement, supporter purchase, paid removal, subscription, or feature paywall.
 - Price and purchase Family Sharing decisions are not applicable.
 - Do not integrate an ad SDK or StoreKit purchase flow for the current design.
-- Core functionality and initial local push remain available without payment.
+- Core functionality remains available without payment.
 - Future Worker/APNs operating costs need a sustainable funding/usage plan; no charge or subscription is authorised by this decision.
 
 ## Licensing goals
@@ -23,7 +23,7 @@ These boundaries follow the [MPL licence, sections 2–3](https://www.mozilla.or
 
 ### Apple compatibility and release requirements
 
-MPL-2.0 section 3.2 permits different terms for executable distribution provided they do not limit recipients' MPL rights in source. Apple's [standard application EULA](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) also recognises permissions granted by open-source component licences. As concrete precedent, [Firefox iOS uses MPL-2.0](https://github.com/mozilla-mobile/firefox-ios/blob/main/LICENSE) and is [distributed through Apple's App Store](https://apps.apple.com/us/app/firefox-fast-private-browser/id989804926). These support MPL-2.0 as a suitable licence for App Store distribution; they do not guarantee approval of this app or its Local Push Connectivity entitlement.
+MPL-2.0 section 3.2 permits different terms for executable distribution provided they do not limit recipients' MPL rights in source. Apple's [standard application EULA](https://www.apple.com/legal/internet-services/itunes/dev/stdeula/) also recognises permissions granted by open-source component licences. As concrete precedent, [Firefox iOS uses MPL-2.0](https://github.com/mozilla-mobile/firefox-ios/blob/main/LICENSE) and is [distributed through Apple's App Store](https://apps.apple.com/us/app/firefox-fast-private-browser/id989804926). These support MPL-2.0 as a suitable licence for App Store distribution; they do not guarantee approval of this app.
 
 Before distributing a release, include the unmodified licence text and suitable file notices/SPDX identifiers, preserve dependency notices, offer a clear Licences/Source destination, and make the corresponding MPL-covered source available in a timely manner. Review dependency/contributor rights and executable EULA terms. Do not imply that choosing MPL relicenses third-party dependencies.
 
@@ -44,7 +44,7 @@ Advertising plus a one-off Remove Ads purchase was considered before the complet
 
 Recommended model to evaluate:
 
-- Free core app, including security controls, approvals, and initial local push.
+- Free core app, including security controls and approvals.
 - A modest, clearly labelled sponsorship/ad placement on the session-list screen.
 - A permanent one-off purchase that removes all advertising. A supporter purchase without advertising is also worth testing.
 - Introduce an advertising network only after measuring usage and reviewing its actual data collection.
@@ -56,7 +56,7 @@ For this audience, trust and uninterrupted remote work matter. Ads should never 
 
 | Free app | One-off ad removal |
 | --- | --- |
-| Agreed core functionality, including local push | Same functionality, permanently without advertising |
+| Agreed core functionality | Same functionality, permanently without advertising |
 | One restrained sponsor/ad placement in the session list | Advertising/sponsorship placements hidden |
 | Core operation works offline or when ad delivery fails | Purchase restored through StoreKit across supported devices/reinstalls |
 | No ads in chat, approvals, file previews, diffs, or terminals | Ad SDK is not initialized once paid entitlement is established |
@@ -105,10 +105,10 @@ Keep prompts, source code, file names, project/host addresses, credentials, and 
 - Include third-party SDK collection in App Store privacy disclosures and applicable privacy manifests. Provide accessible privacy controls and withdrawal mechanisms where required.
 - Keep the app usable if tracking is declined or an ad cannot load. Do not make paid functionality depend on sharing advertising/analytics data.
 - Provide a way to report inappropriate ads and ensure ad content matches the app's age rating.
-- Keep advertising within the main app. Do not place it in notification banners, the Local Push extension, widgets, or Live Activities.
+- Keep advertising within the main app. Do not place it in notification banners, widgets, or Live Activities.
 - Avoid interstitials and rewarded-ad gates for remote execution, security, approvals, and notification delivery.
 
-Do not add an ad SDK to the local-push or widget extension targets. Keep native host connections and trusted web panels isolated from advertising content and navigation.
+Do not add an ad SDK to any extension target. Keep native host connections and trusted web panels isolated from advertising content and navigation.
 
 ## Disposition of earlier commercial questions
 
@@ -128,7 +128,7 @@ Do not add an ad SDK to the local-push or widget extension targets. Keep native 
 - No ad or analytics request contains task content, private paths, credentials, or host topology.
 - No ads appear in operational screens, notifications, extensions, widgets, or Live Activities.
 - Paid entitlement suppresses advertising initialization and display; purchase/restore/refund paths work.
-- Core app/local push work when ad servers and the App Store are unreachable.
+- Core app work when ad servers and the App Store are unreachable.
 - Tracking/consent choices are respected and privacy disclosures match actual SDK behavior.
 - Pricing/purchase copy accurately states what is permanent and what future services are excluded.
 - Performance, battery, accessibility, and native-navigation tests still pass with monetisation enabled.

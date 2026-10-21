@@ -18,8 +18,7 @@ struct DiagnosticsEntry: Codable, Equatable, Sendable, Identifiable {
     var category: Category
     var severity: Severity
     /// Redacted BEFORE storage — an export can only ever leak what a
-    /// single line holds (docs/local-push-implementation.md: "Keep
-    /// SSIDs/addresses redacted from default exported diagnostics").
+    /// single line holds (SSIDs/addresses never enter the log raw).
     var message: String
 }
 

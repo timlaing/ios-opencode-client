@@ -27,7 +27,7 @@ The design now includes concrete [API/workflow bindings](api-contract.md), [S01�
 - **Support (21A):** use GitHub issues for public support and a separate private route for security reports. Do not direct sensitive diagnostics or security disclosures into public issues.
 - **Draft backup (22B):** include unsent draft text and metadata in device backups for restoration, without enabling cross-device draft sync. Attachment copies remain excluded; restored drafts must identify missing attachments and require reattachment before sending.
 - **Host entry (23B, refined):** reuse the existing OpenCode web authentication/pairing process: manual address/password entry, pasted `opencode pair` links, and its existing QR payload. Review the scanned host identity before connecting; scanning must not silently trust a certificate or execute commands. Do not invent a separate QR/enrollment protocol.
-- **Relay funding (24C):** leave funding undecided and treat an agreed operating/funding plan as a launch blocker for future shared remote push. This does not block the initial local-push release.
+- **Relay funding (24C):** leave funding undecided and treat an agreed operating/funding plan as a launch blocker for future shared remote push. This does not block the initial release.
 - **Licence (25C, subsequently decided):** select MPL-2.0. App Store distribution is supported by its executable/source distinction and current Firefox iOS precedent; complete the app-specific dependency, notice, source-release, and executable-EULA review before publication. No royalty or additional mandatory on-screen-credit clause is selected.
 - **iPad windows (26A):** support multiple app windows in the initial release, with different projects/sessions open side by side.
 - **Default draft retention (27A):** keep drafts until sent or explicitly discarded by default; the retention setting remains configurable.
@@ -40,11 +40,11 @@ These choices define implementation requirements; the verification work below re
 
 Use the [web-derived implementation decision register](implementation-decisions.md) as the current list of choices. The table below tracks completion evidence; an open verification row does not mean an existing web protocol needs redesigning.
 
-All nine initial engineering areas have documented defaults. The pinned API/workflow catalog, screen specification, fixtures and mock are supplied. Maintainer-specific deployment inputs, local-push entitlement/device evidence, dependency validation, runtime edge cases, and the later relay's secure enrollment/funding remain outstanding. No additional routine preference round is needed to proceed.
+All nine initial engineering areas have documented defaults. The pinned API/workflow catalog, screen specification, fixtures and mock are supplied. Maintainer-specific deployment inputs, dependency validation, runtime edge cases, and the later relay's secure enrollment/funding remain outstanding. No additional routine preference round is needed to proceed.
 
 | Timing | Gap | Required work | Evidence of completion |
 | --- | --- | --- | --- |
-| Before substantial development | Local-push feasibility | Obtain Apple's App Push Provider entitlement and prototype native event delivery in the extension | Signed physical-device build receives alerts while locked and the main app is suspended |
+| — | Local-push feasibility | RETIRED — local push removed 21 October 2026; the entitlement gate never opened | — |
 | Before substantial development | Host onboarding | Define installation/service startup, trusted HTTPS, VPN reachability, authentication, and troubleshooting | A new user connects a clean macOS/Linux host without developer intervention |
 | Before substantial development | Device trust and revocation | Implement the existing web pairing/password flow, document native token expiry/password rotation, and specify lost-phone response, local host removal, and actual server-enforced limits | Existing protocol source verified; native-device pairing, expiry, and recovery/revocation tests still required |
 | Supplied; verify during integration | Concrete API/parity matrix | Initial workflows/screen bindings, complete pinned route/schema catalog, events/errors and baseline gaps are defined | Generated fixtures and contract/HTTP mock checks supplied; record live-host/device results per workflow; do not infer web support merely from a route |
@@ -85,7 +85,7 @@ Decide and document:
 - Preserve the selected current-screen app-switcher preview and specify its interaction with the optional app lock. Implement the onboarding notification-privacy choice, including safe behavior before a choice is made.
 - Implement tap-to-load external images and default-browser external links; untrusted content must not cause host credentials to be forwarded. Specify allowed URL schemes and handling of unsafe destinations.
 - Which preview types can execute active content and how that is disabled or isolated.
-- How narrow Keychain access can be while still allowing local push after the device locks. Test first unlock after reboot and subsequent locks; do not solve availability by storing credentials unprotected.
+- How narrow Keychain access can be while still meeting any pre-unlock credential need. Test first unlock after reboot and subsequent locks; do not solve availability by storing credentials unprotected.
 - Which local diagnostic fields are collected, their retention, and how users preview/redact a support export before explicitly sharing it.
 
 The [selected model](monetisation.md) excludes advertising and purchasing. Diagnostics stay local, with no automatic telemetry or crash uploads. Support sharing is an explicit user action after reviewing a redacted report.
@@ -107,11 +107,11 @@ Set budgets before implementation for paging/virtualizing long histories, limiti
 - Supply a safe, useful demo mode and a reviewer-accessible setup. Do not require reviewers to join a private production VPN or use personal credentials.
 - Identify who handles support and security reports, supported server versions, diagnostic retention, and service incidents.
 - Budget for Apple membership, compatibility maintenance, support, and any future cloud services. A free hosting allowance does not remove operating obligations.
-- Keep initial local push as a requirement. Entitlement denial requires an explicit product decision; foreground-only alerts are not an equivalent fallback.
+- Local push is not a requirement — removed by decision on 21 October 2026; foreground-only delivery is the honest current state, not a fallback.
 
 ## Order of work
 
-1. Prove local push and the direct host connection on physical devices.
+1. Prove the direct host connection on physical devices.
 2. Complete onboarding, trust/revocation, and the initial API/parity matrix.
 3. Specify configuration conflicts, data protection, performance budgets, and compatibility policy.
 4. Implement and test the initial native workflows.

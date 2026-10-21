@@ -4,12 +4,8 @@ import UserNotifications
 
 /// S17 — Notifications & activities (docs/navigation-screens.md):
 /// the iOS permission state and the app's own choices are SEPARATE
-/// states, both shown. The dormant local-push pipeline is presented
-/// with its honest status (docs/local-push-implementation.md §"Status
-/// and diagnostics": an inactive manager or missing entitlement must
-/// never read as healthy delivery). Controls match the
-/// implementation-defaults.md "Notifications"/"Live Activities"
-/// defaults exactly.
+/// states, both shown. Controls match the implementation-defaults.md
+/// "Notifications"/"Live Activities" defaults exactly.
 struct NotificationsSettingsView: View {
     @Environment(SettingsLibrary.self) private var settings
     @Environment(SessionLocalStateStore.self) private var localState
@@ -22,7 +18,6 @@ struct NotificationsSettingsView: View {
             contentSection
             categoriesSection
             scopeSection
-            deliverySection
         }
         .scrollContentBackground(.hidden)
         .background(Color("AppBackgroundColor"))
@@ -105,18 +100,6 @@ struct NotificationsSettingsView: View {
             Text("Scope")
         } footer: {
             Text("Follow sessions from a row's menu in Sessions — only app-started or followed sessions can notify. Live Activities show their last update time and can go stale while the app is suspended.")
-        }
-    }
-
-    // MARK: - Delivery status (the dormant pipeline, honestly)
-
-    private var deliverySection: some View {
-        Section {
-            LabeledContent("Local Delivery", value: "Not Active")
-        } header: {
-            Text("Delivery")
-        } footer: {
-            Text("Background delivery through Local Push Connectivity needs Apple to approve this app's push entitlement. Your settings here are saved and apply the moment delivery activates. Foreground banners for turns that finish while the app is inactive already work.")
         }
     }
 

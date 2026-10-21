@@ -31,7 +31,7 @@ public enum TransportError: Error, Equatable, Sendable {
     case connectionFailed(String)
     case cancelled
 
-    /// 401/403 map to "Re-pair Required" in the UI (docs/local-push-implementation.md).
+    /// 401/403 map to "Re-pair Required" in the UI.
     public var isAuthenticationFailure: Bool {
         guard case .http(let status, _) = self else { return false }
         return status == 401 || status == 403

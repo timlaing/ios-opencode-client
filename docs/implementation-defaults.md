@@ -2,7 +2,7 @@
 
 These defaults resolve the engineering choices in the [decision register](implementation-decisions.md). They are the implementation starting point, subject to compatibility, dependency, and device verification. They are not claims of implemented or measured behavior.
 
-Deliver the fullest sensible functionality within the agreed release scope. Derive behavior from the pinned web app/server first, then adapt to native platform capabilities. Preserve initial local push, multiple iPad windows, and the selected privacy policies. Todos, voice, advanced editing/Git/terminal stages, and later remote APNs remain in their agreed stages; completeness does not silently change those decisions. Do not reduce supported formats, history access, or controls merely to simplify implementation.
+Deliver the fullest sensible functionality within the agreed release scope. Derive behavior from the pinned web app/server first, then adapt to native platform capabilities. Preserve multiple iPad windows and the selected privacy policies. Todos, voice, advanced editing/Git/terminal stages, and later remote APNs remain in their agreed stages; completeness does not silently change those decisions. Do not reduce supported formats, history access, or controls merely to simplify implementation.
 
 ## Defaults and configuration
 
@@ -24,7 +24,7 @@ Deliver the fullest sensible functionality within the agreed release scope. Deri
 | App lock | Off; if enabled, require device authentication after one minute away | Immediate/1/5/15 minutes; Face ID/Touch ID with device-passcode fallback. Protect foreground access while leaving authorised notification work operational |
 | App switcher | Current screen, as selected | No automatic neutral cover. Explain its interaction with the optional lock; an actual locked scene displays its normal lock screen |
 | Reopening | Restore last screen/session as the initial Settings value | Restore last screen/session or always open projects; scene-specific restoration on iPad |
-| Notifications | Ask during onboarding for categories and content privacy; only app-started/explicitly followed sessions qualify | Category switches, generic/detailed content, follow/unfollow, per-host local-push enablement and eligible Wi-Fi setup; generic content until privacy choice is made |
+| Notifications | Ask during onboarding for categories and content privacy; only app-started/explicitly followed sessions qualify | Category switches, generic/detailed content, follow/unfollow; generic content until privacy choice is made |
 | Live Activities | Ask during onboarding; do not auto-start before selection; show last-updated/stale status | Automatic for app-started sessions or manual Follow Session; Stop Following and system activity permission/status |
 | Diagnostics | Local redacted logs: seven days or 5 MiB, whichever limit is reached first; no automatic upload | View, clear, preview redacted export, share manually. No switch that logs credentials or complete prompts/files |
 
@@ -50,7 +50,7 @@ Use one rendering pipeline for assistant messages, user messages, and composer p
 
 ## I3: Background work and local delivery
 
-Use the [Home Assistant iOS implementation reference](local-push-implementation.md) for manager lifecycle and recovery: group hosts into a manager per eligible SSID; serialise/diff preferences; await save/remove completion; reload after an initial 0.5-second settle delay; observe manager activity plus fresh per-host status. App-open recovery is immediate with bounded 10/30/60-second rechecks when runtime/eligibility permit. Recreate an inactive manager only on explicit recovery with a confirmed matching network; do not churn active managers on transport timeouts. These source-derived defaults are separate from SSE reconnect backoff and remain subject to device validation.
+Local-push manager/recovery defaults were retired with local push itself (removed 21 October 2026; see notifications.md).
 
 Use the native event contract and web reconnect/state semantics. Maintain a connection per enabled host when the system grants extension runtime; observe all configured enabled hosts rather than silently imposing a product-level host cap. Measure multiple-host resource use early; if an actual platform limit appears, surface it and resolve the product impact explicitly.
 
@@ -58,13 +58,13 @@ For transient failures, start with reconnect delays of 1, 2, 4, 8, 16, 32, then 
 
 Deduplicate notifications with stable web/server-derived event/run identities, persisted for seven days with a 10,000-record storage ceiling; validate that identity construction distinguishes genuine repeated events. On reconnect, prioritise visible/followed sessions and reconcile authoritative state. Do not emit a backlog of historical completion alerts.
 
-Use file-backed background URLSession upload tasks where the existing upload endpoint and VPN configuration pass tests. This continues transfer only, never automatically sends a prompt after a suspended upload finishes. Do not claim arbitrary upload resume/range support from the raw-write endpoint. On failure, reconcile task/path state before offering retry; retain the draft. No ordinary background timer substitutes for Local Push Connectivity. Local Live Activities remain explicitly stale when main-app runtime is unavailable.
+Use file-backed background URLSession upload tasks where the existing upload endpoint and VPN configuration pass tests. This continues transfer only, never automatically sends a prompt after a suspended upload finishes. Do not claim arbitrary upload resume/range support from the raw-write endpoint. On failure, reconcile task/path state before offering retry; retain the draft. Local Live Activities remain explicitly stale when main-app runtime is unavailable.
 
 ## I4: Security and host lifecycle
 
 Use system TLS trust with valid public certificates or a user-installed trusted private CA. No Trust Any Certificate or Disable TLS Validation option. Pairing remains the existing OpenCode protocol. Block cross-origin credential forwarding and unexpected pairing redirects; revalidate a changed address before attaching credentials. A display name or synced address is not cryptographic host identity.
 
-Use device-only, non-synchronising Keychain items. Default to WhenUnlockedThisDeviceOnly for foreground-only host credentials and AfterFirstUnlockThisDeviceOnly when local-push/background-upload access is enabled for that host. Share only required items with the extension. Require re-pairing after restoration to another device; there is no credential-backup toggle. Test reboot-before-first-unlock, subsequent locks, disabled background access, and the resulting failure/status flows.
+Use device-only, non-synchronising Keychain items. Default to WhenUnlockedThisDeviceOnly for foreground-only host credentials; AfterFirstUnlockThisDeviceOnly applies only where a credential must be readable while the device is still locked. Nothing is shared with another process. Require re-pairing after restoration to another device; there is no credential-backup toggle. Test reboot-before-first-unlock and subsequent locks.
 
 The optional app lock protects UI access; do not attach a biometric requirement to the same Keychain read needed by background notification delivery. Keep the selected current-screen switcher behavior. Removing a host clears its local credential, subscription, cached history, and related pending work after explaining effects on drafts; require explicit confirmation before discarding unsent drafts. Offer to retain local draft text for manual recovery. Remove Host does not rotate server credentials or revoke other clients.
 
@@ -94,7 +94,7 @@ Persist messages only within the selected 30-day server-timestamp window. Older 
 
 ## I9: Build and release
 
-Use an Xcode project with app, local-push extension, and WidgetKit/Live Activity targets, plus local Swift packages for shared domain/transport/storage code. Use Swift Package Manager, pin exact resolved dependencies, and commit Package.resolved. Keep rendering dependencies out of the push extension. Use separate development/production identifiers and configuration; actual team, bundle IDs, repository URLs, and support destinations are deployment inputs supplied by the maintainer, never fabricated.
+Use an Xcode project with app and WidgetKit/Live Activity targets, plus local Swift packages for shared domain/transport/storage code. Use Swift Package Manager, pin exact resolved dependencies, and commit Package.resolved. Use separate development/production identifiers and configuration; actual team, bundle IDs, repository URLs, and support destinations are deployment inputs supplied by the maintainer, never fabricated.
 
 Use GitHub Actions on macOS for build, unit/contract tests, simulator UI smoke tests, dependency/licence checks, and artefact creation. Keep physical-device notification, multi-window, VPN, and accessibility checks as release acceptance gates. Send reviewed builds to TestFlight; production App Store releases remain explicit maintainer actions. Preserve an immutable source tag/archive for each distributed binary and in-app licence/source links. No signing keys or APNs keys belong in repository files or diagnostics.
 
@@ -118,6 +118,5 @@ Expose settings for user outcomes, grouped into Appearance, Connections, Privacy
 - [Apple: background transfers and file-backed upload constraints](https://developer.apple.com/documentation/foundation/downloading-files-in-the-background)
 - [Apple: device-only Keychain access](https://developer.apple.com/documentation/security/ksecattraccessibleafterfirstunlockthisdeviceonly)
 - [Apple: iCloud key-value settings storage and quotas](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/UserDefaults/StoringPreferenceDatainiCloud/StoringPreferenceDatainiCloud.html)
-- [Apple: Local Push provider](https://developer.apple.com/documentation/networkextension/neapppushprovider)
 
 Web-specific source evidence remains in the [derivation register](implementation-decisions.md#pinned-source-evidence).

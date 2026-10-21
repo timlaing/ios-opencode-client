@@ -50,54 +50,32 @@ final class SettingsLibraryTests: XCTestCase {
         XCTAssertEqual(SettingsState.historyRetentionDays, 30, "the 30-day history policy is fixed, not a setting")
     }
 
-    func testResetToDefaultsRestoresEveryDocumentedDefaultAndClearsHostRows() {
+    func testResetToDefaultsRestoresEveryDocumentedDefault() {
         let library = SettingsLibrary(defaults: defaults)
         library.update { $0.appearance = .dark; $0.appLockEnabled = true; $0.cacheSizePolicy = .mib2048 }
-        library.updatePushSettings(for: "host_one") { $0.enabled = true; $0.ssids = ["Home"] }
 
         library.resetToDefaults()
 
         XCTAssertEqual(library.state, SettingsState(), "back to the implementation-defaults table")
-        XCTAssertTrue(library.hostPush.isEmpty, "per-host enable flags + eligible SSIDs are local data — they go with the wipe")
 
         let reloaded = SettingsLibrary(defaults: defaults)
         XCTAssertEqual(reloaded.state, SettingsState(), "the reset persists across relaunch")
-        XCTAssertTrue(reloaded.hostPush.isEmpty)
     }
 
     func testUpdatesPersistAcrossARelaunchAndTouchNothingElse() {
         let library = SettingsLibrary(defaults: defaults)
         library.update { $0.appLockEnabled = true }
         library.update { $0.draftRetention = .days(7) }
-        library.updatePushSettings(for: "host_one") { $0.enabled = true; $0.ssids = ["HomeWi-Fi"] }
 
         let reloaded = SettingsLibrary(defaults: defaults) // app relaunch
         XCTAssertTrue(reloaded.state.appLockEnabled)
         XCTAssertEqual(reloaded.state.draftRetention, .days(7))
         XCTAssertEqual(reloaded.state.appearance, .system, "an unrelated field keeps its default")
-        XCTAssertEqual(reloaded.pushSettings(for: "host_one").ssids, ["HomeWi-Fi"])
 
         reloaded.update { $0.appLockEnabled = false }
         let again = SettingsLibrary(defaults: defaults)
         XCTAssertFalse(again.state.appLockEnabled, "a later edit persists too")
         XCTAssertEqual(again.state.draftRetention, .days(7), "and never clobbers other fields")
-    }
-
-    func testHostPushRowsAreIsolatedAndRemovedWithTheirHost() {
-        let library = SettingsLibrary(defaults: defaults)
-        library.updatePushSettings(for: "host_one") { $0.enabled = true }
-
-        XCTAssertEqual(library.pushSettings(for: "host_two"), HostPushSettings(), "an unconfigured host gets the default row")
-        library.updatePushSettings(for: "host_two") { $0.ssids = ["Cafe"] }
-        XCTAssertTrue(library.pushSettings(for: "host_one").enabled, "editing one host never touches another")
-
-        library.removeHostSettings("host_one")
-        XCTAssertEqual(library.pushSettings(for: "host_one"), HostPushSettings(), "Remove Host clears its local settings")
-        XCTAssertEqual(library.pushSettings(for: "host_two").ssids, ["Cafe"], "the other host survives")
-
-        let reloaded = SettingsLibrary(defaults: defaults)
-        XCTAssertNil(reloaded.hostPush["host_one"], "the removal persists")
-        XCTAssertEqual(reloaded.hostPush["host_two"]?.ssids, ["Cafe"], "and leaves the other host's row alone")
     }
 
     func testDraftExpiryFollowsTheRetentionAndIsNilUntilDiscarded() {

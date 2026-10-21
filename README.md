@@ -25,8 +25,7 @@ Product design and implementation guide for a native iPhone/iPad client that pre
 - Prefer native views. Embed web panels only where they preserve complex functionality that is impractical to reproduce initially.
 - Connect directly to the user's OpenCode hosts over authenticated HTTPS through their VPN.
 - Support macOS and Linux hosts; target iOS/iPadOS 18 initially.
-- Include local push notifications in the initial release, using Apple's Local Push Connectivity extension.
-- Use Home Assistant iOS as the implementation reference for local-push manager/provider lifecycle, network grouping, recovery and status; adapt transport to existing OpenCode SSE and pairing.
+- Local push notifications were removed by decision on 21 October 2026: no Local Push Connectivity extension, no entitlement request, foreground banners and Live Activities only.
 - Include local Live Activities initially, with an honest stale-state display when the app cannot update them.
 - Document an optional companion plugin and stateless Cloudflare Worker for a later release's APNs alerts and remote Live Activity updates.
 - Keep core app operation independent of that plugin and Worker.
@@ -62,8 +61,7 @@ Product design and implementation guide for a native iPhone/iPad client that pre
 | Document                                                                              | Purpose                                                                                                                             |
 | ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | [App design and feature checklist](docs/app-design.md)                                | Review features, screens, native-view priorities, and staged web parity                                                             |
-| [Notifications and Cloudflare Worker design](docs/notifications.md)                   | Initial local push, local Live Activity limits, and the future stateless APNs relay                                                 |
-| [Home Assistant-derived local push implementation](docs/local-push-implementation.md) | Pinned HA source map, manager/provider lifecycle, Wi-Fi grouping, controlled recovery, status/delivery, and native acceptance tests |
+| [Notifications and Cloudflare Worker design](docs/notifications.md)                   | Live Activity limits and the future stateless APNs relay (local push removed 21 October 2026)                                       |
 | [Implementation guide](docs/implementation-guide.md)                                  | Integration boundaries, build sequence, verification, and release criteria                                                          |
 | [Remaining implementation decisions](docs/implementation-decisions.md)                | Web-derived solutions, native engineering choices, and separate verification dependencies                                           |
 | [Implementation defaults and user controls](docs/implementation-defaults.md)          | Selected storage/rendering/security/sync defaults, complete interactions, resource budgets, and configurable preferences            |
@@ -81,11 +79,11 @@ The commercial model is decided: completely free. Earlier monetisation analysis 
 
 Select a host → create or open a project → create or resume a session → attach context → follow thinking/tool activity → answer questions or approvals → review files and changes.
 
-On configured Wi-Fi, the phone can receive local notifications while the main app is suspended, subject to Apple's Local Push Connectivity entitlement and platform behavior. This is an initial-release requirement, not a later enhancement. Cellular/VPN access alone does not activate local push.
+Notifications while the main app is suspended were removed with local push (21 October 2026). What remains is honest foreground delivery: banners for turns that finish while the app is inactive but not yet suspended, and Live Activities that show their stale state when the app cannot update them.
 
 ## Version and evidence
 
-The initial product decisions and routine implementation defaults are settled. The concrete API/workflow matrix, S01–S20 screen/state specifications, pinned OpenAPI snapshot, generated fixtures and runnable mock are now supplied as an implementation package. No routine initial-version preference questionnaire remains. Apple signing/team identifiers and live test hosts/devices are deployment inputs; local-push entitlement approval and real-host/physical-device evidence are release gates. Future shared-relay decisions do not block the initial version.
+The initial product decisions and routine implementation defaults are settled. The concrete API/workflow matrix, S01–S20 screen/state specifications, pinned OpenAPI snapshot, generated fixtures and runnable mock are now supplied as an implementation package. No routine initial-version preference questionnaire remains. Apple signing/team identifiers and live test hosts/devices are deployment inputs; real-host/physical-device evidence is the release gate. Future shared-relay decisions do not block the initial version.
 
 The initial integration baseline is **OpenCode v2.0.25**, commit `b44eea9e204024db2b480a136ece29d790d5f593`, matching the user's reported version and installed package path. Relevant server and web-client source was inspected during design. Native server mutations and device delivery have not been tested against a running host.
 
@@ -106,7 +104,6 @@ The mock uses generated data only, defaults to loopback, and never executes real
 
 ## Key acceptance conditions
 
-- Initial release includes a working Local Push Connectivity extension tested on physical devices. Entitlement unavailability blocks that requirement; it must not be silently replaced by foreground-only alerts.
 - Native views are the default. Every web fallback has a documented reason and an acceptance test.
 - Reconnection does not duplicate prompts, configuration edits, or approvals.
 - A server's API availability is distinguished from a feature being implemented in its web client and from verified mobile behavior.

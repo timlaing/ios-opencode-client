@@ -5,9 +5,8 @@ import OpenCodeStorage
 /// sizes", Clear Cache, Clear Local Data — docs/navigation-screens.md).
 /// Plain values over INJECTED directories so every test runs in temp
 /// space; the app uses the standard Caches directory and the
-/// app-private drafts location — the same Application Support fallback
-/// shape as `HostLibrary.databaseDirectory`, since the App Group
-/// entitlement is still pending (docs/local-push-implementation.md).
+/// app-private drafts location — the same Application Support shape
+/// as `HostLibrary.databaseDirectory`.
 struct StorageLibrary: Sendable {
     let cacheDirectory: URL
     let draftsDirectory: URL

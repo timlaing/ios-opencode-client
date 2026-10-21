@@ -34,7 +34,7 @@ struct WelcomeView: View {
                 .multilineTextAlignment(.center)
             VStack(spacing: 6) {
                 Text("Notifications: iOS asks the first time you open a conversation — content stays generic until you choose otherwise in Settings ▸ Notifications.")
-                Text("Background delivery is pending Apple approval of the app's push entitlement; banners while the app is inactive already work.")
+                Text("Banners cover turns that finish while the app is inactive; a turn that ends after iOS suspends the app shows no banner — open the app to catch up.")
             }
             .font(.footnote)
             .foregroundStyle(.tertiary)

@@ -14,7 +14,7 @@ This report records the documentation/contract/mock work completed on 17 October
 | Regeneration | Seven generated outputs compared by SHA-256 across repeated generation; byte-for-byte reproducible |
 | Documentation | Markdown fences, local file links, heading anchors, and screen bindings checked |
 | Licensing | Original mock/test/generator code marked MPL-2.0; upstream OpenAPI retains MIT licence notice |
-| Home Assistant local-push reference | Inspected pinned manager/provider/config/state/delivery/Live Activity source and lifecycle tests; concrete adaptation guide supplied. Native lifecycle tests/device delivery are not yet executed |
+| Home Assistant local-push reference | RETIRED — local push removed 21 October 2026; its adaptation guide (docs/local-push-implementation.md) was deleted in the same change |
 
 Tests include schema vocabulary/fixtures, route/scope coverage, token expiry/password rotation, one-time pairing, browser/JSON redemption, project/session creation and readback, message pagination, inbox edits/conflicts, forms/approvals/stale replies, files/ranges/ETags, JSONC handling/plugin readback, MCP runtime state, attachments, SSE/recovery, generated examples, and failure/retry/waiting/unknown/duplicate scenarios. Passing these tests proves properties of the synthetic reference mock, not complete fidelity for each of 61 operations. Known simplifications are listed in the [mock guide](testing-mock.md#fidelity-and-limits).
 
@@ -23,7 +23,7 @@ Tests include schema vocabulary/fixtures, route/scope coverage, token expiry/pas
 - Implement the Swift adapter, repositories, native views, persistence, scene coordination, iCloud and background components using the supplied contracts/defaults.
 - Validate experimental filesystem/configuration mutations, real inbox scheduling, compaction, plugin policy/reload, attachments and reconnect behavior against disposable macOS/Linux OpenCode hosts.
 - Pin/build/test the chosen native dependencies, including the highlighter whose upstream iOS support is untested.
-- Obtain Local Push Connectivity entitlement and supply real signing/team/bundle configuration; perform signed-device Wi-Fi/VPN/lock/reboot/notification/Live Activity tests.
+- Supply real signing/team/bundle configuration; perform signed-device notification/Live Activity tests.
 - Verify native UI/accessibility, multi-window editing ownership, retention/backup restoration, diagnostic redaction and production HTTPS trust.
 - Supply actual support/repository/privacy destinations and reviewer/demo release arrangements.
 

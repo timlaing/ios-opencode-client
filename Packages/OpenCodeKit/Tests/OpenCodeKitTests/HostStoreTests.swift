@@ -47,11 +47,10 @@ final class HostStoreTests: XCTestCase {
         XCTAssertEqual(hosts.first?.lastVersion, "2.1.0")
     }
 
-    func testSharedStoresWaitForTheLockInsteadOfFailingImmediately() {
-        // The file-backed HostStore and NotificationLedger open their
-        // databases from TWO processes (app + push extension); GRDB's
-        // default busyMode is .immediateError, and both callers swallow
-        // that SQLITE_BUSY into silently missing hosts/notifications.
+    func testFileBackedStoreWaitsForTheLockInsteadOfFailingImmediately() {
+        // The file-backed HostStore relies on GRDB's default busyMode
+        // (.immediateError): callers swallow SQLITE_BUSY into silently
+        // missing hosts, so wait briefly for the lock instead.
         guard case .timeout(let seconds) = SharedDatabase.configuration.busyMode else {
             return XCTFail("shared stores must wait briefly for the lock, not fail on contention")
         }

@@ -216,12 +216,9 @@ final class HostLibrary {
         }
     }
 
-    /// The shared store directory — the same location the local-push
-    /// extension resolves (docs/local-push-implementation.md §"Architecture
-    /// and ownership"), so both processes see one host registry. Falls back
-    /// to the app's own Application Support directory until the App Group
-    /// entitlement exists; that future path change needs a one-time
-    /// migration (see SharedStoreLocation's note for the entitlement slice).
+    /// The host registry directory: the app's own Application Support
+    /// store (no other process opens it), with an equivalent fallback
+    /// if location resolution ever fails.
     private static var databaseDirectory: URL {
         (try? SharedStoreLocation.directory()) ?? appLocalFallback
     }

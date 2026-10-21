@@ -13,9 +13,7 @@ Native iOS/iPadOS app
   ├─ SwiftUI navigation, conversation, files, diffs, approvals, settings
   ├─ URLSession + OpenCode adapter + authoritative-state reconciliation
   ├─ Keychain credentials + protected local content/draft cache
-  ├─ ActivityKit / WidgetKit local Live Activity
-  └─ App Group / shared Keychain
-             └─ NEAppPushProvider local-push extension [initial release]
+  └─ ActivityKit / WidgetKit local Live Activity
 
 Authenticated HTTPS over user-managed VPN
              ▼
@@ -25,7 +23,7 @@ Existing OpenCode v2.0.25 server on macOS/Linux
                 Stateless Cloudflare Worker → APNs
 ```
 
-Core functionality and initial local push use existing native OpenCode APIs. No management gateway or compulsory plugin. Keep the future push companion isolated behind a capability check.
+Core functionality uses existing native OpenCode APIs. No management gateway or compulsory plugin. Keep the future push companion isolated behind a capability check.
 
 ## Modules and interfaces
 
@@ -40,13 +38,10 @@ Core functionality and initial local push use existing native OpenCode APIs. No 
 | IntegrationRepository | Native plugin/MCP inventory, state/configuration operations |
 | UsageModel | Last-reported context, cumulative tokens/cost, compaction |
 | NotificationCoordinator | Shared preferences, event classification, notification identity/deduplication |
-| LocalPushProvider | Small background extension, host stream lifecycle, local notifications |
 | LiveActivityCoordinator | Foreground start/update/end, timestamps, freshness, later push-token registration |
 | EmbeddedPanelCoordinator | Specific later web panels, trusted origin, host/session isolation |
 
-Use SwiftUI, Swift concurrency, URLSession, Keychain, GRDB/SQLite for durable drafts/cache/shared notification metadata, ActivityKit, WidgetKit, and NetworkExtension. Use separate stores and backup policies as specified in the defaults document. Do not share an unsynchronized in-memory store or assume app-only cache semantics work across processes.
-
-For local push, follow the [Home Assistant-derived implementation guide](local-push-implementation.md): app-side manager configuration/reload/recovery, provider lifecycle, per-host health, scheduling, and native test cases are mapped to pinned HA source. Replace its WebSocket/webhook/receipt protocol with the existing OpenCode SSE/pairing contract and our shared GRDB/Keychain stores. Do not import HA's unrelated notification commands or background work.
+Use SwiftUI, Swift concurrency, URLSession, Keychain, GRDB/SQLite for durable drafts, host state, and local metadata, ActivityKit, and WidgetKit. Use separate stores and backup policies as specified in the defaults document. Do not share an unsynchronized in-memory store or assume app-only cache semantics work across processes.
 
 Scope identifiers by host, project/location, and session. Preserve server identifiers for messages, events, and pending interactions. Never infer an action succeeded from an optimistic local UI update alone.
 
@@ -81,11 +76,11 @@ Support attachment selection from Files and the photo library, plus camera captu
 
 Open external conversation links through the default system browser. Validate URL schemes and destinations, preserve internal app navigation, and never append host credentials to external URLs.
 
-During onboarding, ask whether notifications should use generic text or include project/session titles and event details. Store the choice for the app and local-push extension, expose it in Settings, and use generic text until a choice has been made. Apply the same preference to future remote-push payloads.
+During onboarding, ask whether notifications should use generic text or include project/session titles and event details. Store the choice and expose it in Settings, using generic text until a choice has been made. Apply the same preference to future remote-push payloads.
 
 Also ask which alert categories to enable: completion, failure, approval requests, and questions. Separately ask whether Live Activities start automatically for sessions started in this app or manually through Follow Session. Persist these choices and allow changes in Settings. Until configured, do not start activities automatically or assume consent to alert categories. Explain the initial local-activity freshness limits alongside the choice; platform permissions remain separate from these app preferences.
 
-Limit notification subscriptions to sessions started from this app and sessions explicitly followed by the user. Persist host/session identities for the app and local-push extension, support unfollowing, and apply the same scope to future companion-plugin enrollment. Do not infer a subscription merely because a session was viewed or appeared in a host event stream.
+Limit notification subscriptions to sessions started from this app and sessions explicitly followed by the user. Persist host/session identities, support unfollowing, and apply the same scope to future companion-plugin enrollment. Do not infer a subscription merely because a session was viewed or appeared in a host event stream.
 
 Prepare public source for the app, future companion plugin, and Worker under the selected MPL-2.0 licence. Review dependency compatibility, contributor rights, and attribution. Include the unmodified licence text and appropriate per-file notices/SPDX identifiers, preserve third-party notices, and provide an in-app Licences/Source destination with timely access to the covered source corresponding to each distributed release. Review executable EULA terms so they preserve MPL rights in source code. No mandatory royalty or extra on-screen-credit restriction is selected. See [licensing goals and Apple compatibility](monetisation.md#licensing-goals).
 
@@ -120,7 +115,7 @@ The user selected protocol parity with the existing web app. Source inspection a
 - Match the web client's distinction between invalid input, expired/already-used code, unreachable host, and rejected authentication. Preserve a redeemed token securely when a later health check fails so a retry does not attempt to consume the code again. Reauthentication must not resend an uncertain prompt or approval.
 - Decode the existing multi-address QR payload and follow its address-selection behavior within the agreed VPN/HTTPS policy. Never send credentials or codes to unreviewed destinations or across untrusted redirects. Do not redeem codes during passive input previews. Match the pinned client's rejection of legacy credential-bearing `/connect` formats.
 
-Store the resulting credential in Keychain; share only necessary access with the local-push extension. Expiry/revocation must lead to clear re-pair/sign-in status in the app and notification diagnostics. Removing a host deletes local credentials/subscriptions; do not describe that as server-side revocation.
+Store the resulting credential in Keychain. Expiry/revocation must lead to clear re-pair/sign-in status in the app and notification diagnostics. Removing a host deletes local credentials/subscriptions; do not describe that as server-side revocation.
 
 Verify pairing, password fallback, multi-address selection, expired/spent codes, failed post-redemption health checks, token expiry, password rotation, server restart, and locked-device extension access on real hosts/devices. Protocol source verification is complete for the mechanisms above; runtime integration is not yet proven. The future shared APNs relay's enrollment/authorization remains a separate design and must not be assumed to accept OpenCode credentials.
 
@@ -130,11 +125,11 @@ Pinned sources: [web pairing parser/redemption](https://github.com/anomalyco/ope
 
 Use the supplied contracts/specifications and defaults to begin implementation, and close the early feasibility items in [design gaps and release decisions](design-review.md) before substantial UI investment. The [selected commercial model](monetisation.md) is completely free. Do not implement advertising, StoreKit purchasing, supporter products, or subscriptions.
 
-1. **Compatibility and local-push feasibility:** capture the pinned schema and sanitized fixtures; request Apple's entitlement; prototype a physical-device Local Push extension against a disposable OpenCode project. Validate native file/configuration operations separately.
+1. **Compatibility:** capture the pinned schema and sanitized fixtures; validate native file/configuration operations separately.
 2. **Core native shell:** hosts, project creation/opening, sessions/history, credentials, local cache, and version diagnostics.
 3. **Conversation and supervision:** Markdown for both roles, composer preview, thinking/tool states, attachments, agent/model selection, queue/stop behavior, approvals, questions, and usage.
 4. **Workspace and integrations:** native file tree/previews, diffs, plugin/MCP controls, verified configuration preservation/readback.
-5. **Initial local delivery and public release:** finish local-push preferences/status/deduplication, local Live Activities, reconnection, accessibility, demo mode, privacy/support materials, and TestFlight/device acceptance. Do not defer local push beyond this release.
+5. **Initial delivery and public release:** finish local Live Activities, reconnection, accessibility, demo mode, privacy/support materials, and TestFlight/device acceptance.
 6. **Staged web parity:** prefer native editing/provider/workspace controls; embed a terminal renderer or complex web panel only with a recorded reason and tests.
 7. **Optional remote delivery:** implement the companion plugin and Worker according to [notification design](notifications.md), following enrollment/security and deployed-APNs feasibility checks.
 
@@ -150,7 +145,6 @@ Initial release must demonstrate:
 - Correct project files/diffs and usage labels; no mixing of host/session content.
 - Plugin configuration edits preserve unrelated settings and comments, detect changed source before write, and verify effective state. Document concurrent-write limits of the native filesystem API.
 - VPN loss, server restart, and app suspension recover without duplicate work.
-- Each local-push scenario in [notifications.md](notifications.md#verification) passes with approved entitlements.
 - Live Activities show freshness honestly, including when a local notification arrives while the activity cannot update.
 - VoiceOver, large text, dark mode, hardware keyboard, iPhone and iPad navigation work.
 - The normal app has no dependency on cloud enrollment or the later plugin.
@@ -163,7 +157,7 @@ Maintain the parity matrix with statuses: source-verified, implemented, host-tes
 - Supplied: S01–S20 native screen/layout/navigation contract with populated, empty, loading, permission, disconnected and error states. Swift UI snapshots and device evidence follow implementation.
 - Supplied: pinned OpenAPI schema, adapter boundaries, generated synthetic fixtures, HTTP/SSE examples, and executable reference mock/tests. No private server recordings are included.
 - Host setup guide covering persistent OpenCode service, private reachability, authentication, and trusted TLS.
-- Physical-device local-push evidence and entitlement/signing instructions.
+- Physical-device evidence and signing instructions.
 - Optional plugin/Worker API design, security decisions, deployment instructions, and APNs test evidence when implemented.
 - Public-release demo mode, privacy disclosure, support contact, and reviewer setup instructions.
 - Completed decisions/evidence for [design gaps](design-review.md); verify the free app contains no ad SDK, purchase flow, subscription, or feature paywall.

@@ -220,11 +220,6 @@ private struct ServersTab: View {
         hostPendingRemoval = nil
         do {
             try library.remove(host.id)
-            // The host's local settings die with its credential
-            // (implementation-defaults.md I5): the per-host push flag
-            // and its eligible Wi-Fi list must not outlive the host
-            // (review W17 r2).
-            settings.removeHostSettings(host.id.rawValue)
         } catch {
             removalFailure = "The host could not be removed from this device."
         }

@@ -58,25 +58,6 @@ final class KeychainCredentialStoreTests: XCTestCase {
         )
     }
 
-    func testEnableBackgroundAccessUpgradesClassWithoutTouchingTheSecret() throws {
-        try store.save(secret: "token-bg", for: hostID)
-
-        try store.enableBackgroundAccess(for: hostID)
-        XCTAssertEqual(
-            try storedAccessibility(),
-            kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String,
-            "local-push-enabled hosts must be readable while the device is locked"
-        )
-        XCTAssertEqual(try store.secret(for: hostID), "token-bg", "the secret itself is untouched")
-
-        try store.enableBackgroundAccess(for: hostID) // idempotent
-        XCTAssertEqual(try storedAccessibility(), kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
-    }
-
-    func testEnableBackgroundAccessWithoutCredentialIsANoOp() throws {
-        XCTAssertNoThrow(try store.enableBackgroundAccess(for: hostID), "no item -> nothing to upgrade")
-    }
-
     func testSaveWithBackgroundAccessibilityStoresTheClassDirectly() throws {
         try store.save(secret: "token-both", for: hostID, accessibility: .afterFirstUnlockThisDeviceOnly)
         XCTAssertEqual(try storedAccessibility(), kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly as String)
@@ -84,13 +65,11 @@ final class KeychainCredentialStoreTests: XCTestCase {
     }
 
     func testSaveUpdateKeepsTheUpgradedAccessibilityClass() throws {
-        try store.save(secret: "token-1", for: hostID)
-        try store.enableBackgroundAccess(for: hostID)
+        try store.save(secret: "token-1", for: hostID, accessibility: .afterFirstUnlockThisDeviceOnly)
 
         // A re-pair rewrites the secret over the SAME item (HostID survives
         // re-pairing): the update path must not demote the class back to
-        // foreground-only — the background extension would then fail
-        // credential reads while the device is locked.
+        // foreground-only.
         try store.save(secret: "token-2", for: hostID)
 
         XCTAssertEqual(

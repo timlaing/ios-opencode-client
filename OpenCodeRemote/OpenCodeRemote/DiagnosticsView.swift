@@ -2,12 +2,8 @@ import SwiftUI
 
 /// S20 — Diagnostics & support (docs/navigation-screens.md): the
 /// last error, the redacted log with its retention story, export and
-/// clear, the honest local-push status with the counts that will
-/// appear once delivery activates, and the source/licence inventory.
-/// "Retry Local Push" from the inventory has no mechanism to retry
-/// while the pipeline is dormant, so it does not exist yet — the
-/// status explains why (the docs' honesty rule: never present a
-/// control with no real mechanism behind it).
+/// clear, and the source/licence inventory (the docs' honesty rule:
+/// never present a control with no real mechanism behind it).
 struct DiagnosticsView: View {
     /// Stateless value over the one log file — no environment needed.
     @State private var log = DiagnosticsLogStore()
@@ -21,7 +17,6 @@ struct DiagnosticsView: View {
         List {
             lastErrorSection
             logSection
-            pushSection
             sourceSection
         }
         .scrollContentBackground(.hidden)
@@ -109,21 +104,6 @@ struct DiagnosticsView: View {
             }
         } message: {
             Text("Every recorded event and the last-error display are removed. Hosts, drafts, and settings are untouched.")
-        }
-    }
-
-    // MARK: - Local push
-
-    private var pushSection: some View {
-        Section {
-            LabeledContent("Delivery", value: "Not Active")
-            LabeledContent("Received Events", value: "—")
-            LabeledContent("Relevant Events", value: "—")
-            LabeledContent("Scheduled Notifications", value: "—")
-        } header: {
-            Text("Local Push")
-        } footer: {
-            Text("Background delivery is pending Apple approval of the app's push entitlement; counts appear here once it activates, each kept separate — received, relevant, and scheduled are never merged into one number.")
         }
     }
 

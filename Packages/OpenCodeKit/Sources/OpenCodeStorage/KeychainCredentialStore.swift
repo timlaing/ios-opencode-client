@@ -4,11 +4,10 @@ import Security
 /// Device-only Keychain storage for host credentials
 /// (docs/implementation-defaults.md): `ThisDeviceOnly`, never
 /// iCloud-synced, never logged. Restoring to another device therefore requires
-/// re-pairing, by design. Foreground-only host credentials default to
-/// `WhenUnlockedThisDeviceOnly`; hosts with local-push/background access
-/// enabled are upgraded via `enableBackgroundAccess` so the extension can
-/// read them while the device is locked. The access group shared with the
-/// local-push extension is added together with the app-push entitlement.
+/// re-pairing, by design. Host credentials default to
+/// `WhenUnlockedThisDeviceOnly`; `save(accessibility:)` stores an item
+/// under `AfterFirstUnlockThisDeviceOnly` when a credential must be
+/// readable while the device is still locked.
 public struct KeychainCredentialStore: Sendable {
     public enum StoreError: Error, Equatable {
         case unexpectedStatus(OSStatus)
@@ -19,9 +18,9 @@ public struct KeychainCredentialStore: Sendable {
     public enum Accessibility: Sendable, Equatable {
         /// Foreground-only host credentials — the default.
         case whenUnlockedThisDeviceOnly
-        /// Hosts with local-push/background-upload access enabled: the
-        /// extension may start while the device is locked, where a
-        /// `WhenUnlocked` item is unreadable (errSecInteractionNotAllowed).
+        /// Credentials that must be readable while the device is still
+        /// locked — a `WhenUnlocked` item is unreadable there
+        /// (errSecInteractionNotAllowed).
         case afterFirstUnlockThisDeviceOnly
 
         var attribute: CFString {
@@ -50,11 +49,9 @@ public struct KeychainCredentialStore: Sendable {
         ]
         // kSecAttrAccessible is deliberately NOT in the UPDATE attributes:
         // save() writes the secret, never the class. The class is policy —
-        // set at creation and upgraded by enableBackgroundAccess — and an
-        // update forcing the default would silently DEMOTE an item the
-        // upgrade raised to afterFirstUnlock (re-pair rewrites the secret
-        // over the same item), costing the background extension credential
-        // access until the next reconcile re-upgrades it.
+        // set only at creation — and an update forcing the default would
+        // silently DEMOTE an item stored under a different class (a re-pair
+        // rewrites the secret over the same item).
         let attributes: [String: Any] = [
             kSecValueData as String: Data(secret.utf8),
         ]
@@ -69,25 +66,6 @@ public struct KeychainCredentialStore: Sendable {
         } else {
             guard updateStatus == errSecSuccess else { throw StoreError.unexpectedStatus(updateStatus) }
         }
-    }
-
-    /// Upgrades an existing credential to `AfterFirstUnlockThisDeviceOnly`
-    /// — the docs-mandated class once local-push/background access is
-    /// enabled for the host — without touching the stored secret. A host
-    /// with no credential yet is a no-op: pairing saves it later, and the
-    /// enablement path re-runs on every reconcile.
-    public func enableBackgroundAccess(for hostID: String) throws {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: hostID,
-        ]
-        let attributes: [String: Any] = [
-            kSecAttrAccessible as String: Accessibility.afterFirstUnlockThisDeviceOnly.attribute,
-        ]
-        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if status == errSecItemNotFound { return }
-        guard status == errSecSuccess else { throw StoreError.unexpectedStatus(status) }
     }
 
     /// The stored secret, or nil when the host has no credential on this

@@ -26,12 +26,12 @@ cd OpenCodeRemote && xcodegen generate    # regenerate OpenCodeRemote.xcodeproj 
 swift test --package-path Packages/OpenCodeKit   # package tests (SSE/encoding/storage; macOS host)
 ```
 
-- `OpenCodeRemote/project.yml` is the **source of truth** for the Xcode project (app + LocalPushProvider extension + test targets). Never hand-edit `project.pbxproj`; edit the YAML and regenerate. The MCP Xcode tools build/test/run the generated project.
+- `OpenCodeRemote/project.yml` is the **source of truth** for the Xcode project (app + test targets). Never hand-edit `project.pbxproj`; edit the YAML and regenerate. The MCP Xcode tools build/test/run the generated project.
 - `Packages/OpenCodeKit` is a local Swift package with products `OpenCodeTransport`, `OpenCodeDomain`, `OpenCodeStorage` (GRDB). GRDB is pinned exact in `Package.swift`; commit `Package.resolved`.
 - The package's test target (`OpenCodeKitTests`) is not in the Xcode scheme — run it with `swift test`. App unit and UI tests run via the `OpenCodeRemote` scheme; run it once per device family (an iPhone and an iPad destination) — the UI suite exercises portrait and landscape through in-test rotation, and an unsupported orientation would fail rather than silently pass.
-- `LocalPushProvider` is built **without the `app-push-provider` entitlement** (pending Apple approval per `docs/design-review.md`). Re-add entitlements files + `CODE_SIGN_ENTITLEMENTS` in `project.yml` only after approval; do not treat the extension as activatable on device until then.
-- That embargo is **only** the push-provider hook. The app target separately carries `OpenCodeRemote/OpenCodeRemote.entitlements` (set as `CODE_SIGN_ENTITLEMENTS: OpenCodeRemote.entitlements`, resolved from `SRCROOT` — do not prefix it with `OpenCodeRemote/`) for the W17 I6 iCloud key-value sync: without `com.apple.developer.ubiquity-kvstore-identifier` a signed device build keeps `NSUbiquitousKeyValueStore` values local-only and never uploads, so S19 would report "Up to Date" while nothing actually syncs. Simulator builds never surface this — the entitlement is enforced by the signing profile, not the simulator runtime.
-- Bundle IDs: app `uk.co.laingcorp.opencode-client.OpenCodeRemote`, extension `…OpenCodeRemote.LocalPushProvider`. Team `4C8FWEBR8F`.
+- Local push was **removed entirely on 21 October 2026** by decision (extension, pipeline, per-host push settings, push status UI). Do not reintroduce it, and do not add an `app-push-provider` entitlement; `docs/local-push-implementation.md` was deleted with it (history in git).
+- The app target carries `OpenCodeRemote/OpenCodeRemote.entitlements` (set as `CODE_SIGN_ENTITLEMENTS: OpenCodeRemote.entitlements`, resolved from `SRCROOT` — do not prefix it with `OpenCodeRemote/`) for the W17 I6 iCloud key-value sync: without `com.apple.developer.ubiquity-kvstore-identifier` a signed device build keeps `NSUbiquitousKeyValueStore` values local-only and never uploads, so S19 would report "Up to Date" while nothing actually syncs. Simulator builds never surface this — the entitlement is enforced by the signing profile, not the simulator runtime.
+- Bundle ID: app `uk.co.laingcorp.opencode-client.OpenCodeRemote`. Team `4C8FWEBR8F`.
 
 ## Generated files are committed — never hand-edit
 

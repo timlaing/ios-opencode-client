@@ -161,34 +161,16 @@ struct SettingsState: Codable, Equatable, Sendable {
     var activityStartPreference: ActivityStartPreference = .ask
 }
 
-/// Per-host local push/notification settings (S02 "per-host local
-/// notification settings", S17 "per-host local-push enablement and
-/// eligible Wi-Fi setup"). Keyed by the host's raw ID.
-struct HostPushSettings: Codable, Equatable, Sendable {
-    var enabled = false
-    /// User-entered eligible SSIDs; empty = unconfigured — the exact
-    /// shape `LocalPushHostEligibility` consumes.
-    var ssids: [String] = []
-
-    init(enabled: Bool = false, ssids: [String] = []) {
-        self.enabled = enabled
-        self.ssids = ssids
-    }
-}
-
 /// Persisted local settings (W17): device-wide state in one Codable
-/// blob, per-host push settings in another — unrelated edits never
-/// race each other's whole-blob write. Same UserDefaults-injection
-/// pattern as `SessionLocalStateStore` so tests run on fresh domains.
+/// blob. Same UserDefaults-injection pattern as
+/// `SessionLocalStateStore` so tests run on fresh domains.
 @MainActor
 @Observable
 final class SettingsLibrary {
     @ObservationIgnored static let stateKey = "settings.state.v1"
-    @ObservationIgnored static let hostPushKey = "settings.hostpush.v1"
 
     @ObservationIgnored private let defaults: UserDefaults
     private(set) var state: SettingsState
-    private(set) var hostPush: [String: HostPushSettings]
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -197,12 +179,6 @@ final class SettingsLibrary {
             state = decoded
         } else {
             state = SettingsState()
-        }
-        if let data = defaults.data(forKey: Self.hostPushKey),
-           let decoded = try? JSONDecoder().decode([String: HostPushSettings].self, from: data) {
-            hostPush = decoded
-        } else {
-            hostPush = [:]
         }
     }
 
@@ -217,35 +193,11 @@ final class SettingsLibrary {
     }
 
     /// Clear Local Data (S19): preferences return to the documented
-    /// defaults and per-host push rows (enable flags + eligible SSIDs)
-    /// are local data too — they go with the wipe. Hosts and their
-    /// credentials are untouched: Remove Host owns those (design-
-    /// review.md defines the pair together).
+    /// defaults. Hosts and their credentials are untouched: Remove
+    /// Host owns those (design-review.md defines the pair together).
     func resetToDefaults() {
         state = SettingsState()
         persist()
-        hostPush = [:]
-        persistHostPush()
-    }
-
-    // MARK: - Per-host push settings
-
-    func pushSettings(for hostID: String) -> HostPushSettings {
-        hostPush[hostID] ?? HostPushSettings()
-    }
-
-    func updatePushSettings(for hostID: String, _ mutate: (inout HostPushSettings) -> Void) {
-        var value = hostPush[hostID] ?? HostPushSettings()
-        mutate(&value)
-        hostPush[hostID] = value
-        persistHostPush()
-    }
-
-    /// Removes a host's row after Remove Host — its local settings die
-    /// with its credential (implementation-defaults.md I5).
-    func removeHostSettings(_ hostID: String) {
-        hostPush.removeValue(forKey: hostID)
-        persistHostPush()
     }
 
     // MARK: - Draft expiry (S19)
@@ -280,10 +232,5 @@ final class SettingsLibrary {
     private func persist() {
         guard let data = try? JSONEncoder().encode(state) else { return }
         defaults.set(data, forKey: Self.stateKey)
-    }
-
-    private func persistHostPush() {
-        guard let data = try? JSONEncoder().encode(hostPush) else { return }
-        defaults.set(data, forKey: Self.hostPushKey)
     }
 }

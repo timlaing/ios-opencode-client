@@ -4,7 +4,7 @@
 
 Provide a native mobile interface to OpenCode on the user's own macOS/Linux hosts. Preserve browser-client capabilities in staged releases, adapting navigation and interaction to the phone rather than reducing the product to chat.
 
-The initial app connects directly to OpenCode. Local push is part of that release. An optional host plugin and Cloudflare Worker add remote push in a later release.
+The initial app connects directly to OpenCode. Local push was removed by decision on 21 October 2026 — foreground banners and Live Activities only. An optional host plugin and Cloudflare Worker add remote push in a later release.
 
 See [design gaps and release decisions](design-review.md) for outstanding implementation/security work. The selected commercial model is [completely free](monetisation.md): no advertising, purchases, or subscriptions. Earlier commercial options are inactive reference material.
 
@@ -33,7 +33,7 @@ An unchecked requirement below is planned, not implemented. Later-stage requirem
 | Skills/commands | Discover/invoke those exposed by the supported server | Remaining browser management controls |
 | Git/workspaces | Branch/workspace identity | Browser-supported branch/worktree operations |
 | Terminal | View agent command output | Interactive terminal in a native screen; web renderer permitted |
-| Local push | Background completion/failure/approval/question alerts on configured Wi-Fi | Expanded delivery diagnostics |
+| Local push | Removed 21 October 2026 — foreground banners only | Remote APNs alerts |
 | Live Activities | User-started activity; local updates; stale indicator | APNs updates/end while app is suspended |
 | Remote push | Architecture documented; not required to use the app | Optional plugin + stateless Cloudflare Worker + APNs |
 | Todos | Deferred | Separate future decision; absent from stock v2.0.25 |
@@ -54,7 +54,7 @@ The initial iPad release supports multiple app windows so different projects/ses
 - **Projects:** group by host; New Project and Open Existing Folder actions; project settings.
 - **Sessions:** pinned, running, needs-attention, and recent sessions; search and filters.
 - **Session detail:** conversation, composer, tool activity, pending interactions, usage, Files, and Changes.
-- **Settings:** guided host setup and connection checks, appearance, cache/privacy, optional Face ID/Touch ID app lock, local-push configuration/status, Live Activities, and local diagnostics with reviewed support exports. Future remote-push settings are separate.
+- **Settings:** guided host setup and connection checks, appearance, cache/privacy, optional Face ID/Touch ID app lock, Live Activities, and local diagnostics with reviewed support exports. Future remote-push settings are separate.
 
 Prefer native implementations for chat, project/session navigation, files, diffs, approvals, attachments, usage, and integration settings. Prefer native editing, provider setup, and workspace controls when those stages are implemented. Use WKWebView for specific complex panels only after documenting why a native view is unsuitable initially. An interactive terminal may use a web terminal renderer inside a native screen.
 

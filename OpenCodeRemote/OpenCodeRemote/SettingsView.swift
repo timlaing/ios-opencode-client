@@ -21,7 +21,6 @@ extension AppearanceMode {
 /// consume them. Every default comes from docs/implementation-
 /// defaults.md (W17).
 struct SettingsView: View {
-    @Environment(HostLibrary.self) private var hosts
     @Environment(SettingsLibrary.self) private var settings
 
     private var appVersion: String {
@@ -31,14 +30,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Hosts") {
-                    NavigationLink {
-                        HostsSettingsView()
-                    } label: {
-                        LabeledContent("Configured", value: "\(hosts.entries.count)")
-                    }
-                }
-
                 Section("Appearance") {
                     Picker("Mode", selection: binding(\.appearance)) {
                         ForEach(AppearanceMode.allCases, id: \.self) { mode in

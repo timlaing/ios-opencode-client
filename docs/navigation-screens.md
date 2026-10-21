@@ -63,7 +63,7 @@ Screen IDs are stable test identifiers, not on-screen labels. Workflow IDs refer
 
 | ID  | Screen and presentation                             | Required content/actions                                                                                                                                         | Workflows         |
 | --- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| S01 | Welcome and guided setup; native page sequence      | Explain own host/VPN, Add Host, demo mode, optional app lock/iCloud; ask alert categories/content and activity start preference; local Wi-Fi setup/status        | W01, W16, W17     |
+| S01 | Welcome and guided setup; native page sequence      | Explain own host/VPN, Add Host, demo mode, optional app lock/iCloud; ask alert categories/content and activity start preference            | W01, W16, W17     |
 | S02 | Hosts; Settings list and reusable host-picker sheet | Name, reviewed address, connection/version/auth state; select, add, edit/re-pair, diagnostics, remove host; per-host local notification settings                 | W01, W17          |
 | S03 | Connect Host; sheet/page                            | Scan QR (primary), pairing-link field, optional display name, server-URL/username/password fallback, reviewed target(s), Connect/Cancel, health checks           | W01               |
 | S04 | Projects root/sidebar content                       | Host picker, pinned/recent projects, searchable names/paths, canonical directory, Open Folder, New Project; project context menu and New Session                 | W02, W03          |
@@ -79,8 +79,8 @@ Screen IDs are stable test identifiers, not on-screen labels. Workflow IDs refer
 | S14 | Usage/context inspector                             | Last-reported context, model limit/unknown, token categories, cumulative estimated cost, compaction state and Compact action                                     | W13               |
 | S15 | Changes inspector and diff detail                   | Session-turn/workspace scope, selected range/base, changed file totals, unified/side-by-side diff, context expansion/search/change navigation/copy               | W12               |
 | S16 | Integrations inspector                              | Plugin/MCP segmented list, scope/source/effective status, plugin toggle plan/readback, runtime MCP Connect/Disconnect, error/auth-required detail                | W14, W15          |
-| S17 | Notifications and Live Activities                   | Category/privacy choices, per-host eligible Wi-Fi setup, following scope, permission/extension health, activity-start preference/freshness, device test guidance | W16, W17          |
-| S18 | Settings root                                       | Hosts, appearance, privacy/app lock, storage/drafts, attachments/network, iCloud, notifications/activities, diagnostics/support, licences/source/demo            | W17               |
+| S17 | Notifications and Live Activities                   | Category/privacy choices, following scope, permission status, activity-start preference/freshness, device test guidance | W16, W17          |
+| S18 | Settings root                                       | Appearance, privacy/app lock, storage/drafts, attachments/network, iCloud, notifications/activities, diagnostics/support, licences/source/demo            | W17               |
 | S19 | Privacy/storage/sync subpages                       | Actual local sizes, Clear Cache, draft expiry default/choices, backup explanation, app lock grace, iCloud status/opt-out/cloud-clear, Clear Local Data           | W17               |
 | S20 | Diagnostics/support and licences                    | Redacted local logs/report preview/share/clear, host readiness checks, app/server versions, GitHub support/private security route, MPL/source/dependency notices | W17               |
 
@@ -169,9 +169,9 @@ Integrations shows Plugins / MCP segments. Every row separates configured intent
 
 ## S17–S20: Preferences, notifications, and support
 
-Use the exact controls/defaults in [implementation-defaults.md](implementation-defaults.md). Group settings by outcomes and keep advanced details collapsed. Before configuration, generic notification content is the safe default but no categories or automatic activities are assumed enabled. Show the user's choice alongside iOS permission status: these are separate states. Explain configured Wi-Fi eligibility and test delivery; do not imply cellular VPN activates Local Push Connectivity. Initial Live Activities show freshness and can become stale while the main app is suspended.
+Use the exact controls/defaults in [implementation-defaults.md](implementation-defaults.md). Group settings by outcomes and keep advanced details collapsed. Before configuration, generic notification content is the safe default but no categories or automatic activities are assumed enabled. Show the user's choice alongside iOS permission status: these are separate states. Initial Live Activities show freshness and can become stale while the main app is suspended.
 
-S17 follows the [Home Assistant-derived status/recovery design](local-push-implementation.md): distinguish configuration, manager activity, per-host stream health, notification permission and freshness. Show received/relevant/scheduled counts separately in diagnostics, with Retry Local Push. An inactive manager or stale shared Available record must not be presented as healthy delivery.
+S17 presents NO delivery status: local push was removed (21 October 2026), so there is no manager/stream health, no received/relevant/scheduled counts, and no Retry Local Push to show — a row with no mechanism behind it must not exist.
 
 Notification taps resolve local host UUID and server session/interaction IDs, authenticate if needed, refetch current pending state, and navigate to the relevant screen. If the host is unavailable, retain the destination with Retry; if the interaction settled elsewhere, show that state. No approval/reject action is exposed as a lock-screen mutation. Missing/removed hosts route to an explanatory connection screen.
 

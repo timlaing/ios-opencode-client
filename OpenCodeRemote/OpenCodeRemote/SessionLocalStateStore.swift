@@ -37,11 +37,9 @@ struct SessionLocalState: Codable, Equatable, Sendable {
     var hidden: Set<String> = []
 }
 
-/// Persists `SessionLocalState` in `UserDefaults`. Followed session IDs
-/// are the app-side source consumed by `LocalPushConfigurationController.followedSessions`
-/// when the S17 eligibility owner runs reconciliation (W17, pending the
-/// push entitlement). Observable so pin/follow/hide toggles re-render the
-/// rows that read this state.
+/// Persists `SessionLocalState` in `UserDefaults` so pin/follow/hide
+/// survive a relaunch. Observable so toggles re-render the rows that
+/// read this state.
 @MainActor
 @Observable
 final class SessionLocalStateStore {

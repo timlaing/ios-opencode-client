@@ -62,48 +62,18 @@ targets:
     # device build keeps NSUbiquitousKeyValueStore values in a local
     # store and never uploads, so S19 would report "Up to Date" while
     # nothing syncs (review W17 r7). Automatic signing folds this into
-    # the profile. The LocalPushProvider extension stays entitlement-free
-    # (app-push-provider pending Apple approval) — do not add its file
-    # until then.
+    # the profile.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: uk.co.laingcorp.opencode-client.OpenCodeRemote
         CODE_SIGN_ENTITLEMENTS: OpenCodeRemote.entitlements
     dependencies:
-      - target: LocalPushProvider
-        embed: true
       - package: OpenCodeKit
         product: OpenCodeDomain
       - package: OpenCodeKit
         product: OpenCodeStorage
       - package: OpenCodeKit
         product: OpenCodeTransport
-  LocalPushProvider:
-    type: app-extension
-    platform: iOS
-    sources:
-      - path: LocalPushProvider
-        excludes:
-          - Info.plist
-    info:
-      path: LocalPushProvider/Info.plist
-      properties:
-        CFBundleDisplayName: LocalPushProvider
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.networkextension.app-push
-          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).OpenCodePushProvider
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: uk.co.laingcorp.opencode-client.OpenCodeRemote.LocalPushProvider
-        APPLICATION_EXTENSION_API_ONLY: "YES"
-        SKIP_INSTALL: "YES"
-    dependencies:
-      - package: OpenCodeKit
-        product: OpenCodeTransport
-      - package: OpenCodeKit
-        product: OpenCodeDomain
-      - package: OpenCodeKit
-        product: OpenCodeStorage
   OpenCodeRemoteTests:
     type: bundle.unit-test
     platform: iOS

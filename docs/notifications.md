@@ -4,75 +4,31 @@
 
 | Capability | Initial release | Later APNs release |
 | --- | --- | --- |
-| Local alerts on configured Wi-Fi | Required | Retained |
-| Main app suspended, eligible local extension active | Local notifications | Local delivery or optional APNs fallback |
-| Cellular/VPN alone | No background local-push guarantee | Remote APNs alerts |
+| Local alerts on configured Wi-Fi | Removed 21 October 2026 | Remote APNs alerts |
+| Cellular/VPN alone | Foreground delivery only while the app has runtime | Remote APNs alerts |
 | Local Live Activity | Update while main app has runtime; show stale status afterward | Retained |
 | Live Activity while main app is suspended | No continuous-update promise | APNs update/end |
 | Hosted infrastructure | None required | Stateless Cloudflare Worker |
-| Additional OpenCode plugin | None required for local event observation | Optional push companion required for this proposed relay workflow |
+| Additional OpenCode plugin | None required | Optional push companion required for this proposed relay workflow |
 
-Local alerts, Live Activities, and remote alerts have independent user preferences. Do not make cloud enrollment a prerequisite for local push or core app operation.
+Local alerts, Live Activities, and remote alerts have independent user preferences. Do not make cloud enrollment a prerequisite for notifications or core app operation.
 
-Ordinary notification scope is sessions started from this app plus sessions explicitly followed by the user, filtered by enabled alert categories. Viewing a session does not subscribe it. Persist subscriptions for the local-push extension and support unfollowing; use the same scope for future plugin/relay delivery.
+Ordinary notification scope is sessions started from this app plus sessions explicitly followed by the user, filtered by enabled alert categories. Viewing a session does not subscribe it. Persist the follow choice and support unfollowing; use the same scope for future plugin/relay delivery.
 
 During onboarding, ask users which alert categories to enable (completion, failure, approval requests, questions), what content notifications may show, and whether Live Activities start automatically for sessions started in the app or manually through Follow Session. Keep all choices editable in Settings. Do not automatically start an activity or enable alert categories before the user configures them. App preferences and Apple's notification/Live Activity permissions must both be respected.
 
-## Initial release: local push
+## Local push: removed (21 October 2026)
 
-Use the [Home Assistant-derived local push implementation guide](local-push-implementation.md) as the concrete lifecycle reference. It maps pinned Home Assistant iOS source/tests to our app-side managers, extension, status store and scheduler. The selected pattern is one NEAppPushManager per eligible SSID, with one lightweight OpenCode observer per enabled host inside the active provider; these are different layers.
+Local push was removed by decision: the `NEAppPushProvider` extension, the per-SSID `NEAppPushManager` configuration, per-host enablement and eligible-Wi-Fi settings, the notification pipeline (classifier, supervisor, ledger, planner), and the delivery status rows are all gone, and Apple's `app-push-provider` entitlement was never requested. `docs/local-push-implementation.md` (the Home Assistant-derived guide) was deleted in the same change.
 
-```text
-OpenCode host / native event stream
-                │ Authenticated HTTPS over an eligible network
-                ▼
-iOS Local Push Connectivity extension
-                │
-                ▼
-Local notification → tap → native session screen
-```
+What remains of initial delivery is app-side and foreground-honest: banners posted while the app is not active, from live delivery only (so a reconnect never replays a backlog), covering the inactive/early-background window and never a turn that ends after suspension — specified and tested in `docs/api-contract.md` W16. Local Live Activities follow below; the later APNs release is unaffected by this decision.
 
-### iOS implementation
 
-Add an App Push Provider extension using `NEAppPushProvider`, configured by the main app with `NEAppPushManager` and user-selected Wi-Fi SSIDs. Request Apple's `app-push-provider` Network Extension entitlement for both targets early. Approval and physical-device validation are initial-release dependencies, not assumed capabilities.
-
-The extension owns a lightweight authenticated connection to the existing OpenCode event stream. OpenCode uses SSE; adopting Home Assistant's approach does not require copying its WebSocket protocol or adding a new host port. Use existing OpenCode pairing tokens. Home Assistant's notification receipt-confirmation protocol has no existing OpenCode equivalent: do not invent that endpoint or claim server-driven failover in the initial version. Prototype SSE parsing, reconnect behavior, and memory use within the extension's runtime before building the wider notification UI.
-
-Share only the necessary host credentials, notification preferences, routing identities, and deduplication/checkpoint data through a shared Keychain access group and App Group container. Use a process-safe shared store. The extension must not load the conversation renderer or a web view.
-
-Configure per host:
-
-- Eligible Wi-Fi SSIDs and reachable HTTPS endpoint.
-- Local-push enabled/disabled.
-- Completion, failure, approval, and question categories.
-- All relevant sessions or explicitly followed sessions.
-- Generic lock-screen text by default; session title opt-in.
-
-Show Disabled, Not on Configured Wi-Fi, Connecting, Connected, Reconnecting, Authentication Required, and Error states. Expose last connection/event time and a test alert. Do not show Connected solely because the VPN is up.
-
-### Event processing
-
-1. Authenticate, subscribe, and retrieve current pending interactions/session state to establish a baseline.
-2. Track explicit execution started/succeeded/failed/interrupted events. An idle state alone is not completion.
-3. Observe permission and question/form changes using the pinned server contract.
-4. Generate notifications for new relevant transitions. Reconnection must not alert on the entire historical backlog.
-5. Use event/request identity and stable notification identifiers to deduplicate between the main app and extension. Treat delivery as best effort, not exactly once.
-6. Reconcile current state after dropped events. Where the server supports a durable per-session log, retain its cursor for subscribed sessions; otherwise compare fresh authoritative snapshots.
-7. Reconnect with backoff; use supported heartbeat signals and read-only health probes when needed. Handle extension timer/lifecycle callbacks.
-
-When foregrounded on the same session, avoid duplicate banners and show the event in the native UI. Tapping an alert opens the correct host/project/session and revalidates the pending request before showing approval controls. Do not approve directly from the lock screen initially.
-
-### Network and platform limits
-
-Local Push Connectivity runs on configured Wi-Fi networks. A VPN connection by itself does not activate it on cellular. Reaching a remote host through a VPN while on an eligible SSID may work, but requires physical-device testing of routing and VPN lifecycle. Small additional battery use is expected from the persistent connection.
-
-Without the entitlement or working extension, foreground-only event handling does not satisfy the initial local-push requirement. Record any entitlement denial or unsupported deployment constraint as a release blocker requiring a product decision.
-
-### Local Live Activities
+## Local Live Activities
 
 Use ActivityKit and a native WidgetKit presentation. Initially let the user start tracking one session while the app is active. Display a concise state, elapsed time rendered on-device, and last-updated freshness. Do not fabricate a completion percentage.
 
-The Local Push extension cannot be assumed to update ActivityKit directly. Home Assistant's current implementation queues activity requests to its main app and notes that its cross-process signal cannot wake a suspended app. Use the same honest boundary: persist/coalesce the latest update, apply it when the app has runtime, and set a stale deadline. A notification may announce completion while the activity remains stale until the app runs again.
+Updates can only be applied while the app has runtime — iOS may suspend it seconds after it leaves the foreground. Use that honest boundary: persist/coalesce the latest update, apply it when the app runs, and set a stale deadline. A notification may announce completion while the activity remains stale until the app runs again.
 
 ## Later release: plugin and stateless Cloudflare Worker
 
@@ -167,15 +123,15 @@ The Worker produces Apple's `liveactivity` topic/payload, including update/end e
 
 Ordinary notification permission and Live Activity authorization/settings are separate. Users may enable remote activity updates without ordinary completion banners.
 
-### Local and APNs coexistence
+### Alert delivery mode
 
-Initially default each ordinary alert subscription to one configured delivery mode: local-only or APNs. Avoid claiming automatic local-first fallback without an acknowledgment protocol. To add automatic fallback, include event acknowledgments and a short-lived local-delivery lease on the plugin; use the same event identity across channels and test late acknowledgments. Live Activity remote updates use their separate ActivityKit channel.
+With local push removed, ordinary alerts in this release are delivered only while the app has runtime (foreground banners); the later release delivers them over APNs. Delivery-mode selection and local-first fallback do not apply without a local channel to fall back from. Live Activity remote updates use their separate ActivityKit channel.
 
 ### Pricing and operations
 
-The selected future deployment is a shared hosted relay. Users will not be required to deploy their own Worker for the distributed app. Before launch, establish the operator, funding, quotas, abuse controls, support, incident response, and behavior during outages or exhausted quotas. The app remains completely free. Local push and direct OpenCode access remain independent of relay availability. Hosting selection does not remove the secure-enrollment work or justify storing device/session delivery state in the Worker.
+The selected future deployment is a shared hosted relay. Users will not be required to deploy their own Worker for the distributed app. Before launch, establish the operator, funding, quotas, abuse controls, support, incident response, and behavior during outages or exhausted quotas. The app remains completely free. Direct OpenCode access remains independent of relay availability. Hosting selection does not remove the secure-enrollment work or justify storing device/session delivery state in the Worker.
 
-Funding is explicitly undecided. An agreed operating/funding plan is a launch blocker for shared remote push, independently of technical readiness. It is not a blocker for the initial local-push release and does not authorise charges or a paid offering.
+Funding is explicitly undecided. An agreed operating/funding plan is a launch blocker for shared remote push, independently of technical readiness. It is not a blocker for the initial release and does not authorise charges or a paid offering.
 
 Pricing checked on 17 October 2026: Workers Free includes 100,000 requests/day across the account and 10 ms CPU per invocation. Workers Paid starts at US$5/month and includes 10 million requests and 30 million CPU milliseconds/month. Other Cloudflare products have separate allowances and pricing.
 
@@ -183,13 +139,9 @@ Measure grant verification and Apple signing under cold and warm execution befor
 
 ## Verification
 
-Initial local-push release:
+Initial local push: retired — removed by decision on 21 October 2026 (no extension, no entitlement, no device checklist). Remaining initial delivery and Live Activity behaviour is covered by the app suites:
 
-- Entitlement present in signed app and extension; user notification permissions handled correctly.
-- Physical iPhone locked/main app suspended on configured Wi-Fi receives each enabled alert category.
-- Leaving Wi-Fi disables local delivery honestly; cellular plus VPN does not claim local availability.
-- VPN routing, credential expiry, host restart, reconnect, extension restart, duplicates, and stale approvals tested.
-- Low memory use and battery behavior measured; multiple hosts and projects remain isolated.
+- User notification permissions handled correctly.
 - Local Live Activity becomes stale while suspended and reconciles when reopened.
 
 Later Worker/APNs release:
@@ -202,10 +154,6 @@ Later Worker/APNs release:
 
 ## Sources
 
-- [Apple Local Push Connectivity](https://developer.apple.com/documentation/networkextension/local-push-connectivity?changes=__1)
-- [Apple local connection lifecycle](https://developer.apple.com/documentation/networkextension/maintaining-a-reliable-network-connection)
-- [Home Assistant local push](https://companion.home-assistant.io/docs/notifications/notification-local/)
-- [Home Assistant ActivityKit extension handoff](https://github.com/home-assistant/iOS/blob/a0880aef231f0b0148bcb523f86756a30039ab04/Sources/Shared/Notifications/NotificationCommands/HandlerLiveActivity.swift#L37)
 - [OpenCode v2.0.25 execution events](https://github.com/anomalyco/opencode/blob/b44eea9e204024db2b480a136ece29d790d5f593/packages/schema/src/session-event.ts)
 - [Apple APNs request requirements](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns)
 - [Apple provider-token authentication](https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns?changes=_5)

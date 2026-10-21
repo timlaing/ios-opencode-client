@@ -33,7 +33,7 @@ The user requested sensible defaults, useful configuration options, and the full
 | --- | --- | --- | --- |
 | I1 | Native data stores and cross-process coordination | GRDB/SQLite; separate draft/cache/shared notification stores; Keychain for credentials | Migrations, crash/concurrency recovery, protection, and backup restoration |
 | I2 | Markdown/code/diff rendering dependencies | swift-markdown with native block views; HighlighterSwift adapter; native diffs; isolated complex-block web fallback | Dependency pinning/licences, HighlighterSwift iOS support, web parity fixtures, accessibility, performance |
-| I3 | iOS lifecycle and local-push implementation | Per-enabled-host native streams; bounded exponential reconnect; durable deduplication; file-backed background uploads where verified | Entitlement, physical-device lifecycle/resource tests, VPN and upload behavior |
+| I3 | iOS lifecycle and background behavior | Per-enabled-host native streams; bounded exponential reconnect; durable deduplication; file-backed background uploads where verified | Physical-device lifecycle/resource tests, VPN and upload behavior |
 | I4 | HTTPS trust and credential protection | System TLS trust; device-only Keychain classes based on background requirements; configurable app-lock grace | Certificate setups, redirect safety, locked-device/reboot behavior and credential restore |
 | I5 | Multiple-window draft concurrency | One editing owner per draft, explicit Edit Here handoff; shared session state | No lost edits, stale-owner recovery, scene restoration and server interaction reconciliation |
 | I6 | Optional iCloud settings implementation | Opt-in NSUbiquitousKeyValueStore; stable records; field-level last-edit resolution and deletion tombstones | Quota/conflict/deletion/account-change/opt-out handling |
@@ -48,13 +48,13 @@ Most choices above can be resolved by engineering without changing the agreed pr
 | ID | Decision | Boundary already selected |
 | --- | --- | --- |
 | R1 | Shared relay enrollment, grants, abuse controls, rotation, revocation, and replay handling | Plugin owns delivery/subscription state; Worker delivery is stateless. Determine whether secure enrollment/revocation needs limited additional state. Existing host pairing does not automatically authorise use of the public relay |
-| R2 | Operator, funding, quotas, service expectations, and incident response | Shared hosted relay; completely free app; funding deliberately deferred and blocks remote-push launch, not initial local push |
+| R2 | Operator, funding, quotas, service expectations, and incident response | Shared hosted relay; completely free app; funding deliberately deferred and blocks remote-push launch, not the initial release |
 
 ## Verification work, not additional preference decisions
 
 - Supplied: the [API contract](api-contract.md), [full route catalog](api-route-catalog.md), [screen specification](navigation-screens.md), and [generated fixtures/mock](testing-mock.md) provide initial implementation bindings. This derivation register is not a claim of full live-server parity.
 - Test project/session creation, permissions/questions, configuration edits, attachments, and reconnection on disposable macOS/Linux hosts.
-- Prove local push on signed physical devices before substantial UI investment. Entitlement availability is an external dependency, not an architecture preference.
+- Prove the direct host connection on signed physical devices before substantial UI investment.
 - Validate the initial supported version and later upgrade compatibility. v2.0.25 remains the baseline; do not claim support for untested versions.
 
 ## Pinned source evidence
