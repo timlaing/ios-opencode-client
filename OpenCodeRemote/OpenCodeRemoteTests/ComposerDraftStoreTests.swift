@@ -35,8 +35,39 @@ final class ComposerDraftStoreTests: XCTestCase {
         store.save("half a thought", hostUUID: "h1", sessionID: "ses_a")
 
         XCTAssertEqual(
-            store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings()),
+            store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings())?.text,
             "half a thought"
+        )
+    }
+
+    func testRestoreReturnsTheEditTimestampForTheExpiryCaption() throws {
+        // Whole seconds: GRDB persists Date at millisecond fidelity, so a
+        // whole-second base round-trips exactly.
+        let edited = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - 2 * 86_400).rounded())
+        try drafts.upsert(Draft(
+            id: ComposerDraftStore.draftID(hostUUID: "h1", sessionID: "ses_a"),
+            hostUUID: "h1",
+            sessionID: "ses_a",
+            text: "caption me",
+            updatedAt: edited
+        ))
+        let policy = settings { $0.draftRetention = .days(7) }
+
+        let restored = store.restore(hostUUID: "h1", sessionID: "ses_a", settings: policy)
+
+        XCTAssertEqual(restored?.text, "caption me")
+        // GRDB's Date round-trip carries the instant to sub-second
+        // fidelity, so compare the TIMESTAMP, not Date equality.
+        XCTAssertEqual(
+            restored?.lastEdit.timeIntervalSince1970 ?? 0,
+            edited.timeIntervalSince1970,
+            accuracy: 0.001,
+            "the caption derives the expiry from the real edit time"
+        )
+        XCTAssertEqual(
+            policy.draftExpiry(lastEdit: edited),
+            edited.addingTimeInterval(7 * 86_400),
+            "the caption's date comes from the same helper the sweep uses"
         )
     }
 
@@ -47,8 +78,8 @@ final class ComposerDraftStoreTests: XCTestCase {
         XCTAssertNil(store.restore(hostUUID: "h1", sessionID: "ses_b", settings: settings()))
 
         store.save("for ses_b", hostUUID: "h1", sessionID: "ses_b")
-        XCTAssertEqual(store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings()), "for h1")
-        XCTAssertEqual(store.restore(hostUUID: "h1", sessionID: "ses_b", settings: settings()), "for ses_b")
+        XCTAssertEqual(store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings())?.text, "for h1")
+        XCTAssertEqual(store.restore(hostUUID: "h1", sessionID: "ses_b", settings: settings())?.text, "for ses_b")
     }
 
     func testEmptyTextDeletesTheDraft() {
@@ -64,7 +95,7 @@ final class ComposerDraftStoreTests: XCTestCase {
         store.save("second", hostUUID: "h1", sessionID: "ses_a")
 
         XCTAssertEqual(try drafts.allDrafts().count, 1)
-        XCTAssertEqual(store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings()), "second")
+        XCTAssertEqual(store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings())?.text, "second")
     }
 
     func testRestoreDeletesAnExpiredDraftOnSight() throws {
@@ -97,7 +128,7 @@ final class ComposerDraftStoreTests: XCTestCase {
         try drafts.upsert(ancient)
 
         XCTAssertEqual(
-            store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings()),
+            store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings())?.text,
             "kept forever",
             "the default retention never expires"
         )
@@ -107,7 +138,7 @@ final class ComposerDraftStoreTests: XCTestCase {
         store.save("  indented\n", hostUUID: "h1", sessionID: "ses_a")
 
         XCTAssertEqual(
-            store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings()),
+            store.restore(hostUUID: "h1", sessionID: "ses_a", settings: settings())?.text,
             "  indented\n",
             "the draft preserves raw text — trimming is the send path's job"
         )

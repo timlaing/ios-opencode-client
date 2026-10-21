@@ -25,6 +25,16 @@ struct ComposerDraftStore {
         "\(hostUUID)/\(sessionID)"
     }
 
+    /// What a restore found: the text plus WHEN IT WAS LAST EDITED —
+    /// the composer shows the retention expiry beside restored text
+    /// ("show expiry date when enabled", follow-on 4a), and the
+    /// caption derives that date from the live setting, so it never
+    /// pins one at restore time.
+    struct RestoredDraft: Equatable {
+        let text: String
+        let lastEdit: Date
+    }
+
     /// The persisted text for this conversation, or nil when there is
     /// none or it has EXPIRED under the current retention — an
     /// expired record is removed on sight: expiry is a fact, not a
@@ -34,14 +44,14 @@ struct ComposerDraftStore {
         sessionID: String,
         settings: SettingsLibrary,
         now: Date = Date()
-    ) -> String? {
+    ) -> RestoredDraft? {
         let id = Self.draftID(hostUUID: hostUUID, sessionID: sessionID)
         guard let draft = try? drafts.draft(id: id) else { return nil }
         if let expiry = settings.draftExpiry(lastEdit: draft.updatedAt), expiry <= now {
             try? drafts.deleteDraft(id: id)
             return nil
         }
-        return draft.text.isEmpty ? nil : draft.text
+        return draft.text.isEmpty ? nil : RestoredDraft(text: draft.text, lastEdit: draft.updatedAt)
     }
 
     /// One debounced save from the composer. Empty text means the

@@ -54,6 +54,10 @@ struct ConversationView: View {
     /// save, so the retention clock's "last edit" only moves when
     /// the user actually edits (review W17 r1).
     @State private var lastPersistedDraft: String?
+    /// The last COMPLETED restore for this conversation — the expiry
+    /// caption shows only while the composer still holds exactly that
+    /// text (any edit or send hides it; follow-on 4a).
+    @State private var restoredDraft: ComposerDraftStore.RestoredDraft?
     /// W08 attachments (S09): prepared per the web inline/staging rule;
     /// chips mirror the tray beside the draft.
     @State private var attachments = AttachmentLibrary()
@@ -354,8 +358,9 @@ struct ConversationView: View {
                    sessionID: session.id,
                    settings: settings
                ) {
-                lastPersistedDraft = restored
-                draft = restored
+                lastPersistedDraft = restored.text
+                draft = restored.text
+                restoredDraft = restored
             }
             await openTranscript()
             await loadApprovals()
@@ -748,6 +753,20 @@ struct ConversationView: View {
             }
             if !attachments.drafts.isEmpty {
                 chips
+            }
+            if let restored = restoredDraft,
+               draft == restored.text,
+               !draft.isEmpty,
+               let expiry = settings.draftExpiry(lastEdit: restored.lastEdit) {
+                // The display half of the drafts retention spec ("show
+                // expiry date when enabled"): sits beside the restored
+                // text until it is edited or sent, and never appears
+                // under until-discarded — nil expiry, no caption, no
+                // promised display (follow-on 4a).
+                Text("Draft restored — expires \(expiry.formatted(date: .abbreviated, time: .omitted))")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("S08.composer.draftExpiry")
             }
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
