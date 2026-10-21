@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- W17 I6: the opt-in iCloud key-value sync (S19) needs the
+	     ubiquity-kvstore entitlement. Without it, a signed device
+	     build keeps NSUbiquitousKeyValueStore values in a local
+	     store only — never uploading — so S19 would report "Up to
+	     Date" while nothing syncs (review W17 r7). The
+	     app-push-provider entitlement is deliberately absent (pending
+	     Apple approval); see project.yml and AGENTS.md. -->
+	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
+	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
+</dict>
+</plist>

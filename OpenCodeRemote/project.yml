@@ -57,9 +57,18 @@ targets:
         UILaunchScreen: {}
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+    # W17 I6: the opt-in iCloud key-value sync (S19) needs the
+    # ubiquity-kvstore entitlement on the signed app. Without it a
+    # device build keeps NSUbiquitousKeyValueStore values in a local
+    # store and never uploads, so S19 would report "Up to Date" while
+    # nothing syncs (review W17 r7). Automatic signing folds this into
+    # the profile. The LocalPushProvider extension stays entitlement-free
+    # (app-push-provider pending Apple approval) — do not add its file
+    # until then.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: uk.co.laingcorp.opencode-client.OpenCodeRemote
+        CODE_SIGN_ENTITLEMENTS: OpenCodeRemote.entitlements
     dependencies:
       - target: LocalPushProvider
         embed: true
