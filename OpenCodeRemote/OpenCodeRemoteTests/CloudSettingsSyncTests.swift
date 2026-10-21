@@ -353,6 +353,32 @@ final class CloudSettingsSyncTests: XCTestCase {
         XCTAssertEqual(sync.status, .upToDate, "the next pass retries the push")
     }
 
+    func testQuotaRefusalKeepsTheTombstoneBasisForTheRetry() throws {
+        let settings = makeSettings()
+        settings.update { $0.icloudSyncRequested = true }
+        let sync = makeSync()
+
+        // Pass 1 records h1 and is accepted.
+        sync.reconcile(settings: settings, hostAddresses: ["h1": "https://a.example.com"])
+        XCTAssertNil(sync_snapshot().hosts["h1"]?.deletedAt, "pass 1 recorded h1 as live")
+
+        // The removal's tombstone push is REFUSED — the mirror must
+        // keep its basis so the next pass re-derives the tombstone
+        // (review W17 r3).
+        store.failWrites = true
+        _ = sync.reconcile(settings: settings, hostAddresses: [:])
+        guard case .error = sync.status else {
+            return XCTFail("the refusal must surface as an error status")
+        }
+
+        // Once the quota frees, the retry re-derives and pushes.
+        store.failWrites = false
+        _ = sync.reconcile(settings: settings, hostAddresses: [:])
+
+        let record = try XCTUnwrap(sync_snapshot().hosts["h1"])
+        XCTAssertNotNil(record.deletedAt, "a refused write must never lose the removal — the cloud tombstones on retry")
+    }
+
     func testCorruptOrForeignSchemaSnapshotReadsAsEmpty() throws {
         store.storage[CloudSettingsSync.key] = "not json at all"
         let sync = makeSync()

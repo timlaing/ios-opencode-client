@@ -358,10 +358,13 @@ final class CloudSettingsSync {
             if store.string(forKey: Self.key) != payload {
                 // The store refused the payload (size limit): local
                 // state stays authoritative for this pass and the
-                // failure is reported — never silently dropped.
+                // failure is reported — never silently dropped. The
+                // mirror is NOT advanced: tombstones and edits
+                // derived from it must be re-derived on the retry, or
+                // a refused removal would leave its host live in the
+                // cloud forever (review W17 r3).
                 status = .error("iCloud did not accept the update (limit reached). Local settings are intact.")
                 lastReport = report
-                localMirror = LocalMirror(appearance: mergedAppearance, hosts: ownHosts)
                 return report
             }
         }
