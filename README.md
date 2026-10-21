@@ -41,7 +41,7 @@ Product design and implementation guide for a native iPhone/iPad client that pre
 - Show the current screen in the app switcher.
 - Preserve offline drafts and require manual sending after reconnecting.
 - Select MPL-2.0 for the app, future companion plugin, and Worker, subject to dependency compliance. Preserve notices and publish covered source for distributed releases; no mandatory resale royalties.
-- Ask during onboarding which alert categories to enable and whether Live Activities start automatically or manually.
+- Present the alert-category switches during onboarding (enabled by default) and ask whether Live Activities start automatically or manually.
 - Plan a shared hosted Worker relay for future remote push; operating costs and service limits remain to be defined.
 - Offer optional iCloud sync for appearance and host addresses, with credentials entered separately on each device.
 - Let users choose in Settings whether reopening restores the last screen/session or opens the project list.

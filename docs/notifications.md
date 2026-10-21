@@ -15,7 +15,7 @@ Local alerts, Live Activities, and remote alerts have independent user preferenc
 
 Today, notifications come only from the conversation on screen: its terminal events banner while the app is not active, filtered by enabled alert categories, and nothing subscribes a session that is not on screen. Sessions started from this app plus sessions explicitly followed by the user are the persisted SCOPE for later delivery releases (the APNs relay) — following persists that choice and supports unfollowing.
 
-During onboarding, ask users which alert categories to enable (session succeeded, failed, or interrupted), what content notifications may show, and whether Live Activities start automatically for sessions started in the app or manually through Follow Session. Keep all choices editable in Settings. Do not automatically start an activity or enable alert categories before the user configures them. App preferences and Apple's notification/Live Activity permissions must both be respected.
+During onboarding, present the alert-category switches (session succeeded, failed, or interrupted — all three enabled by default, so the user opts out rather than in), what content notifications may show (generic text until the privacy choice is recorded), and whether Live Activities start automatically for sessions started in the app or manually through Follow Session. Keep all choices editable in Settings. Do not automatically start an activity before the user chooses it; a banner additionally requires iOS permission and the app's own recorded consent — app preferences and Apple's notification/Live Activity permissions are separate states and both must be respected.
 
 ## Local push: removed (21 October 2026)
 

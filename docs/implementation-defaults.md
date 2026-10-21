@@ -24,7 +24,7 @@ Deliver the fullest sensible functionality within the agreed release scope. Deri
 | App lock | Off; if enabled, require device authentication after one minute away | Immediate/1/5/15 minutes; Face ID/Touch ID with device-passcode fallback. Protect foreground access while leaving authorised notification work operational |
 | App switcher | Current screen, as selected | No automatic neutral cover. Explain its interaction with the optional lock; an actual locked scene displays its normal lock screen |
 | Reopening | Restore last screen/session as the initial Settings value | Restore last screen/session or always open projects; scene-specific restoration on iPad |
-| Notifications | Ask during onboarding for categories and content privacy; only app-started/explicitly followed sessions qualify | Category switches, generic/detailed content, follow/unfollow; generic content until privacy choice is made |
+| Notifications | On-screen conversation banners while the app is not active (iOS permission plus the app's recorded consent required); app-started/explicitly followed scope reserved for later delivery; categories and content privacy asked during onboarding | Category switches (all enabled by default), generic/detailed content, follow/unfollow; generic content until privacy choice is made |
 | Live Activities | Ask during onboarding; do not auto-start before selection; show last-updated/stale status | Automatic for app-started sessions or manual Follow Session; Stop Following and system activity permission/status |
 | Diagnostics | Local redacted logs: seven days or 5 MiB, whichever limit is reached first; no automatic upload | View, clear, preview redacted export, share manually. No switch that logs credentials or complete prompts/files |
 
