@@ -198,6 +198,10 @@ final class SettingsLibrary {
     func resetToDefaults() {
         state = SettingsState()
         persist()
+        // Legacy per-host push preferences (removed feature) are local
+        // data too: the old settings.hostpush.v1 blob must not survive
+        // Clear Local Data (review: removal r1).
+        defaults.removeObject(forKey: "settings.hostpush.v1")
     }
 
     // MARK: - Draft expiry (S19)

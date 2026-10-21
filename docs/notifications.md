@@ -15,7 +15,7 @@ Local alerts, Live Activities, and remote alerts have independent user preferenc
 
 Ordinary notification scope is sessions started from this app plus sessions explicitly followed by the user, filtered by enabled alert categories. Viewing a session does not subscribe it. Persist the follow choice and support unfollowing; use the same scope for future plugin/relay delivery.
 
-During onboarding, ask users which alert categories to enable (completion, failure, approval requests, questions), what content notifications may show, and whether Live Activities start automatically for sessions started in the app or manually through Follow Session. Keep all choices editable in Settings. Do not automatically start an activity or enable alert categories before the user configures them. App preferences and Apple's notification/Live Activity permissions must both be respected.
+During onboarding, ask users which alert categories to enable (session succeeded, failed, or interrupted), what content notifications may show, and whether Live Activities start automatically for sessions started in the app or manually through Follow Session. Keep all choices editable in Settings. Do not automatically start an activity or enable alert categories before the user configures them. App preferences and Apple's notification/Live Activity permissions must both be respected.
 
 ## Local push: removed (21 October 2026)
 

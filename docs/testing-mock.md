@@ -139,6 +139,5 @@ Inject repositories/transport, clock and connection status at the app compositio
 | Attachments        | File/photo/camera, cancellation, unsupported input, staged URI, balanced/original image, missing restored attachment, pending background upload without auto-send |
 | Privacy/storage    | 30-day boundary using injected clock; cache budget eviction preserves drafts; backup exclusions and restoration; diagnostic redaction; no secrets in URLs/sync    |
 | iPad/accessibility | Two scenes on different/same drafts, Edit Here handoff, process/window restoration, VoiceOver, large text, reduced motion, keyboard focus                         |
-| Local delivery     | Signed physical-device eligible Wi-Fi, main app suspended/locked, first unlock after reboot, VPN loss, token expiry/rotation, follow scope/dedup, stale activity  |
 
-Release requires testing against actual OpenCode macOS/Linux hosts and signed iOS devices, then recording results per workflow. The mock supplies reproducible development coverage; it cannot close external entitlement or platform-runtime gates.
+Release requires testing against actual OpenCode macOS/Linux hosts and signed iOS devices, then recording results per workflow. The mock supplies reproducible development coverage; it cannot close physical-device or platform-runtime gates.

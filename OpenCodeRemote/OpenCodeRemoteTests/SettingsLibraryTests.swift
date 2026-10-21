@@ -3,7 +3,7 @@ import XCTest
 
 /// W17 local settings (docs/implementation-defaults.md): the table's
 /// EXACT defaults are pinned, changes persist across a simulated
-/// relaunch, per-host push rows stay isolated, and the draft-retention
+/// relaunch, and the draft-retention
 /// confirmation fires only when shortening would actually remove a
 /// draft (S19).
 @MainActor
@@ -60,6 +60,17 @@ final class SettingsLibraryTests: XCTestCase {
 
         let reloaded = SettingsLibrary(defaults: defaults)
         XCTAssertEqual(reloaded.state, SettingsState(), "the reset persists across relaunch")
+    }
+
+    func testClearLocalDataRemovesTheLegacyPushPreferencesBlob() {
+        defaults.set(Data([0x7B]), forKey: "settings.hostpush.v1")
+
+        SettingsLibrary(defaults: defaults).resetToDefaults()
+
+        XCTAssertNil(
+            defaults.data(forKey: "settings.hostpush.v1"),
+            "preferences from the removed push feature must not survive Clear Local Data"
+        )
     }
 
     func testUpdatesPersistAcrossARelaunchAndTouchNothingElse() {

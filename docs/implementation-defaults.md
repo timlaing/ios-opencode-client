@@ -32,11 +32,11 @@ Numeric resource limits and image settings are selected starting values, not val
 
 ## I1: Storage and coordination
 
-Use SQLite through GRDB for durable records, with schema-versioned migrations. This replaces the earlier tentative SwiftData cache suggestion. Use three independently managed stores: app-private backed-up draft text/metadata, excluded app-private refetchable cache, and a small excluded App Group database for host notification subscriptions, checkpoints, and deduplication. Use transactions, SQLite locking/WAL and bounded busy handling appropriate to multiple processes; do not share an in-memory singleton across the extension boundary.
+Use SQLite through GRDB for durable records, with schema-versioned migrations. This replaces the earlier tentative SwiftData cache suggestion. Use three independently managed stores: app-private backed-up draft text/metadata, excluded app-private refetchable cache, and the host registry's own file; notification follow state and banner dedup live in UserDefaults. Use transactions, SQLite locking/WAL and bounded busy handling; do not share an in-memory singleton across owners.
 
 Keep attachment bytes in separate excluded files with reference records. A restored draft missing bytes shows a missing-attachment chip and requires reattachment. Back up draft text directly; do not reference text chunks stored only in an excluded cache. Flush draft changes after a 300 ms debounce and on scene deactivation where runtime permits. Keep a last committed draft across crashes; never claim a final write is guaranteed after termination.
 
-Protect app-private drafts/cache with complete file protection; use protection available after first unlock only for the minimal shared notification store and active background-upload files that require locked-device access. Remove temporary copies when no draft or task references them. Run migrations before starting extension work; show an upgrade-required state if a shared schema is incompatible rather than resetting it silently.
+Protect app-private drafts/cache with complete file protection; use protection available after first unlock only for active background-upload files that require locked-device access. Remove temporary copies when no draft or task references them. Run migrations before the stores are used; show an upgrade-required state if a schema is incompatible rather than resetting it silently.
 
 ## I2: Native rendering and complete interactions
 
@@ -52,7 +52,7 @@ Use one rendering pipeline for assistant messages, user messages, and composer p
 
 Local-push manager/recovery defaults were retired with local push itself (removed 21 October 2026; see notifications.md).
 
-Use the native event contract and web reconnect/state semantics. Maintain a connection per enabled host when the system grants extension runtime; observe all configured enabled hosts rather than silently imposing a product-level host cap. Measure multiple-host resource use early; if an actual platform limit appears, surface it and resolve the product impact explicitly.
+Use the native event contract and web reconnect/state semantics. Maintain a connection per enabled host while the app has runtime (docs/api-contract.md W16); observe all configured enabled hosts rather than silently imposing a product-level host cap. Measure multiple-host resource use early; if an actual platform limit appears, surface it and resolve the product impact explicitly.
 
 For transient failures, start with reconnect delays of 1, 2, 4, 8, 16, 32, then 60 seconds with 20% jitter, unless web/server semantics prescribe otherwise. Reattempt promptly after a real reachability change without creating duplicate connections. Stop authentication-failure retry loops and show Re-pair Required. Do not automatically retry commands, approvals, or configuration writes.
 
