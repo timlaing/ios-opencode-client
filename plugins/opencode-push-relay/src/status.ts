@@ -54,6 +54,8 @@ export interface StatusReport {
   readonly outboxDepth: number
   readonly stats: Stats
   readonly leaseHeldByCaller: boolean
+  /** A live lease held by some other instance (not the caller). */
+  readonly leaseHeldElsewhere: boolean
   readonly notes: readonly string[]
 }
 
@@ -75,6 +77,7 @@ export async function buildStatus(deps: StatusDeps): Promise<StatusReport> {
   const outbox = await deps.store.listOutbox()
   const stats = await deps.store.getStats()
   const lease = await deps.store.getLease()
+  const leaseLive = lease !== undefined && lease.expiresAt > Date.now()
 
   if (deps.config === undefined || deps.relay === undefined) {
     const issues = [...deps.missing.map((entry) => `missing ${entry}`), ...deps.problems]
@@ -90,6 +93,7 @@ export async function buildStatus(deps: StatusDeps): Promise<StatusReport> {
       outboxDepth: 0,
       stats: emptyStats(),
       leaseHeldByCaller: false,
+      leaseHeldElsewhere: false,
       notes: [
         issues.length > 0 ? issues.join("; ") : "no relay configuration",
         "set plugins[].options.relayUrl and .app in opencode.json(c), then reload the project",
@@ -184,7 +188,11 @@ export async function buildStatus(deps: StatusDeps): Promise<StatusReport> {
     })),
     outboxDepth: outbox.length,
     stats,
-    leaseHeldByCaller: lease !== undefined && deps.instanceHoldsLease === true,
+    // Only a LIVE lease counts: an expired record means the lease is free,
+    // not "held elsewhere" — an operator chasing a stall must not be sent
+    // after a phantom holder.
+    leaseHeldByCaller: leaseLive && deps.instanceHoldsLease === true,
+    leaseHeldElsewhere: leaseLive && deps.instanceHoldsLease !== true,
     notes,
   }
 }
@@ -262,7 +270,15 @@ export function formatStatus(report: StatusReport, now: number = Date.now()): st
   lines.push(
     `  stats         enqueued ${report.stats.enqueued} · accepted ${report.stats.accepted} · rejected ${report.stats.rejected} · retryable ${report.stats.retryable} · invalidDestination ${report.stats.invalidDestination} · dropped ${report.stats.dropped} · renewals ${report.stats.renewals}`,
   )
-  lines.push(`  lease         ${report.leaseHeldByCaller ? "held by this instance" : "held elsewhere (another project location is draining)"}`)
+  lines.push(
+    `  lease         ${
+      report.leaseHeldByCaller
+        ? "held by this instance"
+        : report.leaseHeldElsewhere
+          ? "held elsewhere (another project location is draining)"
+          : "free"
+    }`,
+  )
   for (const note of report.notes) lines.push(`  note          ${note}`)
 
   return lines.join("\n")

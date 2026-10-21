@@ -208,6 +208,11 @@ export class DeliveryEngine {
       .sort((a, b) => a.createdAt - b.createdAt)
       .slice(0, MAX_PER_TICK)
     for (const item of due) {
+      // Keep the lease alive across a slow drain: a hung relay plus the
+      // per-request timeout can outlive LEASE_MS, and once it expires
+      // another instance may take the lease and re-send these same
+      // in-flight items. Stop if a different owner now holds it.
+      if (!(await this.store.lease(this.instanceID, this.now(), LEASE_MS))) return
       const device = await this.store.getDevice(item.deviceID)
       if (device === undefined || device.needsEnroll) {
         await this.store.removeOutbox(item.id)

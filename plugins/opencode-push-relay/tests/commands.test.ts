@@ -7,7 +7,7 @@ import { pushCommandDefinitions, type CommandDeps } from "../src/commands.ts"
 import { DeliveryEngine } from "../src/engine.ts"
 import { RelayError, type RelayClient } from "../src/relay.ts"
 import { sha256hex } from "../src/signing.ts"
-import { buildStatus } from "../src/status.ts"
+import { buildStatus, formatStatus } from "../src/status.ts"
 
 import {
   FakeRelayClient,
@@ -196,4 +196,36 @@ test("push-test failure rows carry the machine code only; detail goes to the log
   assert.ok(!text.includes("grant is expired"))
   // …but it is preserved in the server log for debugging.
   assert.ok(s.logs.some((message) => message.includes("grant is expired")))
+})
+
+test("lease line distinguishes this holder, another live holder, and free", async () => {
+  const store = makeStore()
+  const relay = new FakeRelayClient()
+  const report = (instanceHoldsLease?: boolean) =>
+    buildStatus({
+      config: makeConfig(),
+      missing: [],
+      problems: [],
+      store,
+      relay: relay as unknown as RelayClient,
+      ensureOutcome: undefined,
+      instanceHoldsLease,
+    })
+
+  // No lease record: free — not "held elsewhere", even if the caller
+  // believes it holds the lease.
+  assert.match(formatStatus(await report(true)), /lease\s+free/)
+  // Live lease owned by this instance.
+  await store.lease("engine-1", Date.now(), 30_000)
+  assert.match(formatStatus(await report(true)), /lease\s+held by this instance/)
+  // Same live lease, but this instance is not the owner.
+  assert.match(
+    formatStatus(await report(false)),
+    /held elsewhere \(another project location is draining\)/,
+  )
+  // Expired lease: free again, regardless of owner match.
+  await store.releaseLease("engine-1")
+  await store.lease("engine-3", Date.now() - 60_000, 5_000)
+  assert.match(formatStatus(await report(false)), /lease\s+free/)
+  assert.match(formatStatus(await report(true)), /lease\s+free/)
 })

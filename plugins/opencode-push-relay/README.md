@@ -4,7 +4,7 @@ OpenCode **server plugin** that registers this host with an
 [apns-push-relay](../../docs/notifications.md) instance and delivers
 session/permission notifications to paired iOS clients over APNs.
 
-Status: implemented and unit-tested (91 tests) against a fake relay and the
+Status: implemented and unit-tested (93 tests) against a fake relay and the
 relay's golden signing fixture, and verified to load in a real OpenCode
 v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
 **Not yet verified against a live relay or device** — see
@@ -81,12 +81,17 @@ export.
 
 ## Storage and leases
 
-One server-global KV table namespaced by plugin id: `registration`,
-`device/<id>`, `outbox/<id>`, `sent/<eventId>`, `lease`. All project
-locations share it; the delivery lease ensures a single instance drains at a
-time (other instances pick up after expiry). Correctness never depends on the
-lease: outbox writes are idempotent per (transition, device) and APNs
-collapse ids dedupe duplicate sends.
+One server-global KV table namespaced by plugin id, then scoped per
+options (`relayUrl|app|tenant`): `registration`, `device/<id>`,
+`outbox/<id>`, `sent/<eventId>`, `lease`. Project locations with identical
+options share their scope — one registration, device set, outbox and lease —
+while locations with different options never mix credentials. The delivery
+lease ensures a single instance drains at a time (others pick up after
+expiry; the holder re-news it before every outbox item, so a slow drain
+cannot outlive it, and `/push-status` reports holder vs free from the
+lease's live expiry). Correctness never depends on the lease: outbox writes
+are idempotent per (transition, device) and APNs collapse ids dedupe
+duplicate sends.
 
 ## Loading (verified against OpenCode v2.0.30)
 
@@ -104,9 +109,13 @@ collapse ids dedupe duplicate sends.
   empty and non-empty options. `relayUrl`/`app` therefore cannot be set
   from within this repo on v2.0.30; the root `opencode.jsonc` entry
   documents the intended wiring for versions that honor it.
-- **Deploying with options.** Declare the published package name in the
-  config your OpenCode build actually loads, e.g. the global
-  `~/.config/opencode/opencode.jsonc`:
+- **Deploying with options.** The package ships prebuilt JavaScript
+  (`dist/`, produced by the `prepare` script): Node refuses to type-strip
+  TypeScript beneath `node_modules`, so the npm `exports` must point at
+  `.js`. Verified locally by importing both entrypoints from a simulated
+  physical `node_modules` install (not yet via a real `npm publish`).
+  Declare the published package name in the config your OpenCode build
+  actually loads, e.g. the global `~/.config/opencode/opencode.jsonc`:
 
   ```json
   {

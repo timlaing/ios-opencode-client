@@ -159,6 +159,37 @@ test("overlapping ticks never double-send in-flight items", async () => {
   assert.equal((await s.store.listOutbox()).length, 0)
 })
 
+test("drain re-news its lease per item and stops if another owner takes it", async () => {
+  const s = setup()
+  await s.store.saveDevice(makeDevice("dev_a"))
+  await s.engine.enqueue(makeDraft())
+  await s.engine.enqueue(
+    makeDraft({
+      transitionID: "evt_2",
+      ledgerKey: "host:host-a|session:ses_1|owner:-|transition:evt_2",
+    }),
+  )
+  // Two queued items. The first push hangs long enough for LEASE_MS to
+  // elapse, during which a different instance takes the lease — the drain
+  // must notice on the next item instead of double-sending from an
+  // expired lease.
+  const send = s.relay.push.bind(s.relay)
+  let stolen = false
+  s.relay.push = async (request) => {
+    if (!stolen) {
+      stolen = true
+      s.advance(31_000) // > LEASE_MS (30s)
+      assert.equal(await s.store.lease("thief-instance", s.now(), 30_000), true)
+    }
+    return send(request)
+  }
+  await s.engine.tick()
+  // Only the in-flight item was sent; the rest stays queued for the new
+  // lease holder rather than being pushed from a stale lease.
+  assert.equal(s.relay.pushes.length, 1)
+  assert.equal((await s.store.listOutbox()).length, 1)
+})
+
 test("retryable results back off, then succeed on a later tick", async () => {
   const s = setup()
   await s.store.saveDevice(makeDevice("dev_a"))

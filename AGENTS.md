@@ -38,6 +38,7 @@ swift test --package-path Packages/OpenCodeKit   # package tests (SSE/encoding/s
 ```sh
 npm install
 npm run typecheck   # tsc --noEmit (strict)
+npm run build       # tsc -p tsconfig.build.json -> dist/ (also runs via the prepare hook; npm exports point at dist/*.js — Node will not strip TS under node_modules)
 npm test            # node --test tests/ — signing fixture, classifier, config, grant, store, engine, events, handlers, commands, relay
 ```
 

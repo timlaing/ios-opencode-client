@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 .mock-local/
 node_modules/
+plugins/opencode-push-relay/dist/
 
 # Xcode / Swift
 Build/

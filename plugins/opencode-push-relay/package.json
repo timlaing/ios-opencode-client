@@ -5,13 +5,16 @@
   "type": "module",
   "license": "MPL-2.0",
   "exports": {
-    ".": "./src/index.ts",
-    "./rpc": "./src/rpc.ts"
+    ".": "./dist/index.js",
+    "./rpc": "./dist/rpc.js"
   },
   "files": [
+    "dist",
     "src"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "node --test tests/",
     "typecheck": "tsc --noEmit"
   },
