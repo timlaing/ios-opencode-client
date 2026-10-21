@@ -52,7 +52,7 @@ Use one rendering pipeline for assistant messages, user messages, and composer p
 
 Local-push manager/recovery defaults were retired with local push itself (removed 21 October 2026; see notifications.md).
 
-Use the native event contract and web reconnect/state semantics. Maintain a connection per enabled host while the app has runtime (docs/api-contract.md W16); observe all configured enabled hosts rather than silently imposing a product-level host cap. Measure multiple-host resource use early; if an actual platform limit appears, surface it and resolve the product impact explicitly.
+Use the native event contract and web reconnect/state semantics. The entire live-stream surface is one subscription per on-screen conversation while the app has runtime (docs/api-contract.md W16) — there is no always-on observer over every enabled host. Measure resource use when multiple scenes watch hosts at once; if an actual platform limit appears, surface it and resolve the product impact explicitly.
 
 For transient failures, start with reconnect delays of 1, 2, 4, 8, 16, 32, then 60 seconds with 20% jitter, unless web/server semantics prescribe otherwise. Reattempt promptly after a real reachability change without creating duplicate connections. Stop authentication-failure retry loops and show Re-pair Required. Do not automatically retry commands, approvals, or configuration writes.
 

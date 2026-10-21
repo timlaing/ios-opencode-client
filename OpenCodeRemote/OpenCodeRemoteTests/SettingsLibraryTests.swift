@@ -73,6 +73,17 @@ final class SettingsLibraryTests: XCTestCase {
         )
     }
 
+    func testInitialisationRemovesTheLegacyPushPreferencesBlob() {
+        defaults.set(Data([0x7B]), forKey: "settings.hostpush.v1")
+
+        _ = SettingsLibrary(defaults: defaults)
+
+        XCTAssertNil(
+            defaults.data(forKey: "settings.hostpush.v1"),
+            "the removed feature's preferences are cleared on upgrade, without waiting for Clear Local Data"
+        )
+    }
+
     func testUpdatesPersistAcrossARelaunchAndTouchNothingElse() {
         let library = SettingsLibrary(defaults: defaults)
         library.update { $0.appLockEnabled = true }

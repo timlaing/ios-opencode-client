@@ -180,6 +180,7 @@ final class SettingsLibrary {
         } else {
             state = SettingsState()
         }
+        clearLegacyPushPreferences()
     }
 
     // MARK: - Device settings
@@ -198,9 +199,13 @@ final class SettingsLibrary {
     func resetToDefaults() {
         state = SettingsState()
         persist()
-        // Legacy per-host push preferences (removed feature) are local
-        // data too: the old settings.hostpush.v1 blob must not survive
-        // Clear Local Data (review: removal r1).
+        clearLegacyPushPreferences()
+    }
+
+    /// The removed per-host push feature's blob (settings.hostpush.v1)
+    /// must never survive — cleared on upgrade in `init` and by Clear
+    /// Local Data (review: removal r1, r3).
+    private func clearLegacyPushPreferences() {
         defaults.removeObject(forKey: "settings.hostpush.v1")
     }
 

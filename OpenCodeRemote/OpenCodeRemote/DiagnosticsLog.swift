@@ -6,7 +6,11 @@ import Foundation
 /// at 5 MiB, never uploaded automatically).
 struct DiagnosticsEntry: Codable, Equatable, Sendable, Identifiable {
     enum Category: String, Codable, Sendable {
-        case notifications, storage
+        // `push` has NO writer — production never recorded one and
+        // local push was removed 21 October 2026. Kept only so any
+        // existing line still decodes instead of being silently
+        // dropped on the next rewrite (review: removal r3).
+        case notifications, push, storage
     }
 
     enum Severity: String, Codable, Sendable {
