@@ -898,6 +898,13 @@ struct ConversationView: View {
         // re-save would move the retention clock's "last edit" for a
         // draft nobody edited (review W17 r1).
         .onChange(of: draft) { _, newValue in
+            // The expiry caption belongs to the RESTORED text only: any
+            // divergence clears it permanently, so a later revert cannot
+            // re-show an expiry derived from the pre-edit timestamp (the
+            // save path writes a newer updatedAt; review follow-on r1).
+            if let restored = restoredDraft, newValue != restored.text {
+                restoredDraft = nil
+            }
             draftSaveTask?.cancel()
             guard newValue != lastPersistedDraft else { return }
             let hostUUID = host.id.rawValue
