@@ -177,16 +177,23 @@ final class CloudSettingsSync {
     /// The stored snapshot; a corrupt or foreign-schema payload reads
     /// as empty — a bad line must never wedge sync or the settings
     /// that lean on it.
-    func snapshot() -> Snapshot {
-        guard let raw = store.string(forKey: Self.key),
-              let data = raw.data(using: .utf8),
+    /// nil = a payload EXISTS but cannot be trusted (corrupt, or a
+    /// foreign schema from a newer app) — reconcile must never push
+    /// over it and wipe the other devices' records (review W17 r4).
+    func readSnapshot() -> Snapshot? {
+        guard let raw = store.string(forKey: Self.key) else { return Snapshot() }
+        guard let data = raw.data(using: .utf8),
               let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
               snapshot.schemaVersion == Snapshot().schemaVersion
         else {
-            return Snapshot()
+            return nil
         }
         return snapshot
     }
+
+    /// The display/test view: an unreadable payload reads as empty.
+    /// Reconcile uses readSnapshot() and refuses to write over one.
+    func snapshot() -> Snapshot { readSnapshot() ?? Snapshot() }
 
     /// What THIS device last recorded — the local half of the
     /// per-field merge (docs I6's "last recorded edit per field").
@@ -225,7 +232,16 @@ final class CloudSettingsSync {
             return lastReport
         }
 
-        let cloud = snapshot()
+        guard let cloud = readSnapshot() else {
+            // An existing payload that cannot be READ is never
+            // overwritten: the other devices' tombstones and records
+            // live there, and a schema-1 push would wipe them
+            // (review W17 r4). Clear Synced Settings is the
+            // documented recovery.
+            status = .error("The iCloud settings record is unreadable or from a newer app version. Nothing was uploaded. Clear Synced Settings to start again.")
+            lastReport = SyncReport()
+            return lastReport
+        }
         var report = SyncReport()
 
         // --- Appearance: last recorded edit per field.

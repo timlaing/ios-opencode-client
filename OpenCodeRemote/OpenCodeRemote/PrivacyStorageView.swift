@@ -22,7 +22,6 @@ struct PrivacyStorageView: View {
 
     var body: some View {
         List {
-            appLockSection
             syncSection
             backupsSection
             cacheSection
@@ -50,23 +49,11 @@ struct PrivacyStorageView: View {
     }
 
     // MARK: - App lock
-
-    private var appLockSection: some View {
-        Section {
-            Toggle("Require App Lock", isOn: binding(\.appLockEnabled))
-            if settings.state.appLockEnabled {
-                Picker("Lock After", selection: binding(\.appLockGrace)) {
-                    ForEach(AppLockGrace.allCases, id: \.self) { grace in
-                        Text(grace.label).tag(grace)
-                    }
-                }
-            }
-        } header: {
-            Text("App Lock")
-        } footer: {
-            Text("Unlocked with Face ID or Touch ID; your passcode is the fallback. Notifications keep working while the app is locked. iOS still shows the last screen as a snapshot in the app switcher.")
-        }
-    }
+    // WITHHELD (review W17 r4): appLockEnabled/appLockGrace persist
+    // in the settings blob, but no LocalAuthentication mechanism
+    // reads them — the honesty rule keeps the section off-screen
+    // until the app-lock slice lands. A toggle the app does not
+    // honour tells the user they are protected when they are not.
 
     // MARK: - iCloud (I6: opt-in, scoped, tombstoned)
 
@@ -132,7 +119,7 @@ struct PrivacyStorageView: View {
 
     private var backupsSection: some View {
         Section("Backups") {
-            Text("Your device backup keeps preserved drafts and preferences. Credentials, sync payloads, staged files, notification ledgers, and caches are excluded.")
+            Text("Your device backup keeps preserved drafts, preferences, the local diagnostic log, notification history, and iCloud sync records. Credentials (keychain, this-device-only), staged files, and caches are excluded.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -142,11 +129,6 @@ struct PrivacyStorageView: View {
 
     private var cacheSection: some View {
         Section {
-            Picker("Cache Size", selection: binding(\.cacheSizePolicy)) {
-                ForEach(CacheSizePolicy.allCases, id: \.self) { policy in
-                    Text(policy.label).tag(policy)
-                }
-            }
             LabeledContent("Used") {
                 if let cacheUsage {
                     Text(ByteCountFormatter.string(fromByteCount: cacheUsage, countStyle: .file))
@@ -160,9 +142,10 @@ struct PrivacyStorageView: View {
             .accessibilityIdentifier("S19.clearCache")
         } header: {
             Text("Cache")
-        } footer: {
-            Text("A soft budget for refetchable history, previews, and thumbnails within the 30-day window. Drafts and pending uploads are never removed to meet it.")
         }
+        // No budget picker (review W17 r4): cacheSizePolicy
+        // persists, but no eviction mechanism enforces it — Used
+        // and Clear Cache are the controls with real mechanisms.
         .confirmationDialog(
             "Clear the refetchable cache?",
             isPresented: $showingClearCache,

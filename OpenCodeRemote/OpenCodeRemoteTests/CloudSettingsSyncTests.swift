@@ -379,6 +379,42 @@ final class CloudSettingsSyncTests: XCTestCase {
         XCTAssertNotNil(record.deletedAt, "a refused write must never lose the removal — the cloud tombstones on retry")
     }
 
+    func testUnreadableCloudPayloadIsNeverOverwritten() throws {
+        let settings = makeSettings()
+        settings.update { $0.icloudSyncRequested = true }
+        let sync = makeSync()
+
+        // A corrupt record: reconcile refuses to write over it — the
+        // other devices' records and tombstones live there (review
+        // W17 r4).
+        store.storage[CloudSettingsSync.key] = "not json at all"
+        let report = sync.reconcile(settings: settings, hostAddresses: ["h1": "https://a.example.com"])
+        XCTAssertEqual(store.storage[CloudSettingsSync.key], "not json at all", "a corrupt record is never overwritten")
+        guard case .error = sync.status else {
+            return XCTFail("an unreadable payload surfaces as an error")
+        }
+        XCTAssertTrue(report.pendingCandidates.isEmpty, "nothing untrusted is ever offered")
+
+        // A foreign (newer) schema is likewise never downgraded.
+        let foreign = String(
+            data: try JSONEncoder().encode(CloudSettingsSync.Snapshot(schemaVersion: 99)),
+            encoding: .utf8
+        )!
+        store.storage[CloudSettingsSync.key] = foreign
+        _ = sync.reconcile(settings: settings, hostAddresses: ["h1": "https://a.example.com"])
+        XCTAssertEqual(store.storage[CloudSettingsSync.key], foreign, "a newer-schema record is never downgraded")
+        guard case .error = sync.status else {
+            return XCTFail("a foreign schema surfaces as an error")
+        }
+
+        // Clear Synced Settings is the recovery: the next pass
+        // starts fresh and converges.
+        sync.clearSyncedSettings()
+        sync.reconcile(settings: settings, hostAddresses: ["h1": "https://a.example.com"])
+        XCTAssertEqual(sync.status, .upToDate)
+        XCTAssertEqual(sync_snapshot().hosts["h1"]?.address, "https://a.example.com", "the fresh pass pairs normally")
+    }
+
     func testCorruptOrForeignSchemaSnapshotReadsAsEmpty() throws {
         store.storage[CloudSettingsSync.key] = "not json at all"
         let sync = makeSync()

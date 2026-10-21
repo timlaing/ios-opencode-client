@@ -60,15 +60,13 @@ struct SettingsView: View {
                     }
                 }
 
-                Section("Attachments & Network") {
-                    Picker("Upload Warning", selection: binding(\.uploadWarningThreshold)) {
-                        ForEach(UploadWarningThreshold.allCases, id: \.self) { threshold in
-                            Text(threshold.label).tag(threshold)
-                        }
-                    }
-                    Toggle("Cellular Uploads", isOn: binding(\.allowCellularUploads))
-                    Toggle("Background Uploads", isOn: binding(\.continueBackgroundUploads))
-                }
+                // "Attachments & Network" WITHHELD (review W17 r4):
+                // uploadWarningThreshold, allowCellularUploads and
+                // continueBackgroundUploads persist, but nothing
+                // reads them — the attachment pipeline still uses
+                // its static threshold and cannot yet restrict
+                // cellular or background transfers. Controls appear
+                // only when a real mechanism honours them.
 
                 Section("Notifications & Activities") {
                     NavigationLink {
