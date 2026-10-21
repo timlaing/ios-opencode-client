@@ -24,6 +24,10 @@ struct ContentView: View {
     /// the external-change subscription and the local mirror are
     /// shared app-wide.
     @State private var cloud = CloudSettingsSync()
+    /// W17 r2: the foreground pull — an iCloud edit made on another
+    /// device converges when the app becomes active, not only when
+    /// S19 opens.
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         TabView {
@@ -46,10 +50,25 @@ struct ContentView: View {
         .environment(localState)
         .environment(notifications)
         .environment(cloud)
-        // W17 I6: the quota reason reaches the engine through the
-        // store's external-change notification (KVS writes never
-        // throw); every other change converges on the next pull.
-        .onAppear { cloud.observeExternalChanges() }
+        // W17 I6: the store's external-change notification reaches
+        // the engine (quota refusal → status; server push / initial
+        // sync → the reconcile hook below). Stored closures capture
+        // REFERENCES (nextHead lesson), never the view struct.
+        .onAppear {
+            let cloud = self.cloud
+            let settings = self.settings
+            let library = self.library
+            cloud.onExternalChange = {
+                Self.reconcileCloudSync(cloud: cloud, settings: settings, library: library)
+            }
+            cloud.observeExternalChanges()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // The foreground pull (review W17 r2). The engine is
+            // opt-in gated: sync off converges nothing.
+            guard phase == .active else { return }
+            Self.reconcileCloudSync(cloud: cloud, settings: settings, library: library)
+        }
         // W17 drafts retention: one sweep per launch removes drafts
         // older than the active policy's cutoff (until-discarded
         // sweeps nothing — see ComposerDraftStore.applyRetention).
@@ -65,6 +84,23 @@ struct ContentView: View {
                 .environment(library)
         }
     }
+
+    /// One pull-merge-push pass — the call S19 makes, from the
+    /// SHELL: external KVS pushes and the scene returning to active
+    /// converge here too (review W17 r2). Static so the stored
+    /// external-change hook captures only the three references.
+    private static func reconcileCloudSync(
+        cloud: CloudSettingsSync, settings: SettingsLibrary, library: HostLibrary
+    ) {
+        cloud.reconcile(
+            settings: settings,
+            hostAddresses: Dictionary(
+                library.entries.map { ($0.id.rawValue, $0.host.address.absoluteString) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        )
+    }
+
 }
 
 /// Host management (S01/S02): the welcome/setup screen with no hosts, then
@@ -72,6 +108,11 @@ struct ContentView: View {
 private struct ServersTab: View {
     let library: HostLibrary
     var onConnectHost: () -> Void
+
+    /// W17 r2: Remove Host clears the host's local settings too
+    /// (implementation-defaults.md I5) — read from the shell's
+    /// injection, like ProjectsTab reads ProjectsLibrary.
+    @Environment(SettingsLibrary.self) private var settings
 
     @State private var hostPendingRemoval: OpenCodeDomain.Host?
     @State private var removalFailure: String?
@@ -152,6 +193,11 @@ private struct ServersTab: View {
         hostPendingRemoval = nil
         do {
             try library.remove(host.id)
+            // The host's local settings die with its credential
+            // (implementation-defaults.md I5): the per-host push flag
+            // and its eligible Wi-Fi list must not outlive the host
+            // (review W17 r2).
+            settings.removeHostSettings(host.id.rawValue)
         } catch {
             removalFailure = "The host could not be removed from this device."
         }

@@ -10,6 +10,10 @@ protocol KeyValueStore: AnyObject {
     func string(forKey key: String) -> String?
     func set(_ value: String, forKey key: String)
     func removeValue(forKey key: String)
+    /// Apple recommends one synchronize() per launch so the local
+    /// cache reflects the server before the first read (review W17
+    /// r2).
+    func synchronize()
 }
 
 /// The real NSUbiquitousKeyValueStore bridge. KVS writes never throw —
@@ -33,6 +37,10 @@ final class UbiquitousKeyValueStore: KeyValueStore {
 
     func removeValue(forKey key: String) {
         store.removeObject(forKey: key)
+        store.synchronize()
+    }
+
+    func synchronize() {
         store.synchronize()
     }
 }
@@ -129,6 +137,12 @@ final class CloudSettingsSync {
     private let deviceID: String
     private let now: () -> Date
     private var observers: [NSObjectProtocol] = []
+
+    /// The shell's reconcile hook (ContentView): external KVS pushes
+    /// and the initial sync converge through ONE MainActor entry
+    /// point — the engine itself never sees SettingsLibrary or the
+    /// host list (review W17 r2).
+    var onExternalChange: (@MainActor () -> Void)?
 
     private(set) var status: SyncStatus = .off
     private(set) var lastReport = SyncReport()
@@ -325,11 +339,15 @@ final class CloudSettingsSync {
             mergedHosts[hostID]?.modifiedAt = stamp
         }
 
-        report.syncedHostCount = mergedHosts.values.filter { $0.deletedAt == nil }.count
-        report.pendingCandidates = mergedHosts
-            .filter { $0.value.deletedAt == nil && !hostAddresses.keys.contains($0.key) }
-            .map { $0.value.address }
-            .sorted()
+        // Candidates and the live count are matched by ADDRESS, not
+        // by the device-local host key: two devices pairing the same
+        // address produce two keys, and the other device's record
+        // must never be offered back — or double-counted — as
+        // something new (review W17 r2).
+        let liveAddresses = Set(mergedHosts.values.filter { $0.deletedAt == nil }.map(\.address))
+        report.syncedHostCount = liveAddresses.count
+        let localAddresses = Set(hostAddresses.values.map(Self.strippedAddress))
+        report.pendingCandidates = liveAddresses.subtracting(localAddresses).sorted()
 
         let merged = Snapshot(schemaVersion: 1, appearance: mergedAppearance, hosts: mergedHosts)
 
@@ -366,8 +384,9 @@ final class CloudSettingsSync {
 
     /// The OS reported the store changed underneath us — most often
     /// the quota reason (docs I6). Local edits are kept and the
-    /// failure is reported; every other change converges on the next
-    /// pull, since the records are versioned.
+    /// failure is reported; every other change converges through the
+    /// shell's reconcile hook immediately (observeExternalChanges),
+    /// since the records are versioned.
     func noteQuotaFailure() {
         status = .error("iCloud hit its settings-sync limit. Local settings are intact; the next sync retries.")
     }
@@ -377,6 +396,9 @@ final class CloudSettingsSync {
     /// reaches this engine (KVS writes never throw).
     func observeExternalChanges() {
         guard observers.isEmpty else { return }
+        // One synchronize() per launch, as Apple recommends, so the
+        // local cache reflects the server before the first read.
+        store.synchronize()
         observers.append(
             NotificationCenter.default.addObserver(
                 forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
@@ -386,6 +408,12 @@ final class CloudSettingsSync {
                 let reason = notification.userInfo?[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int
                 if reason == NSUbiquitousKeyValueStoreQuotaViolationChange {
                     Task { @MainActor in self?.noteQuotaFailure() }
+                } else {
+                    // Server push / initial sync: the shell's ONE
+                    // reconcile entry point converges now — "next
+                    // pull" must not mean "next time S19 opens"
+                    // (review W17 r2).
+                    Task { @MainActor in self?.onExternalChange?() }
                 }
             }
         )

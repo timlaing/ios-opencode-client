@@ -14,6 +14,7 @@ final class CloudSettingsSyncTests: XCTestCase {
     private final class FakeStore: KeyValueStore, @unchecked Sendable {
         var storage: [String: String] = [:]
         var failWrites = false
+        var synchronizeCalls = 0
 
         func string(forKey key: String) -> String? { storage[key] }
         func set(_ value: String, forKey key: String) {
@@ -21,6 +22,7 @@ final class CloudSettingsSyncTests: XCTestCase {
             storage[key] = value
         }
         func removeValue(forKey key: String) { storage.removeValue(forKey: key) }
+        func synchronize() { synchronizeCalls += 1 }
     }
 
     /// Mutable clock, safe to hand to the @Sendable closure.
@@ -302,6 +304,31 @@ final class CloudSettingsSyncTests: XCTestCase {
         XCTAssertEqual(sync.status, .upToDate, "the standing tombstone is not an error")
     }
 
+    func testSameAddressUnderTwoDeviceLocalIDsIsNotOfferedBack() throws {
+        // Device B paired the SAME address under its own device-local
+        // UUID — the cloud holds two keys for one address, and this
+        // device must never be offered what it already has (review
+        // W17 r2).
+        seed(CloudSettingsSync.Snapshot(hosts: [
+            "remote-id": .init(
+                address: "https://a.example.com",
+                modifiedAt: Date(timeIntervalSince1970: 900_000),
+                deviceID: "device-remote",
+                deletedAt: nil
+            ),
+        ]))
+        let settings = makeSettings()
+        settings.update { $0.icloudSyncRequested = true }
+
+        let report = makeSync().reconcile(
+            settings: settings,
+            hostAddresses: ["local-id": "https://a.example.com"]
+        )
+
+        XCTAssertEqual(report.pendingCandidates, [], "an address this device already has is never offered back")
+        XCTAssertEqual(report.syncedHostCount, 1, "one address is one host — never double-counted by key")
+    }
+
     // MARK: - Quota and corruption
 
     func testQuotaRefusalKeepsLocalEditsAndTheNextRetrySucceeds() {
@@ -354,6 +381,38 @@ final class CloudSettingsSyncTests: XCTestCase {
         XCTAssertNil(store.storage[CloudSettingsSync.key], "the cloud record is gone")
         XCTAssertNil(UserDefaults(suiteName: suiteName)!.data(forKey: CloudSettingsSync.mirrorKey), "the local mirror goes too")
         XCTAssertEqual(settings.state.appearance, .system, "clearing synced settings never touches local settings")
+    }
+
+    // MARK: - External changes (review W17 r2)
+
+    func testExternalServerChangeFiresTheReconcileHookAndSynchronizesOnce() async {
+        let sync = makeSync()
+        sync.observeExternalChanges()
+        XCTAssertEqual(store.synchronizeCalls, 1, "one synchronize() per launch, as Apple recommends")
+
+        let converged = expectation(description: "the shell's reconcile hook ran")
+        sync.onExternalChange = { converged.fulfill() }
+        NotificationCenter.default.post(
+            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: nil,
+            userInfo: [NSUbiquitousKeyValueStoreChangeReasonKey: NSUbiquitousKeyValueStoreServerChange]
+        )
+        await fulfillment(of: [converged], timeout: 2)
+
+        // The quota reason reports status and never asks the shell to
+        // converge.
+        let quotaNeverConverges = expectation(description: "quota must not fire the hook")
+        quotaNeverConverges.isInverted = true
+        sync.onExternalChange = { quotaNeverConverges.fulfill() }
+        NotificationCenter.default.post(
+            name: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: nil,
+            userInfo: [NSUbiquitousKeyValueStoreChangeReasonKey: NSUbiquitousKeyValueStoreQuotaViolationChange]
+        )
+        await fulfillment(of: [quotaNeverConverges], timeout: 1)
+        guard case .error = sync.status else {
+            return XCTFail("the quota reason must surface as an error status")
+        }
     }
 
     // MARK: - Helpers

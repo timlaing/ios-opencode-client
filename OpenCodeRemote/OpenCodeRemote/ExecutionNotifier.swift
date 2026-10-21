@@ -142,7 +142,6 @@ final class NotificationDedupStore {
 ///
 /// The three terminal outcomes are the contract's canonical
 /// notification transitions (succeeded / failed / interrupted).
-@MainActor
 /// The S17 delivery policy, snapshotted from the user's settings at
 /// the moment a terminal arrives: which outcomes are enabled (the
 /// category switches) and whether content may name the session and
@@ -154,6 +153,7 @@ struct NotificationDeliveryPolicy: Sendable {
     var categories: NotificationCategories
 }
 
+@MainActor
 final class ExecutionNotifier {
     private let notifier: UserNotifying
     private let dedup: NotificationDedupStore
