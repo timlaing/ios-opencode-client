@@ -37,7 +37,15 @@ def parse_lcov(text):
             current = None
     return result
 
+def checked_bundle(value):
+    bundle = Path(value).resolve(strict=True)
+    if bundle.suffix != '.xcresult' or not bundle.is_dir():
+        raise ValueError('Expected an existing .xcresult directory')
+    return str(bundle)
+
+
 def parse_xccov(bundle):
+    bundle = checked_bundle(bundle)
     report = json.loads(subprocess.check_output(['xcrun', 'xccov', 'view', '--report', '--json', bundle]))
     result = {}
     for target in report['targets']:
@@ -45,7 +53,7 @@ def parse_xccov(bundle):
             path = repo_path(file['path'])
             if not path:
                 continue
-            output = subprocess.check_output(['xcrun', 'xccov', 'view', '--archive', '--file', file['path'], bundle], text=True)
+            output = subprocess.check_output(['xcrun', 'xccov', 'view', '--archive', '--file', str((ROOT / path).resolve(strict=True)), bundle], text=True)
             lines = result.setdefault(path, {})
             for line in output.splitlines():
                 match = re.match(r'\s*(\d+):\s*(\d+)\b', line)

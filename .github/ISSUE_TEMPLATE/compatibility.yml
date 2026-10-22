@@ -5,8 +5,26 @@ body:
   - type: markdown
     attributes:
       value: |
-        The app contract baseline and plugin dependency are separately pinned.
+        Please provide the full version combination and a minimal reproduction.
         Use synthetic data and remove passwords, tokens and private conversations.
+  - type: dropdown
+    id: components
+    attributes:
+      label: Affected component
+      description: Select all affected components, or choose Unknown.
+      multiple: true
+      options:
+        - "component: app"
+        - "component: transport"
+        - "component: domain"
+        - "component: storage"
+        - "component: mock-contracts"
+        - "component: push-relay"
+        - "component: ci"
+        - "component: documentation"
+        - Unknown
+    validations:
+      required: true
   - type: textarea
     attributes:
       label: Versions and environment

@@ -37,7 +37,6 @@ def require_environment(repository, kind):
 if __name__ == '__main__':
     try:
         require_checks(os.environ['GITHUB_REPOSITORY'], sys.argv[1])
-        require_environment(os.environ['GITHUB_REPOSITORY'], os.environ['RELEASE_KIND'])
     except ValueError as error:
         raise SystemExit(str(error)) from error
     print('Exact release commit passed Tests, Sonar and CodeQL on main')

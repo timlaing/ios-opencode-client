@@ -15,8 +15,8 @@ cleanup() {
 }
 trap cleanup EXIT
 KEYCHAIN_PASSWORD=$(openssl rand -hex 24)
-printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 --decode > "$TEMP_DIR/cert.p12"
-printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 --decode > "$TEMP_DIR/profile.mobileprovision"
+printf '%s' "$BUILD_CERTIFICATE_BASE64" | base64 -D > "$TEMP_DIR/cert.p12"
+printf '%s' "$PROVISIONING_PROFILE_BASE64" | base64 -D > "$TEMP_DIR/profile.mobileprovision"
 printf '%s' "$ASC_PRIVATE_KEY" > "$TEMP_DIR/AuthKey_${ASC_KEY_ID}.p8"
 chmod 600 "$TEMP_DIR"/*
 security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
@@ -43,5 +43,6 @@ assert entitlements.get('com.apple.developer.ubiquity-kvstore-identifier'), 'Pro
 options = {'method': 'app-store-connect', 'destination': 'upload', 'teamID': '4C8FWEBR8F', 'signingStyle': 'manual', 'signingCertificate': 'Apple Distribution', 'manageAppVersionAndBuildNumber': False, 'provisioningProfiles': {'uk.co.laingcorp.opencode-client.OpenCodeRemote': os.environ['PROFILE_NAME']}}
 (Path(os.environ['TEMP_DIR']) / 'ExportOptions.plist').write_bytes(plistlib.dumps(options))
 PYTHON
-xcodebuild archive -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -configuration Release -destination 'generic/platform=iOS' -archivePath "$TEMP_DIR/OpenCodeRemote.xcarchive" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
+xcodebuild archive -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -configuration Release -destination 'generic/platform=iOS' -archivePath "$TEMP_DIR/OpenCodeRemote.xcarchive" CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_VERSION"
+python3 scripts/ci/release_guard.py verify-tag
 xcodebuild -exportArchive -archivePath "$TEMP_DIR/OpenCodeRemote.xcarchive" -exportOptionsPlist "$TEMP_DIR/ExportOptions.plist" -exportPath "$TEMP_DIR/export" -authenticationKeyPath "$TEMP_DIR/AuthKey_${ASC_KEY_ID}.p8" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" -allowProvisioningUpdates

@@ -9,6 +9,8 @@ def parse_tag(tag):
     if not match:
         raise ValueError('Use app-vX.Y.Z or plugin-vX.Y.Z, optionally with a prerelease suffix')
     kind, version, suffix = match.groups()
+    if kind == 'app' and suffix:
+        raise ValueError('App releases require stable app-vX.Y.Z tags')
     return kind, version + (suffix or ''), version
 
 if __name__ == '__main__':

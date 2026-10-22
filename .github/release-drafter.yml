@@ -1,6 +1,8 @@
 name-template: "App v$RESOLVED_VERSION"
 tag-template: "app-v$RESOLVED_VERSION"
 commitish: main
+tag-prefix: app-v
+filter-by-commitish: true
 categories:
   - title: Dependencies
     labels: [dependencies]

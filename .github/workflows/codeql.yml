@@ -13,6 +13,8 @@ jobs:
     name: CodeQL (${{ matrix.language }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: ${{ matrix.xcode }}
     permissions:
       contents: read
       security-events: write
@@ -31,25 +33,30 @@ jobs:
             runner: ubuntu-24.04
             build: none
           - language: swift
-            runner: xcode-27
+            # CodeQL tracing cannot run on macOS/Xcode 27 (GitHub, 2026-10-19).
+            runner: macos-26
+            xcode: /Applications/Xcode_26.6.app/Contents/Developer
             build: manual
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: github/codeql-action/init@v4
+      - name: Prepare supported Swift toolchain before tracing
+        if: matrix.language == 'swift'
+        run: |
+          xcodebuild -version
+          arch -arm64 brew install xcodegen
+          xcodegen generate --spec OpenCodeRemote/project.yml
+          xcodebuild -resolvePackageDependencies -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -clonedSourcePackagesDirPath Build/SourcePackages
+      - uses: github/codeql-action/init@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build }}
           queries: security-extended
       - name: Build Swift app for analysis
         if: matrix.language == 'swift'
-        env:
-          DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
         run: |
-          arch -arm64 brew install xcodegen
-          xcodegen generate --spec OpenCodeRemote/project.yml
-          xcodebuild build -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -destination 'generic/platform=iOS Simulator' -derivedDataPath Build CODE_SIGNING_ALLOWED=NO
-      - uses: github/codeql-action/analyze@v4
+          xcodebuild clean build -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -destination 'generic/platform=iOS Simulator' -derivedDataPath Build -clonedSourcePackagesDirPath Build/SourcePackages -disableAutomaticPackageResolution ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
+      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
         with:
           category: /language:${{ matrix.language }}

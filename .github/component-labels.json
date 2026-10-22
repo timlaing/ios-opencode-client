@@ -39,7 +39,7 @@
     "label": "component: ci",
     "description": "Changes to ci",
     "text": "\\b(?:CI|GitHub Actions|Dependabot)\\b",
-    "paths": "^(\\.github/|scripts/ci/)"
+    "paths": "^(\\.github/|scripts/ci/|scripts/check_action_refs\\.py$)"
   },
   {
     "label": "component: documentation",
