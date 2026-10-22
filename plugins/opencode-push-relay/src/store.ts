@@ -198,6 +198,11 @@ export class PushStore {
 
   // -- devices --------------------------------------------------------------
 
+  /** Serialize enrollment for one destination within this configuration scope. */
+  async withEnrollmentLock<T>(token: string, fn: () => Promise<T>): Promise<T> {
+    return withLock(this.key(`push-store:enroll:${token}`), fn)
+  }
+
   async getDevice(id: string): Promise<Device | undefined> {
     return this.read<Device>(KEY_DEVICE + id)
   }

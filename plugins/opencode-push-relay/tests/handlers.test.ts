@@ -183,6 +183,51 @@ test("re-enrolling one destination token keeps exactly one active device", async
   assert.equal((await s.store.listDevices()).length, 2)
 })
 
+test("overlapping enrollments serialize by token while other tokens remain independent", async () => {
+  const s = setup({ registration: makeRegistration() })
+  const token = "cd".repeat(16)
+  let release!: () => void
+  let entered!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const started = new Promise<void>((resolve) => { entered = resolve })
+  const renew = s.relay.renew.bind(s.relay)
+  let calls = 0
+  s.relay.renew = async (grant, ttl) => {
+    calls += 1
+    if (calls === 1) {
+      entered()
+      await gate
+    }
+    return renew(grant, ttl)
+  }
+  const enroll = (destinationToken: string, deviceID?: string) => s.call("enroll", {
+    destinationToken,
+    grant: makeGrant(makeClaims({ tok: `sha256:${sha256hex(destinationToken)}` })),
+    ...(deviceID === undefined ? {} : { deviceID }),
+  })
+  const first = enroll(token)
+  await started
+  const second = enroll(token)
+  try {
+    await enroll("ef".repeat(16), "dev_other")
+    // Only the first token call and the independent token reached the relay.
+    assert.equal(calls, 2)
+  } finally {
+    release()
+  }
+  const [a, b] = await Promise.all([first, second]) as Array<Record<string, unknown>>
+  assert.equal(a?.deviceID, b?.deviceID)
+  assert.equal(s.context.errors.length, 0)
+  const devices = await s.store.listDevices()
+  assert.equal(devices.filter((device) => device.destinationToken === token).length, 1)
+  assert.equal(devices.length, 2)
+
+  // Explicit competing IDs still leave only the last enrollment active.
+  await Promise.all([enroll(token, "dev_one"), enroll(token, "dev_two")])
+  const paired = (await s.store.listDevices()).filter((device) => device.destinationToken === token)
+  assert.deepEqual(paired.map((device) => device.id), ["dev_two"])
+})
+
 test("enroll without prefs applies plugin defaults", async () => {
   const s = setup({ registration: makeRegistration() })
   await s.call("enroll", {

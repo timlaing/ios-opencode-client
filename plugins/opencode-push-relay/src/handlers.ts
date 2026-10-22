@@ -163,67 +163,69 @@ export function makeRpcHandlers(deps: HandlerDeps): PushRpcHandlers {
           { problem: check.problem },
         )
       }
-      // One active record per destination token: a client that re-pairs
-      // without a stored deviceID (retry, reinstall) must reuse its
-      // existing record — a second record for the same token would make
-      // the engine fan out every event to the same phone twice.
-      const sameToken = (await deps.store.listDevices()).filter(
-        (entry) => entry.destinationToken === destinationToken,
-      )
-      const deviceID =
-        typeof input["deviceID"] === "string" && input["deviceID"].length > 0
-          ? input["deviceID"]
-          : (sameToken[0]?.id ?? `dev_${randomUUID().replaceAll("-", "").slice(0, 12)}`)
-      if (!DEVICE_ID_PATTERN.test(deviceID)) {
-        return context.error("bad_device_id", "deviceID must match [A-Za-z0-9._:-]{1,64}.")
-      }
-      // Signature verification happens THROUGH the relay: v1 deliberately never
-      // ships the grant-issuer key to tenants (enrollment-spec A15), so a
-      // signed renew is the only verifier. Success also means the grant we
-      // store was minted by the relay for our authenticated call — a forged
-      // grant with plausible claims can never replace a working device's grant.
-      let verifiedGrant: string
-      let expiresAt: number
-      try {
-        const renewed = await relay.renew(grant, config.grantTtlSeconds)
-        verifiedGrant = renewed.grant
-        expiresAt = renewed.expiresAt
-      } catch (error) {
-        const problem = error instanceof RelayError ? error.code : "verification_unavailable"
-        return context.error(
-          "invalid_grant",
-          `The relay could not verify this grant (${problem}). Check /push-status, re-fetch a grant from the relay's enrollment flow, then retry.`,
-          { problem },
+      return deps.store.withEnrollmentLock(destinationToken, async () => {
+        // One active record per destination token: a client that re-pairs
+        // without a stored deviceID (retry, reinstall) must reuse its
+        // existing record — a second record for the same token would make
+        // the engine fan out every event to the same phone twice.
+        const sameToken = (await deps.store.listDevices()).filter(
+          (entry) => entry.destinationToken === destinationToken,
         )
-      }
-      const previous = await deps.store.getDevice(deviceID)
-      const prefs = parsePrefs(input["prefs"], config, previous?.prefs)
-      const now = Date.now()
-      const nowSeconds = Math.floor(now / 1000)
-      const renewAt = nowSeconds + Math.max(60, Math.floor((expiresAt - nowSeconds) / 2))
-      const device: Device = {
-        id: deviceID,
-        destinationToken,
-        grant: verifiedGrant,
-        grantExpiresAt: expiresAt,
-        grantRenewAt: renewAt,
-        environment: typeof check.claims.env === "string" ? check.claims.env : null,
-        prefs,
-        needsEnroll: false,
-        createdAt: previous?.createdAt ?? now,
-        updatedAt: now,
-        lastPushAt: previous?.lastPushAt,
-        lastResult: previous?.lastResult,
-        renewRetryAt: undefined,
-      }
-      await deps.store.saveDevice(device)
-      // Whether the id was reused or explicitly supplied, this pairing
-      // supersedes any other record bound to the same token: keep exactly
-      // one active record per destination token.
-      for (const stale of sameToken) {
-        if (stale.id !== deviceID) await deps.store.removeDevice(stale.id)
-      }
-      return { deviceID, grantExpiresAt: expiresAt, environment: device.environment, ...prefsResult(prefs) }
+        const deviceID =
+          typeof input["deviceID"] === "string" && input["deviceID"].length > 0
+            ? input["deviceID"]
+            : (sameToken[0]?.id ?? `dev_${randomUUID().replaceAll("-", "").slice(0, 12)}`)
+        if (!DEVICE_ID_PATTERN.test(deviceID)) {
+          return context.error("bad_device_id", "deviceID must match [A-Za-z0-9._:-]{1,64}.")
+        }
+        // Signature verification happens THROUGH the relay: v1 deliberately never
+        // ships the grant-issuer key to tenants (enrollment-spec A15), so a
+        // signed renew is the only verifier. Success also means the grant we
+        // store was minted by the relay for our authenticated call — a forged
+        // grant with plausible claims can never replace a working device's grant.
+        let verifiedGrant: string
+        let expiresAt: number
+        try {
+          const renewed = await relay.renew(grant, config.grantTtlSeconds)
+          verifiedGrant = renewed.grant
+          expiresAt = renewed.expiresAt
+        } catch (error) {
+          const problem = error instanceof RelayError ? error.code : "verification_unavailable"
+          return context.error(
+            "invalid_grant",
+            `The relay could not verify this grant (${problem}). Check /push-status, re-fetch a grant from the relay's enrollment flow, then retry.`,
+            { problem },
+          )
+        }
+        const previous = await deps.store.getDevice(deviceID)
+        const prefs = parsePrefs(input["prefs"], config, previous?.prefs)
+        const now = Date.now()
+        const nowSeconds = Math.floor(now / 1000)
+        const renewAt = nowSeconds + Math.max(60, Math.floor((expiresAt - nowSeconds) / 2))
+        const device: Device = {
+          id: deviceID,
+          destinationToken,
+          grant: verifiedGrant,
+          grantExpiresAt: expiresAt,
+          grantRenewAt: renewAt,
+          environment: typeof check.claims.env === "string" ? check.claims.env : null,
+          prefs,
+          needsEnroll: false,
+          createdAt: previous?.createdAt ?? now,
+          updatedAt: now,
+          lastPushAt: previous?.lastPushAt,
+          lastResult: previous?.lastResult,
+          renewRetryAt: undefined,
+        }
+        await deps.store.saveDevice(device)
+        // Whether the id was reused or explicitly supplied, this pairing
+        // supersedes any other record bound to the same token: keep exactly
+        // one active record per destination token.
+        for (const stale of sameToken) {
+          if (stale.id !== deviceID) await deps.store.removeDevice(stale.id)
+        }
+        return { deviceID, grantExpiresAt: expiresAt, environment: device.environment, ...prefsResult(prefs) }
+      })
     },
 
     update: async (raw, context) => {

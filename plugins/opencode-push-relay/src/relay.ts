@@ -327,6 +327,10 @@ export class RelayClient implements RelayApi {
     } catch (error) {
       if (!(error instanceof RelayError)) throw error
       if (error.status === 0) throw error // never reached / not configured
+      // 5xx / 429 never prove that signed auth passed — a reverse proxy or
+      // an overloaded relay answers before the auth layer runs — so treat
+      // them as the transport failure they are, not as a healthy binding.
+      if (error.status >= 500 || error.status === 429) throw error
       switch (error.code) {
         case "unknown_tenant":
           return { state: "no-binding" }
@@ -338,10 +342,6 @@ export class RelayClient implements RelayApi {
           break
       }
       if (error.status === 401) return { state: "rejected", code: error.code }
-      // 5xx / 429 never prove that signed auth passed — a reverse proxy or
-      // an overloaded relay answers before the auth layer runs — so treat
-      // them as the transport failure they are, not as a healthy binding.
-      if (error.status >= 500 || error.status === 429) throw error
       return { state: "bound" }
     }
   }

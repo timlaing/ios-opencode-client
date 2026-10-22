@@ -246,6 +246,14 @@ test("probeBinding never reports bound for 5xx or 429", async () => {
   }
   // A proxy error or an overloaded relay answers before the auth layer —
   // no auth evidence either way, so the transport failure surfaces.
+  for (const status of [503, 429]) {
+    for (const code of ["unknown_tenant", "enrollment_required", "invalid_signature"]) {
+      await assert.rejects(
+        probeWith(status, { error: code }),
+        (error: unknown) => error instanceof RelayError && error.status === status && error.code === code,
+      )
+    }
+  }
   await assert.rejects(
     probeWith(503, {}),
     (error: unknown) => error instanceof RelayError && error.status === 503,

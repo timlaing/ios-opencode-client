@@ -4,7 +4,7 @@ OpenCode **server plugin** that registers this host with an
 [apns-push-relay](../../docs/notifications.md) instance and delivers
 session/permission notifications to paired iOS clients over APNs.
 
-Status: implemented and unit-tested (96 tests) against a fake relay and the
+Status: implemented and unit-tested (97 tests) against a fake relay and the
 relay's golden signing fixture, and verified to load in a real OpenCode
 v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
 **Not yet verified against a live relay or device** — see
