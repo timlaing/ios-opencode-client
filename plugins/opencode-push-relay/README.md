@@ -4,7 +4,7 @@ OpenCode **server plugin** that registers this host with an
 [apns-push-relay](../../docs/notifications.md) instance and delivers
 session/permission notifications to paired iOS clients over APNs.
 
-Status: implemented and unit-tested (93 tests) against a fake relay and the
+Status: implemented and unit-tested (96 tests) against a fake relay and the
 relay's golden signing fixture, and verified to load in a real OpenCode
 v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
 **Not yet verified against a live relay or device** — see
@@ -89,9 +89,12 @@ while locations with different options never mix credentials. The delivery
 lease ensures a single instance drains at a time (others pick up after
 expiry; the holder re-news it before every outbox item, so a slow drain
 cannot outlive it, and `/push-status` reports holder vs free from the
-lease's live expiry). Correctness never depends on the lease: outbox writes
-are idempotent per (transition, device) and APNs collapse ids dedupe
-duplicate sends.
+lease's live expiry). Correctness never depends on the lease alone: outbox
+writes are idempotent per (transition, device), and the lease plus retry
+handling own the delivery guarantee. APNs collapse ids only merge the
+presentation of alerts that were actually transmitted — a retry after APNs
+accepted a request can send the same alert again, so collapse ids are never
+treated as send-side deduplication.
 
 ## Loading (verified against OpenCode v2.0.30)
 

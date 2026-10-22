@@ -140,6 +140,49 @@ test("enroll refuses a grant the relay cannot verify and stores nothing", async 
   assert.equal((await s.store.listDevices()).length, 0)
 })
 
+test("re-enrolling one destination token keeps exactly one active device", async () => {
+  const s = setup({ registration: makeRegistration() })
+  const token = "cd".repeat(16)
+  const grant = (): string => makeGrant(makeClaims({ tok: `sha256:${sha256hex(token)}` }))
+
+  // First pairing without a deviceID: one record with a generated id.
+  const first = (await s.call("enroll", {
+    destinationToken: token,
+    grant: grant(),
+  })) as Record<string, unknown>
+  const firstID = first.deviceID
+  assert.ok(typeof firstID === "string")
+
+  // Retry without a deviceID (reinstall/re-pair): reuses the record —
+  // a twin for the same token would make every event push twice.
+  const second = (await s.call("enroll", {
+    destinationToken: token,
+    grant: grant(),
+  })) as Record<string, unknown>
+  assert.equal(second.deviceID, firstID)
+  let devices = await s.store.listDevices()
+  assert.equal(devices.length, 1)
+
+  // An explicit new deviceID with the same token supersedes the old record.
+  const third = (await s.call("enroll", {
+    destinationToken: token,
+    grant: grant(),
+    deviceID: "dev_new",
+  })) as Record<string, unknown>
+  assert.equal(third.deviceID, "dev_new")
+  devices = await s.store.listDevices()
+  assert.equal(devices.length, 1)
+  assert.equal(devices[0]?.id, "dev_new")
+
+  // A different token is a different device: it coexists with dev_new.
+  const otherToken = "ef".repeat(16)
+  await s.call("enroll", {
+    destinationToken: otherToken,
+    grant: makeGrant(makeClaims({ tok: `sha256:${sha256hex(otherToken)}` })),
+  })
+  assert.equal((await s.store.listDevices()).length, 2)
+})
+
 test("enroll without prefs applies plugin defaults", async () => {
   const s = setup({ registration: makeRegistration() })
   await s.call("enroll", {

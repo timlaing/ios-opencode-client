@@ -150,6 +150,21 @@ function requireNumber(record: Record<string, unknown>, key: string, what: strin
   return value
 }
 
+/** Map a transport-level failure (connection, abort, or timeout) to status-0. */
+function toNetworkError(cause: unknown, timeoutMs: number): RelayError {
+  const timedOut =
+    cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError")
+  return new RelayError(
+    0,
+    "network_error",
+    timedOut
+      ? `timeout after ${timeoutMs}ms`
+      : cause instanceof Error
+        ? cause.message
+        : String(cause),
+  )
+}
+
 /**
  * Bound for every relay call. Node's undici defaults wait minutes for a
  * hung server; a bounded timeout converts that into a retryable
@@ -195,20 +210,20 @@ export class RelayClient implements RelayApi {
         signal: AbortSignal.timeout(this.timeoutMs),
       })
     } catch (cause) {
-      const timedOut =
-        cause instanceof Error && (cause.name === "TimeoutError" || cause.name === "AbortError")
-      throw new RelayError(
-        0,
-        "network_error",
-        timedOut
-          ? `timeout after ${this.timeoutMs}ms`
-          : cause instanceof Error
-            ? cause.message
-            : String(cause),
-      )
+      throw toNetworkError(cause, this.timeoutMs)
     }
     if (!response.ok) throw await RelayClient.errorFrom(response)
-    const text = await response.text()
+    let text: string
+    try {
+      // The abort signal also governs the body stream: a relay that sends
+      // headers and then stalls the body must land in the same
+      // status-0 mapping as a stalled response head — otherwise a raw
+      // DOMException escapes the RelayError contract and misses the
+      // engine's retryable path.
+      text = await response.text()
+    } catch (cause) {
+      throw toNetworkError(cause, this.timeoutMs)
+    }
     if (text.length === 0) return {}
     try {
       return JSON.parse(text) as unknown
@@ -302,7 +317,8 @@ export class RelayClient implements RelayApi {
    * parsing, so the failure code disambiguates: `unknown_tenant` = no binding,
    * `enrollment_required` = registered but never enrolled, `invalid_signature`
    * = stored key differs from ours, any grant/403 error = bound (auth passed),
-   * other 401s (clock/nonce) = rejected with that code.
+   * other 401s (clock/nonce) = rejected with that code, 5xx/429 rethrown
+   * (no auth evidence either way).
    */
   async probeBinding(): Promise<BindingProbe> {
     try {
@@ -322,6 +338,10 @@ export class RelayClient implements RelayApi {
           break
       }
       if (error.status === 401) return { state: "rejected", code: error.code }
+      // 5xx / 429 never prove that signed auth passed — a reverse proxy or
+      // an overloaded relay answers before the auth layer runs — so treat
+      // them as the transport failure they are, not as a healthy binding.
+      if (error.status >= 500 || error.status === 429) throw error
       return { state: "bound" }
     }
   }

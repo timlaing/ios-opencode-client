@@ -163,10 +163,17 @@ export function makeRpcHandlers(deps: HandlerDeps): PushRpcHandlers {
           { problem: check.problem },
         )
       }
+      // One active record per destination token: a client that re-pairs
+      // without a stored deviceID (retry, reinstall) must reuse its
+      // existing record — a second record for the same token would make
+      // the engine fan out every event to the same phone twice.
+      const sameToken = (await deps.store.listDevices()).filter(
+        (entry) => entry.destinationToken === destinationToken,
+      )
       const deviceID =
         typeof input["deviceID"] === "string" && input["deviceID"].length > 0
           ? input["deviceID"]
-          : `dev_${randomUUID().replaceAll("-", "").slice(0, 12)}`
+          : (sameToken[0]?.id ?? `dev_${randomUUID().replaceAll("-", "").slice(0, 12)}`)
       if (!DEVICE_ID_PATTERN.test(deviceID)) {
         return context.error("bad_device_id", "deviceID must match [A-Za-z0-9._:-]{1,64}.")
       }
@@ -210,6 +217,12 @@ export function makeRpcHandlers(deps: HandlerDeps): PushRpcHandlers {
         renewRetryAt: undefined,
       }
       await deps.store.saveDevice(device)
+      // Whether the id was reused or explicitly supplied, this pairing
+      // supersedes any other record bound to the same token: keep exactly
+      // one active record per destination token.
+      for (const stale of sameToken) {
+        if (stale.id !== deviceID) await deps.store.removeDevice(stale.id)
+      }
       return { deviceID, grantExpiresAt: expiresAt, environment: device.environment, ...prefsResult(prefs) }
     },
 

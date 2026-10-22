@@ -226,6 +226,38 @@ test("probeBinding disambiguates binding states from signed auth outcomes", asyn
   })
   // Auth passed; the fake grant itself was rejected → the binding is ours.
   assert.deepEqual(await probeWith(400, { error: "invalid_grant" }), { state: "bound" })
+  // A grant policy failure (auth layer reached) also proves the binding.
+  assert.deepEqual(await probeWith(403, { error: "grant_expired" }), { state: "bound" })
+})
+
+test("probeBinding never reports bound for 5xx or 429", async () => {
+  const probeWith = async (status: number, body: unknown) => {
+    let state: unknown
+    await withServer(
+      () => ({ status, body }),
+      async (base) => {
+        state = await new RelayClient(base, () => ({
+          token: "tnt_t",
+          privateKeyB64: generateKeyPair().privateKeyB64,
+        })).probeBinding()
+      },
+    )
+    return state
+  }
+  // A proxy error or an overloaded relay answers before the auth layer —
+  // no auth evidence either way, so the transport failure surfaces.
+  await assert.rejects(
+    probeWith(503, {}),
+    (error: unknown) => error instanceof RelayError && error.status === 503,
+  )
+  await assert.rejects(
+    probeWith(500, { error: "internal" }),
+    (error: unknown) => error instanceof RelayError && error.status === 500,
+  )
+  await assert.rejects(
+    probeWith(429, { error: "rate_limited" }),
+    (error: unknown) => error instanceof RelayError && error.status === 429,
+  )
 })
 
 test("probeBinding surfaces unreachable relays instead of guessing", async () => {
@@ -243,6 +275,34 @@ test("a hung relay is cut off by the request timeout as network_error", async ()
   // stalling the engine lease window or a command report for minutes.
   const server = createServer(() => {
     /* intentionally never respond */
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const { port } = server.address() as AddressInfo
+  try {
+    const client = new RelayClient(`http://127.0.0.1:${port}`, () => undefined, 25)
+    await assert.rejects(
+      client.health(),
+      (error: unknown) =>
+        error instanceof RelayError &&
+        error.status === 0 &&
+        error.code === "network_error" &&
+        error.detail.includes("timeout after 25ms"),
+    )
+  } finally {
+    server.closeAllConnections()
+    await new Promise((resolve) => server.close(resolve))
+  }
+})
+
+test("a body that stalls after the headers times out as network_error", async () => {
+  // Headers arrive, then the stream hangs: the abort signal covers body
+  // reads too, and that rejection must map to the same status-0
+  // network_error (a raw DOMException would bypass the engine's
+  // retryable path).
+  const server = createServer((req, res) => {
+    res.writeHead(200, { "content-type": "application/json" })
+    res.write("{")
+    // never end — body stays incomplete
   })
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
   const { port } = server.address() as AddressInfo
