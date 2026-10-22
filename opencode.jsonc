@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Documents the intended wiring for the push-relay server plugin in this
+  // repo. OpenCode v2.0.30 does NOT load project-level plugins[] entries;
+  // in-repo loading happens inert via .opencode/plugins/opencode-push-relay/
+  // (shim, no options). See plugins/opencode-push-relay/README.md §Loading.
+  "plugins": [
+    {
+      "package": "./plugins/opencode-push-relay",
+      "options": {
+        "relayUrl": "",
+        "app": ""
+      }
+    }
+  ]
+}

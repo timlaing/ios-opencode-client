@@ -3,6 +3,8 @@ __pycache__/
 .DS_Store
 .venv/
 .mock-local/
+node_modules/
+plugins/opencode-push-relay/dist/
 
 # Xcode / Swift
 Build/
