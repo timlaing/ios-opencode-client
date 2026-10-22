@@ -1,0 +1,9 @@
+{
+  "id" : "43d0772d-1b4c-4963-974e-acf435ea993a",
+  "targets" : [
+    {
+      "id" : "fab06437-ddf4-47ff-86fa-1a42e5b0aaba",
+      "name" : "OpenCodeRemote"
+    }
+  ]
+}
