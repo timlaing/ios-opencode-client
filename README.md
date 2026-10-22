@@ -15,123 +15,115 @@
 [![Bugs](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=bugs)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
 [![Technical Debt](https://sonarcloud.io/api/project_badges/measure?project=timlaing_ios-opencode-client&metric=sqale_index)](https://sonarcloud.io/summary/new_code?id=timlaing_ios-opencode-client)
 
-Product design and implementation guide for a native iPhone/iPad client that preserves as much OpenCode web functionality as possible.
+A native iPhone and iPad client for working with your own OpenCode hosts, with an optional server plugin for APNs notifications. The app is completely free, with no ads, paid downloads, in-app purchases, or subscriptions.
 
-## Product decisions
+## OpenCode Client
 
-- OpenCode web is the functional baseline. ChatGPT/Codex iOS is the interaction reference.
-- Derive implementation behavior from existing web/server code wherever possible; retain explicit native UX and privacy choices, and record genuine gaps before designing alternatives.
-- Deliver the fullest sensible functionality within the agreed staged scope, using documented defaults and useful user settings rather than removing capability to simplify implementation.
-- Prefer native views. Embed web panels only where they preserve complex functionality that is impractical to reproduce initially.
-- Connect directly to the user's OpenCode hosts over authenticated HTTPS through their VPN.
-- Support macOS and Linux hosts; target iOS/iPadOS 18 initially.
-- Local push notifications were removed by decision on 21 October 2026: no Local Push Connectivity extension, no entitlement request, foreground banners and Live Activities only.
-- Include local Live Activities initially, with an honest stale-state display when the app cannot update them.
-- Document an optional companion plugin and stateless Cloudflare Worker for a later release's APNs alerts and remote Live Activity updates.
-- Keep core app operation independent of that plugin and Worker.
-- Defer todo functionality and voice.
-- The app is completely free: no ads, sponsorship placements, supporter purchases, paid downloads, or subscriptions.
-- Provide guided host setup with instructions, connection checks, and troubleshooting.
-- Offer an optional Face ID/Touch ID app lock.
-- Keep diagnostics local; users review redacted reports before explicitly sharing them. No automatic telemetry or crash uploads.
-- Cache the most recent 30 days of chat history with a Clear Cache control; host history is unaffected.
-- Ask users to choose notification content privacy during onboarding.
-- Load external Markdown images only after a tap.
-- Exclude cached conversations and attachment copies from device/cloud backups.
-- Show the current screen in the app switcher.
-- Preserve offline drafts and require manual sending after reconnecting.
-- Select MPL-2.0 for the app, future companion plugin, and Worker, subject to dependency compliance. Preserve notices and publish covered source for distributed releases; no mandatory resale royalties.
-- Present the alert-category switches during onboarding (enabled by default) and ask whether Live Activities start automatically or manually.
-- Plan a shared hosted Worker relay for future remote push; operating costs and service limits remain to be defined.
-- Offer optional iCloud sync for appearance and host addresses, with credentials entered separately on each device.
-- Let users choose in Settings whether reopening restores the last screen/session or opens the project list.
-- Support attachments from Files, the photo library, and camera capture.
-- Keep drafts local to each device and open external chat links in the default system browser.
-- Notify for sessions started from this app or explicitly followed; let users configure draft retention.
-- Use GitHub issues for public support and a separate private route for security reports.
-- Include unsent drafts in restoration backups; attachment copies remain excluded.
-- Support manual host entry and QR scanning with documented QR generation.
-- Reuse OpenCode's existing web authentication and pairing protocol: `opencode pair` links/QR codes, native token redemption, and password sign-in fallback.
-- Treat unresolved shared-relay funding as a future remote-push launch blocker.
-- Support multiple iPad windows in the initial release.
-- Default to retaining drafts until sent or explicitly discarded; keep retention configurable.
+Connect to an OpenCode host, open a project, and continue your coding sessions from your phone or tablet. OpenCode runs on your host; the app provides the mobile interface.
 
-## Documents
+- **Hosts and projects:** guided connection setup, manual host entry, pairing links and QR scanning, and password sign-in fallback.
+- **Conversations:** create and resume sessions, compose messages, attach files and photos, and choose models and agents.
+- **Session activity:** follow streamed responses and tool activity, answer questions, and respond to permission requests.
+- **Files and changes:** browse project files and review changes alongside the conversation.
+- **iPad workspace:** native layouts and support for multiple windows.
+- **Local controls:** offline drafts, cache management, optional Face ID/Touch ID lock, and optional iCloud sync for appearance and host addresses. Credentials are entered separately on each device.
 
-| Document                                                                              | Purpose                                                                                                                             |
-| ------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| [App design and feature checklist](docs/app-design.md)                                | Review features, screens, native-view priorities, and staged web parity                                                             |
-| [Notifications and Cloudflare Worker design](docs/notifications.md)                   | Live Activity limits and the future stateless APNs relay (local push removed 21 October 2026)                                       |
-| [Implementation guide](docs/implementation-guide.md)                                  | Integration boundaries, build sequence, verification, and release criteria                                                          |
-| [Remaining implementation decisions](docs/implementation-decisions.md)                | Web-derived solutions, native engineering choices, and separate verification dependencies                                           |
-| [Implementation defaults and user controls](docs/implementation-defaults.md)          | Selected storage/rendering/security/sync defaults, complete interactions, resource budgets, and configurable preferences            |
-| [Concrete API contract](docs/api-contract.md)                                         | Exact initial workflows, payloads, envelopes, event handling, errors, and known baseline gaps                                       |
-| [Navigation and screen specification](docs/navigation-screens.md)                     | S01–S20 native screens, actions, layouts, navigation, restoration, and state handling                                               |
-| [Generated route catalog](docs/api-route-catalog.md)                                  | All 141 pinned operations with initial/later scope and synthetic mock coverage                                                      |
-| [Generated data and mock testing](docs/testing-mock.md)                               | Runnable reference mock, fixtures, scenarios, test commands, fidelity limits, and native acceptance cases                           |
-| [Package verification](docs/verification.md)                                          | Passed contract/mock checks, reproducibility, and remaining real-host/device evidence                                               |
-| [Design gaps and release decisions](docs/design-review.md)                            | Outstanding onboarding, security, compatibility, performance, and support work                                                      |
-| [Free app decision and earlier monetisation analysis](docs/monetisation.md)           | Selected free model; earlier options retained as inactive reference                                                                 |
-| [Push-relay server plugin](plugins/opencode-push-relay/README.md)                     | OpenCode host plugin: relay registration, paired-device enrollment, durable notification delivery, and /push commands               |
+The app targets **iOS and iPadOS 18 or later** and connects directly to macOS or Linux OpenCode hosts over authenticated HTTPS, including through your VPN. You need your own reachable OpenCode host.
 
-The commercial model is decided: completely free. Earlier monetisation analysis is reference material, not implementation scope. Future hosting costs still need an operating plan; no paid service has been authorised.
+Diagnostics stay local until you review and explicitly share a redacted report. There are no automatic telemetry or crash uploads. External Markdown images load only after a tap, and offline drafts require manual sending after reconnection.
 
-## Contributing and automation
+Foreground notifications and local Live Activities provide session updates. Live Activities show stale state when the app cannot update them. Background APNs delivery is a separate integration described below.
 
-Use the issue and PR templates when contributing; report vulnerabilities through
-[SECURITY.md](SECURITY.md). CI tests Python, the plugin, the Swift package and both
-simulator device families. Secret-bearing Sonar analysis runs only on pushes to
-protected `main`; the configured PR jobs do not receive its token. Swift CodeQL uses macOS 26
-and Xcode 26.6 because CodeQL does not support traced extraction on Xcode/macOS 27.
+The repository contains the native app and its supporting Swift packages. Availability of a screen or implementation does not establish real-host compatibility or physical-device validation; see [verification and release evidence](docs/verification.md).
 
-Release setup requires protected `npm` and `app-store` environments with required
-reviewers, a protected `release-preflight` environment, npm trusted publishing for
-`publish.yml`, and Apple distribution/API secrets. An environment secret
-`RELEASE_PREFLIGHT_TOKEN` in `release-preflight` must have repository
-Administration read permission to verify environment protection; `GITHUB_TOKEN`
-cannot grant that permission. Protect `main`; the configured Sonar job only runs
-on protected-main pushes and uses the repository-level `SONAR_TOKEN`. Environment
-isolation of that token is deferred by maintainer decision. Restrict release
-environment deployment refs to the
-approved main/release tags. Enable private vulnerability reporting and run the label-sync workflow after merging.
-Protect `app-v*` and `plugin-v*` tags against updates/deletion with a repository
-ruleset. App tags are stable `app-vX.Y.Z`; plugin tags may have prerelease suffixes.
-App tags require an existing GitHub release for upload receipts. App uploads use
-a deterministic build version and a release-asset receipt to reject repeat uploads. App Store review/submission remains a manual step. Stale issues
-close after 60 inactive days plus a 14-day warning; `pinned`, `security` and `roadmap`
-are exempt.
+## OpenCode push-relay plugin
 
-## Initial user journey
+[opencode-push-relay](plugins/opencode-push-relay/README.md) is the optional companion plugin for an OpenCode server. It connects the host to an [APNs push relay](https://github.com/timlaing/apns-push-relay) to deliver alerts for completed or failed sessions, permission requests, and questions.
 
-Select a host → create or open a project → create or resume a session → attach context → follow thinking/tool activity → answer questions or approvals → review files and changes.
+The plugin provides paired-device enrollment, notification preferences, a persistent delivery queue with retries, and commands for status, test alerts, and signing-key rotation. Core app operation is independent of the plugin and relay.
 
-Notifications while the main app is suspended were removed with local push (21 October 2026). What remains is honest foreground delivery: banners for turns that finish while the app is inactive but not yet suspended, and Live Activities that show their stale state when the app cannot update them.
+The plugin stays inactive until a relay URL and app identifier are configured. It has automated coverage and has been verified to load inertly in OpenCode v2.0.30. Live relay, APNs, and device delivery remain unverified. See the [plugin setup and compatibility guide](plugins/opencode-push-relay/README.md#loading-verified-against-opencode-v2030) before configuring it; project-level plugin options are not loaded by that OpenCode version.
 
-## Version and evidence
+## Build and develop
 
-The initial product decisions and routine implementation defaults are settled. The concrete API/workflow matrix, S01–S20 screen/state specifications, pinned OpenAPI snapshot, generated fixtures and runnable mock are now supplied as an implementation package. No routine initial-version preference questionnaire remains. Apple signing/team identifiers and live test hosts/devices are deployment inputs; real-host/physical-device evidence is the release gate. Future shared-relay decisions do not block the initial version.
+### iOS app
 
-The initial integration baseline is **OpenCode v2.0.25**, commit `b44eea9e204024db2b480a136ece29d790d5f593`, matching the user's reported version and installed package path. Relevant server and web-client source was inspected during design. Native server mutations and device delivery have not been tested against a running host.
+Use Xcode and XcodeGen on macOS. Generate the project from its checked-in specification:
 
-Native app features remain requirements/designs; the Python mock, fixture generator, route catalog generator, and their tests are implemented. HTTP routes under the future Worker's `/v1/` namespace are proposed interfaces; they are not existing OpenCode endpoints. Archive/Restore is a confirmed unsupported mutation in the pinned web/API baseline, explicitly reflected in the screen/feature contracts.
+```sh
+cd OpenCodeRemote
+xcodegen generate
+open OpenCodeRemote.xcodeproj
+```
 
-## Start implementation
+Build and run the **OpenCodeRemote** scheme on an iPhone or iPad simulator, or a device with suitable signing. Edit `OpenCodeRemote/project.yml` for project configuration and regenerate the project.
 
-Read the API contract, screen specification, defaults, and mock guide together. `contracts/mobile-scope.json` is the machine-readable workflow/screen/operation map. Preserve the existing staged scope and explicit baseline limitations.
+Run the shared Swift package tests from the repository root:
+
+```sh
+swift test --package-path Packages/OpenCodeKit
+```
+
+Run app unit and UI tests through the OpenCodeRemote scheme on both an iPhone and an iPad destination.
+
+### Reference mock
+
+The dependency-free Python mock provides repeatable projects, sessions, attachments, events, and failure scenarios for client development. It requires Python 3.11 or later:
+
+```sh
+python3 -m mock.server --port 4097
+```
+
+The mock listens on loopback by default and executes no real tools, shell commands, or providers. Connection details, synthetic credentials, and device setup are in the [mock guide](docs/testing-mock.md).
+
+To regenerate and validate the committed contracts and fixtures:
 
 ```sh
 python3 -m mock.fixtures
 python3 scripts/build_contracts.py
 python3 -m unittest discover -s tests -v
-python3 -m mock.server --port 4097
 ```
 
-The mock uses generated data only, defaults to loopback, and never executes real tools/providers. Synthetic development credentials and HTTPS/device instructions are documented in the mock guide. The source snapshot retains its upstream MIT terms; original mock code is MPL-2.0.
+### Server plugin
 
-## Key acceptance conditions
+```sh
+cd plugins/opencode-push-relay
+npm install
+npm run typecheck
+npm run build
+npm test
+```
 
-- Native views are the default. Every web fallback has a documented reason and an acceptance test.
-- Reconnection does not duplicate prompts, configuration edits, or approvals.
-- A server's API availability is distinguished from a feature being implemented in its web client and from verified mobile behavior.
-- The Worker requires no device/session database. The optional plugin owns subscription, outbox, retry, and token state.
-- Deferred parity work remains visible in the feature checklist. Todos remain explicitly deferred.
+## Compatibility and verification
+
+The client API contract is pinned to **OpenCode v2.0.25**, commit `b44eea9e204024db2b480a136ece29d790d5f593`. The plugin's verified loading version is separately documented above. Compatibility with other server versions requires validation.
+
+The repository includes the pinned OpenAPI snapshot, workflow mappings, generated fixtures, and a synthetic reference mock. Passing mock tests proves mock behavior, not real-server fidelity. Archive and restore mutations are unsupported in the pinned API baseline. The [verification report](docs/verification.md) records checks and outstanding real-host and device evidence.
+
+## Documentation
+
+| Guide | Contents |
+| --- | --- |
+| [App features](docs/app-design.md) | Feature checklist and staged scope |
+| [Screens and navigation](docs/navigation-screens.md) | Native screens, actions, and state handling |
+| [Defaults and settings](docs/implementation-defaults.md) | Storage, privacy, security, sync, and user controls |
+| [Notifications](docs/notifications.md) | Live Activities and remote push architecture |
+| [API contract](docs/api-contract.md) | Workflows, payloads, events, errors, and baseline limitations |
+| [API route catalog](docs/api-route-catalog.md) | Pinned operations, scope, and mock coverage |
+| [Mock development](docs/testing-mock.md) | Fixtures, scenarios, test commands, and fidelity limits |
+| [Verification](docs/verification.md) | Recorded checks and outstanding release evidence |
+| [Implementation guide](docs/implementation-guide.md) | Integration boundaries and release criteria |
+| [Implementation decisions](docs/implementation-decisions.md) | Engineering choices and verification dependencies |
+| [Design review](docs/design-review.md) | Outstanding compatibility, accessibility, and release work |
+| [Free app decision](docs/monetisation.md) | Free model and inactive earlier analysis |
+| [Server plugin](plugins/opencode-push-relay/README.md) | Configuration, commands, enrollment, delivery, and loading compatibility |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development and contribution guidance, and [SECURITY.md](SECURITY.md) for private vulnerability reporting. CI covers Python, the server plugin, the Swift package, and iPhone/iPad simulator tests. Release automation and publishing require the repository environments and credentials described in the contributor guidance.
+
+## Support and licence
+
+Use [GitHub issues](https://github.com/timlaing/ios-opencode-client/issues) for public bug reports and feature requests.
+
+Original code is licensed under [MPL-2.0](LICENSE). The vendored OpenCode API snapshot retains its [upstream MIT licence](contracts/UPSTREAM-LICENSE).
