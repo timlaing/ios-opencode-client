@@ -1,11 +1,11 @@
-name: Publish app or plugin
+name: Publish plugin packages
 on:
   release:
     types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing GitHub release tag on main (app-vX.Y.Z or plugin-vX.Y.Z)
+        description: Existing plugin release tag on main (plugin-vX.Y.Z, optional prerelease suffix)
         required: true
         type: string
 permissions:
@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   validate:
-    if: github.repository == 'timlaing/ios-opencode-client'
+    if: github.repository == 'timlaing/ios-opencode-client' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'plugin-v'))
     environment: release-preflight
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -25,7 +25,6 @@ jobs:
     outputs:
       kind: ${{ steps.metadata.outputs.kind }}
       version: ${{ steps.metadata.outputs.version }}
-      app-version: ${{ steps.metadata.outputs.app-version }}
       dist-tag: ${{ steps.dist.outputs.tag }}
       sha: ${{ steps.commit.outputs.sha }}
     steps:
@@ -37,6 +36,7 @@ jobs:
         id: metadata
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          RELEASE_PRERELEASE: ${{ github.event.release.prerelease }}
         run: python3 scripts/ci/release_metadata.py "$RELEASE_TAG"
       - name: Select plugin distribution channel
         id: dist
@@ -75,7 +75,8 @@ jobs:
     permissions:
       contents: read
     outputs:
-      sha256: ${{ steps.package.outputs.sha256 }}
+      npm-sha256: ${{ steps.package.outputs.npm-sha256 }}
+      github-sha256: ${{ steps.package.outputs.github-sha256 }}
     defaults:
       run:
         working-directory: plugins/opencode-push-relay
@@ -100,15 +101,18 @@ jobs:
       - name: Pack tested output without running more lifecycle hooks
         id: package
         run: |
-          mkdir -p "$RUNNER_TEMP/npm-package"
-          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-package"
-          mv "$RUNNER_TEMP/npm-package/"*.tgz "$RUNNER_TEMP/npm-package/package.tgz"
-          HASH=$(sha256sum "$RUNNER_TEMP/npm-package/package.tgz" | cut -d ' ' -f 1)
-          echo "sha256=$HASH" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/plugin-packages"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/plugin-packages"
+          mv "$RUNNER_TEMP/plugin-packages/"*.tgz "$RUNNER_TEMP/plugin-packages/package-npm.tgz"
+          python3 ../../scripts/ci/package_mirror.py "$RUNNER_TEMP/plugin-packages/package-npm.tgz" "$RUNNER_TEMP/plugin-packages/package-github.tgz"
+          NPM_HASH=$(sha256sum "$RUNNER_TEMP/plugin-packages/package-npm.tgz" | cut -d ' ' -f 1)
+          GITHUB_HASH=$(sha256sum "$RUNNER_TEMP/plugin-packages/package-github.tgz" | cut -d ' ' -f 1)
+          echo "npm-sha256=$NPM_HASH" >> "$GITHUB_OUTPUT"
+          echo "github-sha256=$GITHUB_HASH" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: npm-package
-          path: ${{ runner.temp }}/npm-package/package.tgz
+          name: plugin-packages
+          path: ${{ runner.temp }}/plugin-packages/*.tgz
           if-no-files-found: error
           retention-days: 7
   npm:
@@ -128,7 +132,10 @@ jobs:
       RELEASE_SHA: ${{ needs.validate.outputs.sha }}
       RELEASE_VERSION: ${{ needs.validate.outputs.version }}
       DIST_TAG: ${{ needs.validate.outputs.dist-tag }}
-      PACKAGE_SHA256: ${{ needs.npm-build.outputs.sha256 }}
+      PACKAGE_SHA256: ${{ needs.npm-build.outputs.npm-sha256 }}
+      PACKAGE_NAME: opencode-push-relay
+      PACKAGE_REGISTRY: https://registry.npmjs.org
+      PACKAGE_TARBALL: release/package-npm.tgz
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -140,47 +147,64 @@ jobs:
           registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: npm-package
+          name: plugin-packages
           path: release
       - name: Verify artifact identity and prevent dist-tag downgrades
+        id: package
         run: python3 scripts/ci/release_guard.py check-package
       - name: Verify tag immediately before publishing the tested artifact
+        if: steps.package.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/ci/release_guard.py verify-tag
-          npm publish release/package.tgz --ignore-scripts --access public --provenance --tag "$DIST_TAG"
-  app:
-    needs: validate
-    if: needs.validate.outputs.kind == 'app'
-    environment: app-store
-    runs-on: xcode-27
-    timeout-minutes: 45
+          npm publish "$PACKAGE_TARBALL" --ignore-scripts --registry "$PACKAGE_REGISTRY" --access public --provenance --tag "$DIST_TAG"
+
+  github-packages:
+    needs: [validate, npm-build]
+    if: needs.validate.outputs.kind == 'plugin'
+    environment: npm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: github-packages-publish-${{ needs.validate.outputs.dist-tag }}
+      cancel-in-progress: false
     permissions:
-      contents: write # persist the successful upload receipt on its GitHub release
+      contents: read
+      packages: write
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
       RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
       RELEASE_SHA: ${{ needs.validate.outputs.sha }}
-      GH_TOKEN: ${{ github.token }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      DIST_TAG: ${{ needs.validate.outputs.dist-tag }}
+      PACKAGE_SHA256: ${{ needs.npm-build.outputs.github-sha256 }}
+      PACKAGE_NAME: "@timlaing/opencode-push-relay"
+      PACKAGE_REGISTRY: https://npm.pkg.github.com
+      PACKAGE_TARBALL: release/package-github.tgz
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.validate.outputs.sha }}
           persist-credentials: false
-      - name: Reject an already uploaded app release
-        run: python3 scripts/ci/release_guard.py check-app
-      - run: arch -arm64 brew install xcodegen
-      - run: xcodegen generate --spec OpenCodeRemote/project.yml
-      - name: Archive, sign and upload to App Store Connect
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "26.12.0"
+          registry-url: https://npm.pkg.github.com
+          scope: "@timlaing"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: plugin-packages
+          path: release
+      - name: Verify GitHub package identity and existing versions
+        id: package
         env:
-          APP_VERSION: ${{ needs.validate.outputs.app-version }}
-          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-        run: bash scripts/ci/publish_ios.sh
-      - name: Record successful upload (reruns cannot generate a different build)
-        run: python3 scripts/ci/release_guard.py record-app
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/release_guard.py check-package
+      - name: Publish tested plugin to GitHub Packages
+        if: steps.package.outputs.publish == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ci/release_guard.py verify-tag
+          npm publish "$PACKAGE_TARBALL" --ignore-scripts --registry "$PACKAGE_REGISTRY" --tag "$DIST_TAG"

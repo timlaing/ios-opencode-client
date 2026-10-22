@@ -111,6 +111,8 @@ The repository includes the pinned OpenAPI snapshot, workflow mappings, generate
 | [API contract](docs/api-contract.md) | Workflows, payloads, events, errors, and baseline limitations |
 | [API route catalog](docs/api-route-catalog.md) | Pinned operations, scope, and mock coverage |
 | [Mock development](docs/testing-mock.md) | Fixtures, scenarios, test commands, and fidelity limits |
+| [Publishing](docs/publishing.md) | Plugin registry releases and iOS TestFlight/App Store distribution |
+| [Xcode Cloud](docs/xcode-cloud.md) | Cloud builds, GitHub PR checks, SonarQube analysis, and merged Swift coverage |
 | [Verification](docs/verification.md) | Recorded checks and outstanding release evidence |
 | [Implementation guide](docs/implementation-guide.md) | Integration boundaries and release criteria |
 | [Implementation decisions](docs/implementation-decisions.md) | Engineering choices and verification dependencies |
@@ -120,7 +122,7 @@ The repository includes the pinned OpenAPI snapshot, workflow mappings, generate
 
 ## Contributing
 
-Use the repository’s issue and pull request templates for contributions. See [SECURITY.md](SECURITY.md) for private vulnerability reporting. CI covers Python, the server plugin, the Swift package, and iPhone/iPad simulator tests. Publishing is managed through the repository’s release workflows.
+Use the repository’s issue and pull request templates for contributions. See [SECURITY.md](SECURITY.md) for private vulnerability reporting. CI covers Python, the server plugin, the Swift package, and iPhone/iPad simulator tests. GitHub releases publish the plugin to npm and GitHub Packages; iOS builds are distributed through Xcode Cloud, TestFlight and the App Store. See [publishing](docs/publishing.md).
 
 ## Support and licence
 

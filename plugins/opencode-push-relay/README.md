@@ -157,3 +157,11 @@ npm test            # node --test tests/ — signing fixture, classifier,
 The signing tests run against the relay repo's golden
 `tests/fixtures/canonical.json`, byte-pinning the canonical message against
 the relay implementation.
+
+## Publishing
+
+GitHub releases tagged `plugin-vX.Y.Z` publish this plugin as
+`opencode-push-relay` on npm and `@timlaing/opencode-push-relay` on GitHub
+Packages. Prerelease versions use the `next` channel; stable versions use
+`latest`. The iOS app is distributed separately through TestFlight/App Store.
+See the [publishing guide](../../docs/publishing.md) for prerequisites and retries.

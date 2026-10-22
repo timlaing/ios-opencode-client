@@ -23,3 +23,7 @@ xcuserdata/
 coverage*.xml
 coverage*.lcov
 *.xcresult/
+
+# CI coverage and scanner output
+/reports/
+.scannerwork/

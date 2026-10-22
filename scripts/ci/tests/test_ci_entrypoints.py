@@ -67,10 +67,18 @@ class ToolingEntrypointTests(unittest.TestCase):
             self.assertEqual(len(errors),2)
             self.assertTrue(any('missing local link' in error for error in errors))
 
-    def test_release_metadata_entrypoint_outputs_stable_app_version(self):
+    def test_release_metadata_entrypoint_outputs_plugin_version(self):
         script=str(CI / 'release_metadata.py')
-        with tempfile.TemporaryDirectory() as directory, patch.object(sys,'argv',[script,'app-v1.2.3']):
+        with tempfile.TemporaryDirectory() as directory, patch.object(sys,'argv',[script,'plugin-v1.2.3']):
             output=Path(directory)/'output'
             with patch.dict(os.environ,{'GITHUB_OUTPUT':str(output)}):
                 runpy.run_path(script,run_name='__main__')
-            self.assertEqual(output.read_text(),'kind=app\nversion=1.2.3\napp-version=1.2.3\n')
+            self.assertEqual(output.read_text(),'kind=plugin\nversion=1.2.3\n')
+
+    def test_release_metadata_rejects_mismatched_prerelease_flag(self):
+        script=str(CI / 'release_metadata.py')
+        for tag, flag in [('plugin-v1.2.3', 'true'), ('plugin-v1.2.3-beta.1', 'false')]:
+            with self.subTest(tag=tag), tempfile.TemporaryDirectory() as directory, patch.object(sys,'argv',[script,tag]):
+                with patch.dict(os.environ, {'GITHUB_OUTPUT':str(Path(directory)/'out'), 'RELEASE_PRERELEASE':flag}):
+                    with self.assertRaisesRegex(ValueError,'prerelease flag'):
+                        runpy.run_path(script,run_name='__main__')

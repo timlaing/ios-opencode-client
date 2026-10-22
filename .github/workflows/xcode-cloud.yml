@@ -1,0 +1,148 @@
+name: Xcode Cloud and SonarQube
+on:
+  workflow_call:
+    inputs:
+      cloud_run_id:
+        description: Optional Cloud build ID for an exact-commit retry
+        type: string
+        required: false
+        default: ""
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: CI integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "26.12.0"
+      - name: Test API bridge with coverage
+        run: |
+          mkdir -p reports
+          node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=reports/coverage-bridge.lcov scripts/ci/tests/*.test.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage-bridge
+          path: reports/coverage-bridge.lcov
+          if-no-files-found: error
+          retention-days: 7
+      - run: python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py' -v
+
+  cloud:
+    name: Xcode Cloud tests
+    # Fork PRs never receive Apple credentials or execute this privileged job.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    outputs:
+      sha: ${{ steps.revision.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Select expected revision
+        id: revision
+        env:
+          EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
+      - name: Wait for Cloud and download test results
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          XCODE_CLOUD_WORKFLOW_ID: ${{ vars.XCODE_CLOUD_WORKFLOW_ID }}
+          XCODE_CLOUD_RUN_ID: ${{ inputs.cloud_run_id }}
+          EXPECTED_SHA: ${{ steps.revision.outputs.sha }}
+          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/ci/xcode_cloud.mjs
+      - name: Save Cloud result bundles
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: xcode-cloud-results
+          path: reports/cloud/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  sonar:
+    name: Coverage and SonarQube quality gate
+    needs: [validate, cloud]
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          # PR builds use the same source/base merge tree tested by Cloud.
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download Cloud result bundles
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: xcode-cloud-results
+          path: reports/cloud
+      - name: Download Python and plugin coverage from Tests
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: coverage-*
+          path: coverage
+          merge-multiple: true
+      - name: Run package tests with coverage
+        run: |
+          swift test --package-path Packages/OpenCodeKit --enable-code-coverage --force-resolved-versions
+          coverage_path="$(swift test --package-path Packages/OpenCodeKit --show-codecov-path)"
+          cp "$coverage_path" reports/package-coverage.json
+      - name: Convert and merge line coverage
+        run: |
+          python3 scripts/ci/coverage.py --cloud reports/cloud --llvm reports/package-coverage.json --output reports/coverage.xml
+      - name: Configure SonarQube project and revision
+        env:
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || 'timlaing_ios-opencode-client' }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          EXPECTED_SHA: ${{ needs.cloud.outputs.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BRANCH: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          BRANCH: ${{ github.ref_name }}
+        run: python3 scripts/ci/sonar_config.py
+      - name: SonarQube scan and quality gate
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
+      - name: Save coverage and analysis metadata
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: swift-coverage
+          path: |
+            reports/coverage.xml
+            reports/package-coverage.json
+            reports/cloud/build.json
+            .scannerwork/report-task.txt
+          if-no-files-found: ignore
+          retention-days: 14
+
+  required:
+    name: Required CI
+    if: always()
+    needs: [validate, cloud, sonar]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every stage to succeed
+        env:
+          VALIDATE_RESULT: ${{ needs.validate.result }}
+          CLOUD_RESULT: ${{ needs.cloud.result }}
+          SONAR_RESULT: ${{ needs.sonar.result }}
+        run: |
+          if [ "$VALIDATE_RESULT" != success ] || [ "$CLOUD_RESULT" != success ] || [ "$SONAR_RESULT" != success ]; then
+            echo 'CI incomplete: integration tests, Xcode Cloud and SonarQube must all succeed.'
+            exit 1
+          fi

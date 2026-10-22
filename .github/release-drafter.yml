@@ -1,8 +1,9 @@
-name-template: "App v$RESOLVED_VERSION"
-tag-template: "app-v$RESOLVED_VERSION"
+name-template: "Plugin v$RESOLVED_VERSION"
+tag-template: "plugin-v$RESOLVED_VERSION"
 commitish: main
-tag-prefix: app-v
+tag-prefix: plugin-v
 filter-by-commitish: true
+include-labels: ["component: push-relay"]
 categories:
   - title: Dependencies
     labels: [dependencies]
@@ -10,14 +11,6 @@ categories:
     labels: [bug, bugfix]
   - title: Features
     labels: [enhancement]
-  - title: iPhone and iPad app
-    labels:
-      [
-        "component: app",
-        "component: transport",
-        "component: domain",
-        "component: storage",
-      ]
   - title: Push-relay plugin
     labels: ["component: push-relay"]
   - title: Documentation

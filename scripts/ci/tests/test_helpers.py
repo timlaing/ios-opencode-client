@@ -36,9 +36,9 @@ class CoverageTests(unittest.TestCase):
 class ReleaseTests(unittest.TestCase):
     def test_versions_are_separate(self):
         self.assertEqual(release.parse_tag('plugin-v0.1.0-beta.1'), ('plugin', '0.1.0-beta.1', '0.1.0'))
-        self.assertEqual(release.parse_tag('app-v1.2.3'), ('app', '1.2.3', '1.2.3'))
+        self.assertEqual(release.parse_tag('plugin-v1.2.3'), ('plugin', '1.2.3', '1.2.3'))
     def test_arbitrary_refs_are_rejected(self):
-        for value in ['main', 'v1.2.3', 'app-v1.2', 'plugin-v1.2.3;echo bad']:
+        for value in ['main', 'v1.2.3', 'app-v1.2', 'app-v1.2.3', 'plugin-v01.2.3', 'plugin-v1.2.3-01', 'plugin-v1.2.3;echo bad']:
             with self.assertRaises(ValueError):
                 release.parse_tag(value)
 
@@ -49,7 +49,7 @@ class ReleaseGateTests(unittest.TestCase):
         gate = load('require_release_checks')
         sha = 'a' * 40
         run = {'id': 10, 'head_sha': sha, 'head_branch': 'main', 'conclusion': 'success'}
-        with patch.object(gate, 'api', side_effect=[{'workflow_runs': [run]}, {'jobs': [{'name': 'sonar', 'conclusion': 'skipped'}]}]):
+        with patch.object(gate, 'api', side_effect=[{'workflow_runs': [run]}, {'jobs': [{'name': 'Native Cloud and SonarQube / Required CI', 'conclusion': 'skipped'}]}]):
             with self.assertRaisesRegex(ValueError, 'Sonar'):
                 gate.require_checks('owner/repo', sha)
     def test_all_exact_commit_checks_pass(self):
@@ -57,10 +57,24 @@ class ReleaseGateTests(unittest.TestCase):
         gate = load('require_release_checks')
         sha = 'b' * 40
         run = {'id': 10, 'head_sha': sha, 'head_branch': 'main', 'conclusion': 'success'}
-        with patch.object(gate, 'api', side_effect=[{'workflow_runs': [run]}, {'jobs': [{'name': 'sonar', 'conclusion': 'success'}]}, {'workflow_runs': [run]}]) as api:
+        with patch.object(gate, 'api', side_effect=[{'workflow_runs': [run]}, {'jobs': [{'name': 'Native Cloud and SonarQube / Required CI', 'conclusion': 'success'}]}, {'workflow_runs': [run]}, {'workflow_runs': [run]}]) as api:
             gate.require_checks('owner/repo', sha)
-            self.assertEqual(api.call_count, 3)
-            self.assertIn('/codeql.yml/runs?', api.call_args.args[0])
+            self.assertEqual(api.call_count, 4)
+            self.assertIn('/linting.yml/runs?', api.call_args.args[0])
+    def test_missing_or_failed_lint_blocks_release(self):
+        from unittest.mock import patch
+        gate = load('require_release_checks')
+        sha = 'b' * 40
+        run = {'id': 10, 'head_sha': sha, 'head_branch': 'main', 'conclusion': 'success'}
+        for lint in ([], [{**run, 'conclusion': 'failure'}], [{**run, 'conclusion': 'skipped'}]):
+            with self.subTest(lint=lint), patch.object(gate, 'api', side_effect=[
+                {'workflow_runs': [run]},
+                {'jobs': [{'name': 'Native Cloud and SonarQube / Required CI', 'conclusion': 'success'}]},
+                {'workflow_runs': [run]}, {'workflow_runs': lint},
+            ]):
+                with self.assertRaisesRegex(ValueError, 'linting.yml'):
+                    gate.require_checks('owner/repo', sha)
+
     def test_other_branch_or_sha_cannot_satisfy_gate(self):
         from unittest.mock import patch
         gate = load('require_release_checks')
@@ -90,8 +104,8 @@ class EnvironmentTests(unittest.TestCase):
         gate = load('require_release_checks')
         with patch.object(gate, 'api', return_value={'protection_rules': []}) as api:
             with self.assertRaisesRegex(ValueError, 'required reviewers'):
-                gate.require_environment('owner/repo', 'app')
-            api.assert_called_once_with('repos/owner/repo/environments/app-store')
+                gate.require_environment('owner/repo', 'plugin')
+            api.assert_called_once_with('repos/owner/repo/environments/npm')
         with patch.object(gate, 'api', return_value={'protection_rules': [{'type': 'required_reviewers', 'reviewers': [{'type': 'User'}]}]}) as api:
             gate.require_environment('owner/repo', 'plugin')
             api.assert_called_once_with('repos/owner/repo/environments/npm')
@@ -104,7 +118,7 @@ class GateRegressionTests(unittest.TestCase):
         sha = 'a' * 40
         run = {'id': 10, 'head_sha': sha, 'head_branch': 'main', 'conclusion': 'success'}
         for codeql in [[], [{**run, 'conclusion': 'failure'}], [run, {**run, 'id': 11, 'conclusion': 'failure'}]]:
-            with self.subTest(codeql=codeql), patch.object(gate, 'api', side_effect=[{'workflow_runs': [run]}, {'jobs': [{'name': 'sonar', 'conclusion': 'success'}]}, {'workflow_runs': codeql}]) as api:
+            with self.subTest(codeql=codeql), patch.object(gate, 'api', side_effect=[{'workflow_runs': [run]}, {'jobs': [{'name': 'Native Cloud and SonarQube / Required CI', 'conclusion': 'success'}]}, {'workflow_runs': codeql}]) as api:
                 with self.assertRaisesRegex(ValueError, 'codeql'):
                     gate.require_checks('owner/repo', sha)
                 self.assertEqual(api.call_count, 3)
@@ -123,7 +137,7 @@ class GateRegressionTests(unittest.TestCase):
             with self.assertRaises(ValueError): gate.require_environment('owner/repo', 'other')
             api.assert_not_called()
     def test_app_prerelease_is_not_silently_remapped(self):
-        with self.assertRaisesRegex(ValueError, 'stable'):
+        with self.assertRaisesRegex(ValueError, 'plugins only'):
             release.parse_tag('app-v1.2.3-beta.1')
     def test_xccov_rejects_invalid_bundle_before_subprocess(self):
         from unittest.mock import patch

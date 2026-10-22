@@ -121,7 +121,11 @@ schemes:
       config: Debug
     test:
       config: Debug
+      gatherCoverageData: true
       targets:
         - OpenCodeRemoteTests
         - OpenCodeRemoteUITests # root shell on iPhone + iPad, portrait + landscape
         # OpenCodeKitTests (package) runs via `swift test --package-path ../Packages/OpenCodeKit`
+
+    analyze:
+      config: Debug
