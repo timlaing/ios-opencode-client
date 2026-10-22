@@ -120,7 +120,7 @@ The repository includes the pinned OpenAPI snapshot, workflow mappings, generate
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development and contribution guidance, and [SECURITY.md](SECURITY.md) for private vulnerability reporting. CI covers Python, the server plugin, the Swift package, and iPhone/iPad simulator tests. Release automation and publishing require the repository environments and credentials described in the contributor guidance.
+Use the repository’s issue and pull request templates for contributions. See [SECURITY.md](SECURITY.md) for private vulnerability reporting. CI covers Python, the server plugin, the Swift package, and iPhone/iPad simulator tests. Publishing is managed through the repository’s release workflows.
 
 ## Support and licence
 
