@@ -110,7 +110,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.14"
-      - run: brew install xcodegen
+      - run: arch -arm64 brew install xcodegen
       - run: xcodegen generate --spec OpenCodeRemote/project.yml
       - name: Select available iOS 27.0 simulator for the required family
         run: python3 scripts/ci/select_simulator.py

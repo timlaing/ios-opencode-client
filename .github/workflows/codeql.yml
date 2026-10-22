@@ -47,7 +47,7 @@ jobs:
         env:
           DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
         run: |
-          brew install xcodegen
+          arch -arm64 brew install xcodegen
           xcodegen generate --spec OpenCodeRemote/project.yml
           xcodebuild build -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -destination 'generic/platform=iOS Simulator' -derivedDataPath Build CODE_SIGNING_ALLOWED=NO
       - uses: github/codeql-action/analyze@v4

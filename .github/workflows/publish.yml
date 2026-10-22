@@ -103,7 +103,7 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.sha }}
           persist-credentials: false
-      - run: brew install xcodegen
+      - run: arch -arm64 brew install xcodegen
       - run: xcodegen generate --spec OpenCodeRemote/project.yml
       - name: Archive, sign and upload to App Store Connect
         env:
