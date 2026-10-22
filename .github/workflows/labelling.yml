@@ -1,0 +1,24 @@
+name: Label issues and pull requests
+on:
+  issues:
+    types: [opened, reopened, edited]
+  pull_request_target:
+    types: [opened, reopened, edited, synchronize]
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+jobs:
+  label:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      # Always use trusted base code. Never check out the PR head here.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            await require('./.github/scripts/component-labels.cjs')({github, context});

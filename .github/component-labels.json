@@ -1,0 +1,50 @@
+[
+  {
+    "label": "component: app",
+    "description": "Changes to app",
+    "text": "\\b(?:iOS|iPadOS|SwiftUI|iPhone|iPad)\\b",
+    "paths": "^OpenCodeRemote/"
+  },
+  {
+    "label": "component: transport",
+    "description": "Changes to transport",
+    "text": "\\b(?:transport|SSE|reconnect|pairing)\\b",
+    "paths": "^Packages/OpenCodeKit/Sources/OpenCodeTransport/"
+  },
+  {
+    "label": "component: domain",
+    "description": "Changes to domain",
+    "text": "\\b(?:domain|session service)\\b",
+    "paths": "^Packages/OpenCodeKit/Sources/OpenCodeDomain/"
+  },
+  {
+    "label": "component: storage",
+    "description": "Changes to storage",
+    "text": "\\b(?:storage|GRDB|cache|drafts|iCloud)\\b",
+    "paths": "^Packages/OpenCodeKit/Sources/OpenCodeStorage/"
+  },
+  {
+    "label": "component: mock-contracts",
+    "description": "Changes to mock-contracts",
+    "text": "\\b(?:mock|contracts?|fixtures?)\\b",
+    "paths": "^(mock/|tests/|contracts/|fixtures/|scripts/build_contracts\\.py$)"
+  },
+  {
+    "label": "component: push-relay",
+    "description": "Changes to push-relay",
+    "text": "\\b(?:push.relay|APNs|server plugin)\\b",
+    "paths": "^plugins/opencode-push-relay/"
+  },
+  {
+    "label": "component: ci",
+    "description": "Changes to ci",
+    "text": "\\b(?:CI|GitHub Actions|Dependabot)\\b",
+    "paths": "^(\\.github/|scripts/ci/)"
+  },
+  {
+    "label": "component: documentation",
+    "description": "Changes to documentation",
+    "text": "\\b(?:documentation|README|docs)\\b",
+    "paths": "^(docs/|README\\.md$|SECURITY\\.md$)"
+  }
+]

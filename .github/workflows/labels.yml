@@ -1,0 +1,30 @@
+name: Sync repository labels
+on: workflow_dispatch
+permissions:
+  contents: read
+  issues: write
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const components = require('./.github/component-labels.json');
+            const lifecycle = ['bug', 'bugfix', 'enhancement', 'dependencies', 'breaking-change', 'needs-triage', 'stale', 'pinned', 'security', 'roadmap'];
+            const labels = [...components, ...lifecycle.map(label => ({label, description: label}))];
+            for (const {label: name, description} of labels) {
+              const data = {...context.repo, name, description, color: name.startsWith('component:') ? '1d76db' : 'ededed'};
+              try { await github.rest.issues.getLabel({...context.repo, name}); }
+              catch (error) {
+                if (error.status !== 404) throw error;
+                await github.rest.issues.createLabel(data);
+                continue;
+              }
+              await github.rest.issues.updateLabel(data);
+            }

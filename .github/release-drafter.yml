@@ -1,0 +1,41 @@
+name-template: "App v$RESOLVED_VERSION"
+tag-template: "app-v$RESOLVED_VERSION"
+commitish: main
+categories:
+  - title: Dependencies
+    labels: [dependencies]
+  - title: Fixes
+    labels: [bug, bugfix]
+  - title: Features
+    labels: [enhancement]
+  - title: iPhone and iPad app
+    labels:
+      [
+        "component: app",
+        "component: transport",
+        "component: domain",
+        "component: storage",
+      ]
+  - title: Push-relay plugin
+    labels: ["component: push-relay"]
+  - title: Documentation
+    labels: ["component: documentation"]
+  - title: Contracts and maintenance
+    labels: ["component: mock-contracts", "component: ci"]
+version-resolver:
+  major:
+    labels: [breaking-change]
+  minor:
+    labels: [enhancement]
+  patch:
+    labels: [bug, dependencies]
+  default: patch
+change-title-escapes: '\<*_&`'
+template: |
+  ## Changes
+
+  $CHANGES
+
+  ## Contributors
+
+  $CONTRIBUTORS

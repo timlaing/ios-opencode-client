@@ -1,0 +1,117 @@
+name: Publish app or plugin
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing main-branch release tag (app-vX.Y.Z or plugin-vX.Y.Z)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.repository == 'timlaing/ios-opencode-client'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      kind: ${{ steps.metadata.outputs.kind }}
+      version: ${{ steps.metadata.outputs.version }}
+      app-version: ${{ steps.metadata.outputs.app-version }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release name before using it as a ref
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: python3 scripts/ci/release_metadata.py "$RELEASE_TAG"
+      - name: Require the tag to be contained in main
+        id: commit
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          SHA=$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")
+          git merge-base --is-ancestor "$SHA" origin/main
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - name: Require successful tests and security scans on that exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+          RELEASE_KIND: ${{ steps.metadata.outputs.kind }}
+        run: |
+          python3 scripts/ci/require_release_checks.py "$RELEASE_SHA"
+    permissions:
+      contents: read
+      actions: read
+  npm:
+    needs: validate
+    if: needs.validate.outputs.kind == 'plugin'
+    environment: npm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: plugins/opencode-push-relay
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26.12.0"
+          registry-url: https://registry.npmjs.org
+          cache: npm
+          cache-dependency-path: plugins/opencode-push-relay/package-lock.json
+      - name: Match package version to the release tag
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: node -e 'if (JSON.parse(require("fs").readFileSync("package.json")).version !== process.env.RELEASE_VERSION) process.exit(1)'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - run: npm pack --dry-run
+      - name: Publish with npm trusted publishing
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          DIST_TAG=latest
+          if [[ "$RELEASE_VERSION" == *-* ]]; then DIST_TAG=next; fi
+          npm publish --access public --provenance --tag "$DIST_TAG"
+  app:
+    needs: validate
+    if: needs.validate.outputs.kind == 'app'
+    environment: app-store
+    runs-on: xcode-27
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - run: brew install xcodegen
+      - run: xcodegen generate --spec OpenCodeRemote/project.yml
+      - name: Archive, sign and upload to App Store Connect
+        env:
+          APP_VERSION: ${{ needs.validate.outputs.app-version }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: bash scripts/ci/publish_ios.sh

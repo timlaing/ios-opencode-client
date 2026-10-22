@@ -76,6 +76,12 @@ Product design and implementation guide for a native iPhone/iPad client that pre
 
 The commercial model is decided: completely free. Earlier monetisation analysis is reference material, not implementation scope. Future hosting costs still need an operating plan; no paid service has been authorised.
 
+## Contributing and automation
+
+See [GitHub automation](docs/github-automation.md) for CI, coverage, security scanning,
+release publishing, labels and issue lifecycle setup. Use the issue and PR templates
+when contributing; report vulnerabilities through [SECURITY.md](SECURITY.md).
+
 ## Initial user journey
 
 Select a host → create or open a project → create or resume a session → attach context → follow thinking/tool activity → answer questions or approvals → review files and changes.

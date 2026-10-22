@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: [dependencies, "component: ci"]
+  - package-ecosystem: npm
+    directory: /plugins/opencode-push-relay
+    schedule:
+      interval: weekly
+    labels: [dependencies, "component: push-relay"]
+    # Coupled to the installed OpenCode host; update deliberately together.
+    ignore:
+      - dependency-name: "@opencode/plugin"
+  - package-ecosystem: swift
+    directory: /Packages/OpenCodeKit
+    schedule:
+      interval: weekly
+    labels: [dependencies, "component: storage"]

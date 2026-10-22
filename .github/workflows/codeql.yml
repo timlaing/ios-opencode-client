@@ -1,0 +1,55 @@
+name: CodeQL security analysis
+on:
+  push:
+    branches: [main, integration, opencode-plugin]
+  pull_request:
+  schedule:
+    - cron: "18 16 * * 2"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            runner: ubuntu-24.04
+            build: none
+          - language: python
+            runner: ubuntu-24.04
+            build: none
+          - language: javascript-typescript
+            runner: ubuntu-24.04
+            build: none
+          - language: swift
+            runner: xcode-27
+            build: manual
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build }}
+          queries: security-extended
+      - name: Build Swift app for analysis
+        if: matrix.language == 'swift'
+        env:
+          DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec OpenCodeRemote/project.yml
+          xcodebuild build -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -destination 'generic/platform=iOS Simulator' -derivedDataPath Build CODE_SIGNING_ALLOWED=NO
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
