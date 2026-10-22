@@ -1,5 +1,0 @@
-# xcode-27 is a GitHub-hosted Apple runner (actions/runner-images).
-# actionlint 1.7.7 predates this label; this schema key extends its allowlist
-# and does not provision or request a self-hosted runner.
-self-hosted-runner:
-  labels: [xcode-27]
