@@ -8,6 +8,8 @@ options:
   createIntermediateGroups: true
 settings:
   base:
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: 4C8FWEBR8F
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "5.0" # language mode 5 on the Swift 6.x compiler; revisit for Swift 6 strict concurrency
@@ -35,6 +37,8 @@ targets:
       path: OpenCodeRemote/Info.plist
       properties:
         CFBundleDisplayName: OpenCode Client
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         # Declared explicitly (not left to defaults): the UI suite runs
         # portrait AND landscape on both device families, and an
         # unsupported orientation would silently revert the rotation

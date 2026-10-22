@@ -1,0 +1,45 @@
+name: Server or plugin compatibility
+description: Report a reproducible client/server/plugin version mismatch
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please provide the full version combination and a minimal reproduction.
+        Use synthetic data and remove passwords, tokens and private conversations.
+  - type: dropdown
+    id: components
+    attributes:
+      label: Affected component
+      description: Select all affected components, or choose Unknown.
+      multiple: true
+      options:
+        - "component: app"
+        - "component: transport"
+        - "component: domain"
+        - "component: storage"
+        - "component: mock-contracts"
+        - "component: push-relay"
+        - "component: ci"
+        - "component: documentation"
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Versions and environment
+      description: Give app build, OpenCode host version, plugin version if used, host OS/Node, device/OS, and real host versus reference mock.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Operation or event affected
+      description: Describe expected and actual behaviour, including error responses where safe to share.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Minimal reproduction
+      description: Include a last working version combination if known. Do not include credentials or pairing links.
+    validations:
+      required: true

@@ -1,0 +1,186 @@
+name: Publish app or plugin
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub release tag on main (app-vX.Y.Z or plugin-vX.Y.Z)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: publish-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.repository == 'timlaing/ios-opencode-client'
+    environment: release-preflight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      kind: ${{ steps.metadata.outputs.kind }}
+      version: ${{ steps.metadata.outputs.version }}
+      app-version: ${{ steps.metadata.outputs.app-version }}
+      dist-tag: ${{ steps.dist.outputs.tag }}
+      sha: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate release name before using it as a ref
+        id: metadata
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: python3 scripts/ci/release_metadata.py "$RELEASE_TAG"
+      - name: Select plugin distribution channel
+        id: dist
+        env:
+          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          DIST_TAG=latest
+          if [[ "$RELEASE_VERSION" == *-* ]]; then DIST_TAG=next; fi
+          echo "tag=$DIST_TAG" >> "$GITHUB_OUTPUT"
+      - name: Require the tag to be contained in main
+        id: commit
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          SHA=$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}")
+          git merge-base --is-ancestor "$SHA" origin/main
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+      - name: Require successful tests and security scans on the exact commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: python3 scripts/ci/require_release_checks.py "$RELEASE_SHA"
+      - name: Verify required environment reviewers using an admin-read credential
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PREFLIGHT_TOKEN }}
+          RELEASE_KIND: ${{ steps.metadata.outputs.kind }}
+        run: |
+          test -n "$GH_TOKEN" || { echo 'Configure RELEASE_PREFLIGHT_TOKEN in protected release-preflight environment'; exit 1; }
+          python3 scripts/ci/release_guard.py environment
+  npm-build:
+    needs: validate
+    if: needs.validate.outputs.kind == 'plugin'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # Dependencies never execute in a job with OIDC or environment credentials.
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.package.outputs.sha256 }}
+    defaults:
+      run:
+        working-directory: plugins/opencode-push-relay
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "26.12.0"
+          cache: npm
+          cache-dependency-path: plugins/opencode-push-relay/package-lock.json
+      - name: Match package version to tag
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: node -e 'if (JSON.parse(require("fs").readFileSync("package.json")).version !== process.env.RELEASE_VERSION) process.exit(1)'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - name: Pack tested output without running more lifecycle hooks
+        id: package
+        run: |
+          mkdir -p "$RUNNER_TEMP/npm-package"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/npm-package"
+          mv "$RUNNER_TEMP/npm-package/"*.tgz "$RUNNER_TEMP/npm-package/package.tgz"
+          HASH=$(sha256sum "$RUNNER_TEMP/npm-package/package.tgz" | cut -d ' ' -f 1)
+          echo "sha256=$HASH" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: npm-package
+          path: ${{ runner.temp }}/npm-package/package.tgz
+          if-no-files-found: error
+          retention-days: 7
+  npm:
+    needs: [validate, npm-build]
+    if: needs.validate.outputs.kind == 'plugin'
+    environment: npm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: npm-publish-${{ needs.validate.outputs.dist-tag }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
+      RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+      DIST_TAG: ${{ needs.validate.outputs.dist-tag }}
+      PACKAGE_SHA256: ${{ needs.npm-build.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "26.12.0"
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: npm-package
+          path: release
+      - name: Verify artifact identity and prevent dist-tag downgrades
+        run: python3 scripts/ci/release_guard.py check-package
+      - name: Verify tag immediately before publishing the tested artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ci/release_guard.py verify-tag
+          npm publish release/package.tgz --ignore-scripts --access public --provenance --tag "$DIST_TAG"
+  app:
+    needs: validate
+    if: needs.validate.outputs.kind == 'app'
+    environment: app-store
+    runs-on: xcode-27
+    timeout-minutes: 45
+    permissions:
+      contents: write # persist the successful upload receipt on its GitHub release
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      RELEASE_SHA: ${{ needs.validate.outputs.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - name: Reject an already uploaded app release
+        run: python3 scripts/ci/release_guard.py check-app
+      - run: arch -arm64 brew install xcodegen
+      - run: xcodegen generate --spec OpenCodeRemote/project.yml
+      - name: Archive, sign and upload to App Store Connect
+        env:
+          APP_VERSION: ${{ needs.validate.outputs.app-version }}
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
+          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: bash scripts/ci/publish_ios.sh
+      - name: Record successful upload (reruns cannot generate a different build)
+        run: python3 scripts/ci/release_guard.py record-app

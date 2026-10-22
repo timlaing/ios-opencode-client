@@ -1,0 +1,61 @@
+name: Feature request
+description: Request a feature for OpenCode Client for iOS
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a feature. Please search the
+        [existing issues](https://github.com/timlaing/ios-opencode-client/issues?q=is%3Aissue)
+        first to see whether it has already been requested or discussed.
+  - type: dropdown
+    id: components
+    attributes:
+      label: Affected component
+      description: Select all affected components, or choose Unknown.
+      multiple: true
+      options:
+        - "component: app"
+        - "component: transport"
+        - "component: domain"
+        - "component: storage"
+        - "component: mock-contracts"
+        - "component: push-relay"
+        - "component: ci"
+        - "component: documentation"
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: The request
+      description: Describe the feature you would like, what you are trying to do, and why you cannot do it today.
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Environment
+      description: Help us understand the setup this would be used in.
+      placeholder: |
+        - App build / plugin version:
+        - OpenCode server version:
+        - Device and iOS/iPadOS version (or host OS/Node for plugin reports):
+        - Physical device or simulator:
+        - Real OpenCode host or reference mock:
+        - Last working version, if known:
+      render: markdown
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Checklist
+      options:
+        - label: I have read the README and searched the existing issues.
+          required: true
+        - label: This issue contains a single feature request only.
+          required: true
+  - type: textarea
+    attributes:
+      label: Additional information
+      description: Anything else that might help, such as mock-ups, usage examples or references.

@@ -17,3 +17,9 @@ xcuserdata/
 
 # SPM build cache (per-package .build dirs)
 .build/
+
+# Local CI coverage verification
+.coverage
+coverage*.xml
+coverage*.lcov
+*.xcresult/

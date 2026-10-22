@@ -1,0 +1,166 @@
+name: Tests
+on:
+  push:
+    branches: [main, integration, opencode-plugin]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python3 -m unittest discover -s tests -v
+      - name: Verify generated files are reproducible
+        run: |
+          python3 -m mock.fixtures
+          python3 scripts/build_contracts.py
+          git diff --exit-code -- fixtures/generated contracts docs/api-route-catalog.md
+      - name: Measure coverage (CI tool only, mock remains dependency-free)
+        if: matrix.python == '3.14'
+        run: |
+          python3 -m pip install coverage==7.11.0
+          python3 -m coverage run --branch --source=mock,scripts -m unittest discover -s tests
+          python3 -m coverage run --append --branch --source=mock,scripts -m unittest discover -s scripts/ci/tests
+          python3 -m coverage xml -o coverage-python.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: matrix.python == '3.14'
+        with:
+          name: coverage-python
+          path: coverage-python.xml
+          if-no-files-found: error
+          retention-days: 7
+  plugin:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: plugins/opencode-push-relay
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "26.12.0"
+          cache: npm
+          cache-dependency-path: plugins/opencode-push-relay/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=coverage.lcov tests/
+      - name: Normalize coverage source paths
+        run: sed -i 's|^SF:|SF:plugins/opencode-push-relay/|' coverage.lcov
+      - name: Test repository classifier with coverage
+        working-directory: .
+        run: node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=coverage-classifier.lcov .github/scripts/*.test.cjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage-classifier
+          path: coverage-classifier.lcov
+          if-no-files-found: error
+          retention-days: 7
+      - run: npm pack --dry-run
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage-plugin
+          path: plugins/opencode-push-relay/coverage.lcov
+          if-no-files-found: error
+          retention-days: 7
+  swift-package:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - run: xcodebuild -version
+      - run: swift test --package-path Packages/OpenCodeKit --enable-code-coverage --force-resolved-versions
+      - name: Export Swift package coverage
+        run: |
+          BIN=$(swift build --package-path Packages/OpenCodeKit --show-bin-path)
+          xcrun llvm-cov export -format=lcov "$(python3 scripts/ci/package_test_binary.py "$BIN")" -instr-profile="$BIN/codecov/default.profdata" > coverage-swift.lcov
+          python3 scripts/ci/swift_coverage.py lcov coverage-swift.lcov coverage-package.xml
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage-package
+          path: coverage-package.xml
+          if-no-files-found: error
+          retention-days: 7
+  ios:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        family: [iPhone, iPad]
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVICE_FAMILY: ${{ matrix.family }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.14"
+      - run: arch -arm64 brew install xcodegen
+      - run: xcodegen generate --spec OpenCodeRemote/project.yml
+      - name: Select available iOS 27.0 simulator for the required family
+        run: python3 scripts/ci/select_simulator.py
+      - name: App unit and UI tests (both orientations are exercised in-test)
+        run: |
+          xcodebuild test -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -destination "platform=iOS Simulator,id=$SIMULATOR_ID" -derivedDataPath Build -resultBundlePath "Results-${DEVICE_FAMILY}.xcresult" -enableCodeCoverage YES CODE_SIGN_IDENTITY=-
+          python3 scripts/ci/swift_coverage.py xccov "Results-${DEVICE_FAMILY}.xcresult" "coverage-${DEVICE_FAMILY}.xml"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: ios-results-${{ matrix.family }}
+          path: Results-*.xcresult
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: coverage-ios-${{ matrix.family }}
+          path: coverage-${{ matrix.family }}.xml
+          if-no-files-found: error
+          retention-days: 7
+  sonar:
+    needs: [python, plugin, swift-package, ios]
+    # Only protected main pushes may receive scanner credentials.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require configured Sonar credentials
+        run: test -n "$SONAR_TOKEN" || { echo 'Configure repository secret SONAR_TOKEN'; exit 1; }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: coverage-*
+          path: coverage
+          merge-multiple: true
+      - name: Analyze sources and wait for the quality gate
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        with:
+          args: -Dsonar.host.url=https://sonarcloud.io -Dsonar.qualitygate.wait=true

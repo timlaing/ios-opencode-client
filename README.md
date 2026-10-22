@@ -76,6 +76,31 @@ Product design and implementation guide for a native iPhone/iPad client that pre
 
 The commercial model is decided: completely free. Earlier monetisation analysis is reference material, not implementation scope. Future hosting costs still need an operating plan; no paid service has been authorised.
 
+## Contributing and automation
+
+Use the issue and PR templates when contributing; report vulnerabilities through
+[SECURITY.md](SECURITY.md). CI tests Python, the plugin, the Swift package and both
+simulator device families. Secret-bearing Sonar analysis runs only on pushes to
+protected `main`; the configured PR jobs do not receive its token. Swift CodeQL uses macOS 26
+and Xcode 26.6 because CodeQL does not support traced extraction on Xcode/macOS 27.
+
+Release setup requires protected `npm` and `app-store` environments with required
+reviewers, a protected `release-preflight` environment, npm trusted publishing for
+`publish.yml`, and Apple distribution/API secrets. An environment secret
+`RELEASE_PREFLIGHT_TOKEN` in `release-preflight` must have repository
+Administration read permission to verify environment protection; `GITHUB_TOKEN`
+cannot grant that permission. Protect `main`; the configured Sonar job only runs
+on protected-main pushes and uses the repository-level `SONAR_TOKEN`. Environment
+isolation of that token is deferred by maintainer decision. Restrict release
+environment deployment refs to the
+approved main/release tags. Enable private vulnerability reporting and run the label-sync workflow after merging.
+Protect `app-v*` and `plugin-v*` tags against updates/deletion with a repository
+ruleset. App tags are stable `app-vX.Y.Z`; plugin tags may have prerelease suffixes.
+App tags require an existing GitHub release for upload receipts. App uploads use
+a deterministic build version and a release-asset receipt to reject repeat uploads. App Store review/submission remains a manual step. Stale issues
+close after 60 inactive days plus a 14-day warning; `pinned`, `security` and `roadmap`
+are exempt.
+
 ## Initial user journey
 
 Select a host → create or open a project → create or resume a session → attach context → follow thinking/tool activity → answer questions or approvals → review files and changes.
