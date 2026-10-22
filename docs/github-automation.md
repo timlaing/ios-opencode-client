@@ -28,6 +28,15 @@ queries on PRs, integration/default-branch pushes and a weekly schedule.
 Dependency security review rejects PRs introducing high/critical advisories. Enable
 GitHub secret scanning and push protection in repository security settings as well.
 
+## Security scanning activation
+
+GitHub default CodeQL setup and advanced workflow uploads cannot be enabled at the
+same time. This repository currently has default setup configured. When adopting
+`.github/workflows/codeql.yml`, switch CodeQL to Advanced in repository Settings →
+Code security, then rerun the CodeQL workflow. Until then GitHub rejects advanced
+SARIF uploads with an explicit configuration error even when analysis completes.
+This repository-setting change is separate from merging workflow files.
+
 ## Sonar setup
 
 Configure the existing SonarCloud project `timlaing_ios-opencode-client` in the
