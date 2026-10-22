@@ -1,0 +1,11 @@
+# Default SwiftLint rules; the baseline records existing debt, not disabled rules.
+included:
+  - OpenCodeRemote/OpenCodeRemote
+  - OpenCodeRemote/OpenCodeRemoteTests
+  - OpenCodeRemote/OpenCodeRemoteUITests
+  - Packages/OpenCodeKit/Sources
+  - Packages/OpenCodeKit/Tests
+excluded:
+  - Packages/OpenCodeKit/.build
+allow_zero_lintable_files: false
+check_for_updates: false

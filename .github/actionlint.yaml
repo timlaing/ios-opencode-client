@@ -1,0 +1,4 @@
+# Existing CI runner label, also used by CodeQL and publishing.
+self-hosted-runner:
+  labels:
+    - xcode-27

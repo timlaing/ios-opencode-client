@@ -1,0 +1,35 @@
+name: Configure Xcode Cloud Analyze
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Apply the Analyze action (false previews the change)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: configure-xcode-cloud-analyze
+  cancel-in-progress: false
+jobs:
+  configure:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Configure the existing Cloud workflow
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          XCODE_CLOUD_WORKFLOW_ID: ${{ vars.XCODE_CLOUD_WORKFLOW_ID }}
+          APPLY_ANALYZE: ${{ inputs.apply }}
+        run: |
+          if [ "$APPLY_ANALYZE" = true ]; then
+            node scripts/ci/configure_analyze.mjs --apply
+          else
+            node scripts/ci/configure_analyze.mjs
+          fi

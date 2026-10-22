@@ -1,0 +1,8 @@
+{
+  "name": "Analyze iOS",
+  "actionType": "ANALYZE",
+  "platform": "IOS",
+  "scheme": "OpenCodeRemote",
+  "destination": "ANY_IOS_SIMULATOR",
+  "isRequiredToPass": true
+}

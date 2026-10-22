@@ -21,3 +21,33 @@ jobs:
         with:
           node-version: "26.12.0"
       - run: npx --yes prettier@3.6.2 --check '.github/**/*.{yml,yaml,json,md,cjs}' SECURITY.md
+
+  swiftlint:
+    name: SwiftLint
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Install pinned SwiftLint binary
+        run: |
+          tool_dir="$RUNNER_TEMP/swiftlint-0.65.1"
+          mkdir -p "$tool_dir"
+          curl --fail --silent --show-error --location --retry 3 --proto '=https' --proto-redir '=https' https://github.com/realm/SwiftLint/releases/download/0.65.1/portable_swiftlint.zip -o "$tool_dir/swiftlint.zip"
+          echo 'c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0  '"$tool_dir/swiftlint.zip" | shasum -a 256 -c -
+          unzip -q "$tool_dir/swiftlint.zip" -d "$tool_dir"
+          chmod +x "$tool_dir/swiftlint"
+          echo "SWIFTLINT_BIN=$tool_dir/swiftlint" >> "$GITHUB_ENV"
+      - name: Lint app and package sources with PR annotations
+        run: scripts/ci/lint_swift.sh
+      - name: Retain all findings, including existing debt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: swiftlint-report
+          path: reports/swiftlint-all.json
+          if-no-files-found: error
+          retention-days: 14

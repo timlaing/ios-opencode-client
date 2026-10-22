@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 """Fail-closed publication checks; never execute package lifecycle code."""
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -8,7 +9,6 @@ from pathlib import Path
 import re
 import subprocess
 import tarfile
-import tempfile
 
 from release_metadata import parse_tag
 from require_release_checks import api, require_environment
@@ -30,28 +30,6 @@ def verify_tag():
         raise ValueError('Release tag moved after validation')
 
 
-def app_receipt_exists():
-    repository, tag, _ = identity()
-    if parse_tag(tag)[0] != 'app':
-        raise ValueError('Expected an app release')
-    release = api(f'repos/{repository}/releases/tags/{tag}')
-    return any(asset['name'] == 'app-uploaded.json' for asset in release['assets'])
-
-
-def check_app():
-    verify_tag()
-    if app_receipt_exists():
-        raise ValueError('This app tag was already uploaded')
-
-
-def record_app():
-    repository, tag, sha = identity()
-    with tempfile.TemporaryDirectory(prefix='opencode-upload-') as directory:
-        path = Path(directory) / 'app-uploaded.json'
-        path.write_text(json.dumps({'tag': tag, 'sha': sha, 'build': parse_tag(tag)[2]}) + '\n')
-        subprocess.run(['gh', 'release', 'upload', tag, str(path), '--repo', repository], check=True)
-
-
 def version_key(version):
     match = re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?', version)
     if not match:
@@ -64,7 +42,7 @@ def version_key(version):
     return int(major), int(minor), int(patch), not bool(suffix), prerelease
 
 
-def check_package(path, expected_hash, expected_version, dist_tag, registry_tags):
+def check_package(path, expected_hash, expected_version, dist_tag, registry_tags, expected_name='opencode-push-relay', existing_integrity=None):
     path = Path(path).resolve(strict=True)
     if path.suffix != '.tgz' or not path.is_file():
         raise ValueError('Expected a package tarball')
@@ -78,32 +56,80 @@ def check_package(path, expected_hash, expected_version, dist_tag, registry_tags
             raise ValueError('Invalid package metadata')
         with archive.extractfile(member) as stream:
             package = json.load(stream)
-    if package.get('name') != 'opencode-push-relay' or package.get('version') != expected_version:
+    if expected_name not in {'opencode-push-relay', '@timlaing/opencode-push-relay'}:
+        raise ValueError('Unexpected package name')
+    if package.get('name') != expected_name or package.get('version') != expected_version:
         raise ValueError('Package metadata does not match release')
     if dist_tag != ('next' if '-' in expected_version else 'latest'):
         raise ValueError('Unexpected npm dist-tag')
+    version_key(expected_version)
+    if existing_integrity is not None:
+        integrity = 'sha512-' + base64.b64encode(hashlib.sha512(path.read_bytes()).digest()).decode()
+        if existing_integrity != integrity:
+            raise ValueError('Existing package version has different contents; refuse to overwrite')
+        return False
     current = registry_tags.get(dist_tag)
     if current and version_key(expected_version) <= version_key(current):
         raise ValueError(f'Refusing to move {dist_tag} to an older or equal version')
-    version_key(expected_version)
+    return True
+
+
+def registry_json(name, registry, field=None):
+    args = ['npm', 'view', name]
+    if field:
+        args.append(field)
+    args.extend(['--json', '--registry', registry])
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
+    if result.returncode:
+        # npm's --json error record distinguishes first publication from auth,
+        # networking and registry failures. Never print registry/token output.
+        for content in (result.stdout, result.stderr):
+            try:
+                error = json.loads(content)
+            except (ValueError, TypeError):
+                continue
+            if isinstance(error, dict) and error.get('error', {}).get('code') == 'E404':
+                return None
+        raise ValueError('Registry lookup failed; check registry access and credentials')
+    return json.loads(result.stdout or 'null')
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['verify-tag', 'environment', 'check-app', 'record-app', 'check-package'])
+    parser.add_argument('mode', choices=['verify-tag', 'environment', 'check-package'])
     args = parser.parse_args(argv)
     try:
         if args.mode == 'verify-tag':
             verify_tag()
         elif args.mode == 'environment':
             require_environment(os.environ['GITHUB_REPOSITORY'], os.environ['RELEASE_KIND'])
-        elif args.mode == 'check-app':
-            check_app()
-        elif args.mode == 'record-app':
-            record_app()
         else:
-            tags = json.loads(subprocess.check_output(['npm', 'view', 'opencode-push-relay', 'dist-tags', '--json']))
-            check_package('release/package.tgz', os.environ['PACKAGE_SHA256'], os.environ['RELEASE_VERSION'], os.environ['DIST_TAG'], tags)
+            name = os.environ.get('PACKAGE_NAME', 'opencode-push-relay')
+            registry = os.environ.get('PACKAGE_REGISTRY', 'https://registry.npmjs.org')
+            targets = {'opencode-push-relay': 'https://registry.npmjs.org',
+                       '@timlaing/opencode-push-relay': 'https://npm.pkg.github.com'}
+            if targets.get(name) != registry:
+                raise ValueError('Unexpected package/registry pair')
+            version = os.environ['RELEASE_VERSION']
+            version_key(version)
+            tags = registry_json(name, registry, 'dist-tags') or {}
+            if not isinstance(tags, dict):
+                raise ValueError('Invalid registry distribution tags')
+            published = registry_json(f'{name}@{version}', registry)
+            integrity = None
+            if published is not None:
+                if not isinstance(published, dict) or published.get('version') != version:
+                    raise ValueError('Invalid existing package version metadata')
+                integrity = published.get('dist', {}).get('integrity')
+                if not integrity:
+                    raise ValueError('Existing version cannot be verified without its integrity')
+            publish = check_package(os.environ.get('PACKAGE_TARBALL', 'release/package.tgz'),
+                                    os.environ['PACKAGE_SHA256'], version, os.environ['DIST_TAG'],
+                                    tags, name, integrity)
+            if os.environ.get('GITHUB_OUTPUT'):
+                with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                    output.write(f'publish={str(publish).lower()}\n')
+            print('Package verified for publication' if publish else 'Identical version already published; skipping without moving tags')
     except (ValueError, KeyError, tarfile.TarError) as error:
         raise SystemExit(str(error)) from error
 
