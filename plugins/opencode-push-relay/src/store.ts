@@ -110,11 +110,11 @@ export function emptyStats(): Stats {
 }
 
 /**
- * In-process serialisation per storage key. Instances in other processes are
- * still safe: every mutation below is keyed and idempotent (same event +
- * device writes the same outbox key), and APNs collapse ids absorb duplicate
- * sends — the lease only reduces redundant work, correctness does not rest
- * on it.
+ * In-process serialisation per storage key. The plugin setup enforces one
+ * OS process per configured scope before storage or relay access. KV offers
+ * no atomic cross-process lease operation; this lock and the delivery lease
+ * coordinate instances only within that owning process. Retries can still
+ * resend after APNs acceptance; collapse ids affect presentation only.
  */
 const locks = new Map<string, Promise<unknown>>()
 

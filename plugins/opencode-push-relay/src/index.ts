@@ -10,6 +10,7 @@ import { DeliveryEngine } from "./engine.ts"
 import { pumpEvents } from "./events.ts"
 import type { HandlerDeps } from "./handlers.ts"
 import { makeRpcHandlers } from "./handlers.ts"
+import { claimProcessScope } from "./process-scope.ts"
 import { PushRpc } from "./rpc.ts"
 import { describeError, RelayClient, RelayError } from "./relay.ts"
 import { generateKeyPair, sha256hex } from "./signing.ts"
@@ -53,6 +54,8 @@ export default Plugin.define({
       config === undefined
         ? ""
         : sha256hex(`${config.relayUrl}|${config.app}|${config.tenant}`).slice(0, 16)
+    // KV has no cross-process atomic operation. Claim before any storage or relay work.
+    if (config !== undefined) await claimProcessScope(scope)
     const store = new PushStore(ctx.storage, scope)
 
     let registration: Registration | undefined = await store.getRegistration()
@@ -99,9 +102,8 @@ export default Plugin.define({
      * Ensure usable credentials exist. With no stored registration this
      * registers (when autoRegister is on); with a registration whose binding
      * vanished from the relay (idle-expired or revoked) it re-registers and
-     * flags paired devices for re-enrollment. Serialized per process; other
-     * processes converge because re-registering an existing tenant id yields
-     * unknown_tenant-ish failures that simply retry next tick.
+     * flags paired devices for re-enrollment. Serialized among instances in
+     * the owning process; setup excludes other processes from this scope.
      */
     const ensureRegistration = async (): Promise<Registration | undefined> => {
       if (config === undefined || relay === undefined) return undefined

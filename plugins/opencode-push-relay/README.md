@@ -4,7 +4,7 @@ OpenCode **server plugin** that registers this host with an
 [apns-push-relay](../../docs/notifications.md) instance and delivers
 session/permission notifications to paired iOS clients over APNs.
 
-Status: implemented and unit-tested (97 tests) against a fake relay and the
+Status: implemented and unit-tested (98 tests) against a fake relay and the
 relay's golden signing fixture, and verified to load in a real OpenCode
 v2.0.30 server (see [Loading](#loading-verified-against-opencode-v2030)).
 **Not yet verified against a live relay or device** — see
@@ -85,16 +85,25 @@ One server-global KV table namespaced by plugin id, then scoped per
 options (`relayUrl|app|tenant`): `registration`, `device/<id>`,
 `outbox/<id>`, `sent/<eventId>`, `lease`. Project locations with identical
 options share their scope — one registration, device set, outbox and lease —
-while locations with different options never mix credentials. The delivery
-lease ensures a single instance drains at a time (others pick up after
-expiry; the holder re-news it before every outbox item, so a slow drain
-cannot outlive it, and `/push-status` reports holder vs free from the
-lease's live expiry). Correctness never depends on the lease alone: outbox
-writes are idempotent per (transition, device), and the lease plus retry
-handling own the delivery guarantee. APNs collapse ids only merge the
-presentation of alerts that were actually transmitted — a retry after APNs
-accepted a request can send the same alert again, so collapse ids are never
-treated as send-side deduplication.
+while locations with different options never mix credentials.
+
+**One OS process per configured scope is enforced.** Before accessing storage
+or the relay, setup claims a local Unix-domain socket (Windows: named pipe)
+for the scope. Another process with identical options fails setup, including
+when its KV lease appears expired. Claims are held until process exit, so
+plugin cleanup cannot hand ownership over while a send is still in flight.
+Instances within the owning process share the in-process lock and delivery
+lease. The storage API has no cross-process transaction/CAS operation, so the
+KV lease alone is not a cross-process exclusion mechanism.
+
+Unix claim paths are `/tmp/opencode-push-<uid>-<scope>.sock`. A crash can leave
+a stale socket: startup fails closed. Stop every process using that scope
+before manually removing its stale socket and restarting. Shared KV across
+machines or OS users is unsupported; the guard coordinates local processes
+for one user only. Do not remove an active owner's socket.
+
+Outbox writes are idempotent per (transition, device). APNs collapse ids only
+merge presentation; a retry after APNs acceptance can still resend an alert.
 
 ## Loading (verified against OpenCode v2.0.30)
 
