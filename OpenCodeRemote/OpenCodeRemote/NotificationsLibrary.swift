@@ -12,8 +12,7 @@ protocol NotificationPermissionProviding: Sendable {
 /// The real UserNotifications bridge.
 struct CenterNotificationPermission: NotificationPermissionProviding {
     func authorizationStatus() async -> UNAuthorizationStatus {
-        await (try? UNUserNotificationCenter.current().notificationSettings())?.authorizationStatus
-            ?? .notDetermined
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
     }
 
     func requestAuthorization() async -> Bool {

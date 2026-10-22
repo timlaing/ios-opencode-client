@@ -55,11 +55,11 @@ final class ModelAgentServiceTests: XCTestCase {
     private let agentJSON = #"{"id":"build","name":"Build","description":"Dev agent","mode":"primary","hidden":false}"#
 
     func testInventoriesDecodeFromLocationWrappedResponses() async throws {
-        let models = try await service([
+        let models = service([
             "model.list": .success(json(#"{"location":{"directory":"/srv/demo"},"data":[\#(modelJSON)]}"#)),
             "agent.list": .success(json(#"{"location":{"directory":"/srv/demo"},"data":[\#(agentJSON)]}"#)),
         ])
-        let agentDetail = try await service([
+        let agentDetail = service([
             "agent.get": .success(json(#"{"location":{"directory":"/srv/demo"},"data":\#(agentJSON)}"#)),
         ])
 

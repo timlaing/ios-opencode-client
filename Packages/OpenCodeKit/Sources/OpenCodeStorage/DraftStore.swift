@@ -72,8 +72,7 @@ public struct DraftStore: Sendable {
     }
 
     public func upsert(_ draft: Draft) throws {
-        var record = draft
-        try db.write { try record.save($0) }
+        try db.write { try draft.save($0) }
     }
 
     public func draft(id: String) throws -> Draft? {

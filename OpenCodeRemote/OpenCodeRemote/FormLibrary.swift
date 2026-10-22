@@ -91,8 +91,8 @@ final class FormLibrary {
     /// Post-send watch cadence: a bounded ~2-minute window per
     /// admission/answer, the same as S11's. Best-effort until the live
     /// event stream (W16) replaces polling.
-    static let postSendWatchAttempts = 30
-    static let postSendWatchIntervalNanoseconds: UInt64 = 4_000_000_000
+    nonisolated static let postSendWatchAttempts = 30
+    nonisolated static let postSendWatchIntervalNanoseconds: UInt64 = 4_000_000_000
 
     init(
         service: FormService? = nil,

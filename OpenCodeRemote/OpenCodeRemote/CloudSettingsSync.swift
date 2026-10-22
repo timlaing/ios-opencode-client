@@ -245,7 +245,7 @@ final class CloudSettingsSync {
         var report = SyncReport()
 
         // --- Appearance: last recorded edit per field.
-        var mirror = localMirror
+        let mirror = localMirror
         var localAppearance = mirror.appearance
         if let recorded = localAppearance {
             if recorded.value != settings.state.appearance {
