@@ -113,8 +113,9 @@ coverage whose commit equals the checked-out HEAD.
    on a required workflow: every PR needs a check result.
 
 The SonarCloud project key, organization and URL already have repository defaults;
-only the Apple API secrets and `XCODE_CLOUD_WORKFLOW_ID` are missing for this
-repository. Override Sonar settings only when changing projects or servers.
+Apple API credentials and `XCODE_CLOUD_WORKFLOW_ID` were supplied to the
+22 October main workflow run. Recheck configuration when moving repositories;
+override Sonar settings only when changing projects or servers.
 
 Secrets and service-side workflow/ruleset settings are not created by these
 repository files. The first real Cloud → GitHub → SonarQube run is still needed
@@ -275,3 +276,14 @@ host compatibility, physical-device operation or iCloud sync. See
 GitHub releases publish only the server plugin to npm and GitHub Packages.
 iOS archives and delivery use Xcode Cloud, TestFlight and App Store Connect.
 See [publishing.md](publishing.md) for the independent beta/release workflows.
+
+## Hosted status — checked 24 October 2026
+
+For main commit `0a172d6798eba5704f595716b49bae9c20173d04`, Apple Cloud
+Build, Test and Analyze checks passed, while Archive reported `action_required`.
+The [GitHub bridge run](https://github.com/timlaing/ios-opencode-client/actions/runs/39854345815)
+failed with `Xcode Cloud build ended with FAILED`; Required CI failed and
+coverage/SonarQube was skipped. Result bundles were retained as artifacts.
+The earlier integration notes above describe setup-time observations; they do
+not describe the final hosted result. A successful end-to-end quality gate
+remains outstanding.
