@@ -2,7 +2,7 @@
 
 ## What this repo is
 
-An implementation **package** (docs + contracts + fixtures + Python reference mock) for a native iOS/iPadOS OpenCode client, plus the iOS app scaffold (`OpenCodeRemote/`, `Packages/`). Do not describe mock behavior or generated fixtures as verified against a real OpenCode host or device — see `docs/verification.md` for what is actually proven.
+An implementation **package** (docs + contracts + fixtures + Python reference mock) for a native iOS/iPadOS OpenCode client, plus the native iOS app implementation (`OpenCodeRemote/`, `Packages/`). Do not describe mock behavior or generated fixtures as verified against a real OpenCode host or device — see `docs/verification.md` for what is actually proven.
 
 Baseline is pinned: OpenCode **v2.0.25**, commit `b44eea9e204024db2b480a136ece29d790d5f593`. The snapshot `contracts/opencode-v2.0.25.openapi.json` is authoritative; its SHA-256 and byte size (550766) are asserted in tests. Updating the baseline means replacing the snapshot, updating `contracts/mobile-scope.json`, and regenerating everything — do not do this casually.
 
