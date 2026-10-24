@@ -107,7 +107,12 @@ coverage whose commit equals the checked-out HEAD.
    and select compatible Xcode tools in Cloud. The custom runner label is
    declared in `.github/actionlint.yaml`. If Cloud uses a newer/beta Xcode,
    update the runner and selected installation before enabling those builds.
-   An incompatible result format must fail extraction.
+   Apple reports crash-log bundles and build-only result bundles from a test
+   action with the `RESULT_BUNDLE` file type. The converter skips archives
+   with no `.xcresult` and bundles with no coverage, and fails unless at
+   least one bundle yields Swift line coverage. Unsafe archive entries,
+   unreadable bundles and coverage that matches no repository source still
+   fail extraction.
 6. Merge the workflow and scripts, push a branch and open a PR. In GitHub
    branch protection/rulesets, require **Native Cloud and SonarQube / Required CI** and keep branches up to
    date. Also require Apple's native Cloud check if desired. Avoid path filters
@@ -124,6 +129,27 @@ to validate authentication, artifact availability, runner compatibility and PR
 decoration. SonarQube quality gates are configured in SonarQube; this workflow
 waits for the configured gate, and does not set a new coverage threshold.
 
+## Coverage import failure on PR #6 — 24 October 2026
+
+Apple Cloud build `0d4328f8-4158-4002-bf07-a69b17174e22` (build 10, PR #6)
+succeeded on Apple's side — Build, Test across eight destinations and Analyze
+all passed — and the bridge downloaded its result artifacts. The coverage
+stage then failed: of the test action's `RESULT_BUNDLE` artifacts, eight were
+crash-log bundles containing no `.xcresult`, and the `build-for-testing`
+bundle carries no coverage data. The converter treated both as fatal, and
+**Required CI** failed with them as its only failing dependency.
+
+`scripts/ci/coverage.py` now skips archives without an `.xcresult`
+(reporting the count) and result bundles without coverage data, and fails
+unless at least one bundle contributes Swift line coverage. Unsafe archive
+entries, unreadable bundles, and coverage paths that match no repository
+source remain hard failures. A local run of the converter against those
+exact 18 downloaded artifacts completes in about three minutes, skipping
+eight archives and merging line coverage from the ten `.xcresult` bundles.
+The hosted quality gate's outcome for this PR is whatever the rerun of
+[the Tests workflow](../.github/workflows/tests.yml) reports; no hosted
+success is claimed here in advance of that result.
+
 Fork PRs run only the credential-free integration tests. Cloud and analysis
 jobs skip, and **Required CI fails**, rather than allowing a misleading pass.
 Review the contribution, then test it on a maintainer-owned branch/PR to run
@@ -132,9 +158,12 @@ fork code. Treat same-repository workflow edits as trusted maintainer code.
 
 ### Reports and retries
 
-- `xcode-cloud-results` retains downloaded `.xcresult` ZIPs and sanitized build
-  metadata as GitHub artifacts for seven days, including available results
-  from failed Cloud runs.
+- `xcode-cloud-results` retains every downloaded test-action ZIP — including
+  crash-log bundles Apple reports with the result-bundle file type — and
+  sanitized build metadata as GitHub artifacts for seven days, including
+  available results from failed Cloud runs. The coverage stage imports only
+  the `.xcresult` bundles that carry coverage, reporting how many archives
+  it skipped.
 - `swift-coverage` retains the Sonar generic `coverage.xml`, SwiftPM LLVM JSON,
   build metadata and scanner task metadata for 14 days. Coverage paths are
   repository-relative, and tests/dependency/generated sources are excluded.

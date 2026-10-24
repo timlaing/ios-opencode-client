@@ -1,10 +1,15 @@
 # SPDX-License-Identifier: MPL-2.0
+import contextlib
 import importlib.util
+import io
+import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
 import zipfile
+from unittest.mock import patch
 
 
 def load(name):
@@ -104,6 +109,74 @@ class CoverageTests(unittest.TestCase):
             zipped.writestr('Test.xcresult/Info.plist', 'info')
         bundles = coverage.extract_bundle(archive, self.root / 'extract')
         self.assertEqual(len(bundles), 1)
+
+    def test_crash_log_archives_are_skipped_not_trusted(self):
+        archive = self.root / 'bundle.zip'
+        with zipfile.ZipFile(archive, 'w') as zipped:
+            zipped.writestr('crash_log_bundle_Task/diagnostic.ips', 'data')
+        self.assertEqual(coverage.extract_bundle(archive, self.root / 'extract'), [])
+
+    def test_build_only_bundles_import_nothing_but_broken_reads_fail(self):
+        class Result:
+            def __init__(self, code, stdout='', stderr=''):
+                self.returncode, self.stdout, self.stderr = code, stdout, stderr
+        bundle = Path('Build.xcresult')
+        with patch.object(coverage.subprocess, 'run', return_value=Result(0, stdout='{"targets":[]}')):
+            self.assertEqual(coverage.xccov_report(bundle), {'targets': []})
+        with patch.object(coverage.subprocess, 'run',
+                          return_value=Result(1, stderr='XCCovErrorDomain "No coverage data in result bundle"')):
+            self.assertIsNone(coverage.xccov_report(bundle))
+        with patch.object(coverage.subprocess, 'run', return_value=Result(64)):
+            with self.assertRaisesRegex(ValueError, 'xccov could not read'):
+                coverage.xccov_report(bundle)
+
+    def test_coverage_free_and_unmatched_bundles_are_handled_strictly(self):
+        with patch.object(coverage, 'xccov_report', return_value=None):
+            self.assertFalse(coverage.add_xccov({}, Path('Build.xcresult'), self.root))
+        report = {'targets': [{'files': [{'path': '/tmp/Unrelated.swift'}]}]}
+        with patch.object(coverage, 'xccov_report', return_value=report):
+            with self.assertRaisesRegex(ValueError, 'no matching Swift source line coverage'):
+                coverage.add_xccov({}, Path('Build.xcresult'), self.root)
+
+    def write_build(self, artifacts):
+        cloud = self.root / 'cloud'
+        cloud.mkdir(exist_ok=True)
+        build = {'status': 'SUCCEEDED', 'sha': 'a' * 40, 'baseSha': '', 'artifacts': artifacts}
+        (cloud / 'build.json').write_text(json.dumps(build))
+        llvm = self.root / 'llvm.json'
+        llvm.write_text(json.dumps({'data': [{'files': [{
+            'filename': '/cloud/' + self.package,
+            'segments': [[1, 1, 3, True, True, False], [2, 1, 3, True, True, False]],
+        }]}]}))
+        argv = ['coverage.py', '--root', str(self.root), '--cloud', str(cloud),
+                '--llvm', str(llvm), '--output', str(self.root / 'report.xml')]
+        return cloud, argv
+
+    def test_crash_log_only_artifacts_fail_the_import(self):
+        cloud, argv = self.write_build([{'file': 'result-0.zip'}])
+        with zipfile.ZipFile(cloud / 'result-0.zip', 'w') as zipped:
+            zipped.writestr('crash_log_bundle_Task/diagnostic.ips', 'data')
+        with patch.object(sys, 'argv', argv), patch.object(coverage, 'verify_revision'):
+            with self.assertRaisesRegex(ValueError, 'No Cloud result bundle contained Swift source'):
+                coverage.main()
+
+    def test_mixed_archives_import_only_coverage_bearing_bundles(self):
+        cloud, argv = self.write_build([{'file': 'result-0.zip'}, {'file': 'result-1.zip'}])
+        with zipfile.ZipFile(cloud / 'result-0.zip', 'w') as zipped:
+            zipped.writestr('crash_log_bundle_Task/diagnostic.ips', 'data')
+        with zipfile.ZipFile(cloud / 'result-1.zip', 'w') as zipped:
+            zipped.writestr('Test.xcresult/Info.plist', 'info')
+        report = {'targets': [{'files': [{'path': '/Volumes/workspace/repository/' + self.app}]}]}
+        output = io.StringIO()
+        with patch.object(sys, 'argv', argv), patch.object(coverage, 'verify_revision'), \
+                patch.object(coverage, 'xccov_report', return_value=report), \
+                patch.object(coverage, 'command', return_value='1: 7\n2: 0\n'):
+            with contextlib.redirect_stdout(output):
+                coverage.main()
+        self.assertIn('Skipped 1 artifact archive(s) without an .xcresult bundle', output.getvalue())
+        self.assertIn('Merged Swift line coverage: 2/3', output.getvalue())
+        files = {entry.attrib['path'] for entry in ET.parse(self.root / 'report.xml').getroot()}
+        self.assertEqual(files, {self.app, self.package})
 
 
 class SonarConfigTests(unittest.TestCase):

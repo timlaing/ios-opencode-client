@@ -52,8 +52,23 @@ def command(*args):
     return subprocess.check_output(args, text=True)
 
 
+def xccov_report(bundle):
+    """Return the bundle's JSON coverage, or None when it carries no coverage."""
+    result = subprocess.run(['xcrun', 'xccov', 'view', '--report', '--json', str(bundle)],
+                            capture_output=True, text=True)
+    if not result.returncode:
+        return json.loads(result.stdout)
+    # Xcode Cloud attaches build-only result bundles alongside test results.
+    if 'No coverage data' in result.stderr:
+        return None
+    raise ValueError(f'xccov could not read the result bundle (exit {result.returncode})')
+
+
 def add_xccov(coverage, bundle, root):
-    report = json.loads(command('xcrun', 'xccov', 'view', '--report', '--json', str(bundle)))
+    """Merge one bundle's lines, returning whether it carried matching coverage."""
+    report = xccov_report(bundle)
+    if report is None:
+        return False
     files = {f['path'] for target in report['targets'] for f in target.get('files', [])}
     found = False
     for filename in sorted(files):
@@ -66,6 +81,7 @@ def add_xccov(coverage, bundle, root):
         found = found or bool(rows)
     if not found:
         raise ValueError('A Cloud result bundle contains no matching Swift source line coverage')
+    return found
 
 
 def add_llvm(coverage, report, root):
@@ -88,7 +104,13 @@ def add_llvm(coverage, report, root):
 
 
 def extract_bundle(archive, destination):
-    """Never allow paths or symlinks in an artifact to escape its directory."""
+    """Unpack an artifact, returning its .xcresult bundles (possibly none).
+
+    Never allow paths or symlinks in an artifact to escape its directory.
+    Apple attaches crash-log bundles to test actions and reports them with the
+    RESULT_BUNDLE file type, so an archive without an .xcresult is skipped by
+    the caller rather than trusted as coverage.
+    """
     destination.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive) as zipped:
         entries = zipped.infolist()
@@ -100,10 +122,7 @@ def extract_bundle(archive, destination):
                     or stat.S_ISLNK(item.external_attr >> 16)):
                 raise ValueError('Unsafe result archive entry')
         zipped.extractall(destination)
-    bundles = list(destination.rglob('*.xcresult'))
-    if not bundles:
-        raise ValueError('Result archive contains no .xcresult bundle')
-    return bundles
+    return list(destination.rglob('*.xcresult'))
 
 
 def write_report(coverage, root, output):
@@ -151,12 +170,20 @@ def main():
     verify_revision(metadata, args.root)
     if metadata['status'] != 'SUCCEEDED' or not metadata['artifacts']:
         raise ValueError('Only successful Cloud builds with result artifacts can be imported')
+    imported = skipped = 0
     for index, artifact in enumerate(metadata['artifacts']):
         filename = artifact['file']
         if Path(filename).name != filename or not re.fullmatch(r'result-\d+\.zip', filename):
             raise ValueError('Unexpected result artifact filename')
-        for bundle in extract_bundle(args.cloud / filename, args.cloud / f'extracted-{index}'):
-            add_xccov(coverage, bundle, args.root)
+        bundles = extract_bundle(args.cloud / filename, args.cloud / f'extracted-{index}')
+        if not bundles:
+            skipped += 1
+        for bundle in bundles:
+            imported += add_xccov(coverage, bundle, args.root)
+    if skipped:
+        print(f'Skipped {skipped} artifact archive(s) without an .xcresult bundle')
+    if not imported:
+        raise ValueError('No Cloud result bundle contained Swift source line coverage')
     add_llvm(coverage, json.loads(args.llvm.read_text()), args.root)
     covered, total = write_report(coverage, args.root, args.output)
     print(f'Merged Swift line coverage: {covered}/{total} ({100 * covered / total:.2f}%)')
