@@ -80,7 +80,11 @@ def add_xccov(coverage, bundle, root):
     report = xccov_report(bundle)
     if report is None:
         return False
-    files = {f['path'] for target in report['targets'] for f in target.get('files', [])}
+    files = {f['path'] for target in report.get('targets', []) for f in target.get('files', [])}
+    if not files:
+        # A report without file entries carries no coverage, like 'No coverage data':
+        # skip it so one empty bundle cannot abort an import another bundle can finish.
+        return False
     matched = False
     for filename in sorted(files):
         # Evaluate every file: later merges must not be skipped by an early match.

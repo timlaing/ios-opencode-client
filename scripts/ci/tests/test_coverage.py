@@ -138,6 +138,11 @@ class CoverageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'no matching Swift source line coverage'):
                 coverage.add_xccov({}, Path('Build.xcresult'), self.root)
 
+    def test_report_without_file_entries_is_coverage_free_not_an_error(self):
+        for report in ({'targets': []}, {'targets': [{'files': []}]}, {}):
+            with self.subTest(report=report), patch.object(coverage, 'xccov_report', return_value=report):
+                self.assertFalse(coverage.add_xccov({}, Path('Build.xcresult'), self.root))
+
     def write_build(self, artifacts):
         cloud = self.root / 'cloud'
         cloud.mkdir(exist_ok=True)
@@ -177,6 +182,20 @@ class CoverageTests(unittest.TestCase):
         self.assertIn('Merged Swift line coverage: 2/3', output.getvalue())
         files = {entry.attrib['path'] for entry in ET.parse(self.root / 'report.xml').getroot()}
         self.assertEqual(files, {self.app, self.package})
+
+    def test_empty_report_bundle_does_not_abort_a_coverage_bearing_later_one(self):
+        cloud, argv = self.write_build([{'file': 'result-0.zip'}, {'file': 'result-1.zip'}])
+        for index in (0, 1):
+            with zipfile.ZipFile(cloud / f'result-{index}.zip', 'w') as zipped:
+                zipped.writestr('Test.xcresult/Info.plist', 'info')
+        report = {'targets': [{'files': [{'path': '/Volumes/workspace/repository/' + self.app}]}]}
+        output = io.StringIO()
+        with patch.object(sys, 'argv', argv), patch.object(coverage, 'verify_revision'), \
+                patch.object(coverage, 'xccov_report', side_effect=[{'targets': []}, report]), \
+                patch.object(coverage, 'command', return_value='1: 7\n2: 0\n'):
+            with contextlib.redirect_stdout(output):
+                coverage.main()
+        self.assertIn('Merged Swift line coverage: 2/3', output.getvalue())
 
 
 class SonarConfigTests(unittest.TestCase):
