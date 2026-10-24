@@ -81,10 +81,23 @@ def add_xccov(coverage, bundle, root):
     if report is None:
         return False
     files = {f['path'] for target in report['targets'] for f in target.get('files', [])}
-    merged = [merge_bundle_file(coverage, filename, bundle, root) for filename in sorted(files)]
-    if not any(merged):
+    matched = False
+    for filename in sorted(files):
+        # Evaluate every file: later merges must not be skipped by an early match.
+        matched = merge_bundle_file(coverage, filename, bundle, root) or matched
+    if not matched:
         raise ValueError('A Cloud result bundle contains no matching Swift source line coverage')
-    return True
+    return matched
+
+
+def merge_llvm_region(coverage, relative, current, following):
+    """Merge one segment's lines; a region ending at column 1 stops short."""
+    line, _, count, has_count = current[:4]
+    if not has_count or (len(current) > 5 and current[5]):
+        return
+    end_line, end_column = following[:2]
+    for number in range(line, end_line - (end_column == 1) + 1):
+        merge_line(coverage, relative, number, count > 0)
 
 
 def add_llvm(coverage, report, root):
@@ -95,15 +108,7 @@ def add_llvm(coverage, report, root):
                 continue
             segments = source['segments']
             for current, following in zip(segments, segments[1:]):
-                line, _, count, has_count = current[:4]
-                is_gap = len(current) > 5 and current[5]
-                if not has_count or is_gap:
-                    continue
-                end_line, end_column = following[:2]
-                # A region ending at column 1 excludes that final line.
-                last = end_line - (end_column == 1)
-                for number in range(line, last + 1):
-                    merge_line(coverage, relative, number, count > 0)
+                merge_llvm_region(coverage, relative, current, following)
 
 
 def extract_bundle(archive, destination):
