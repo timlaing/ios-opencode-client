@@ -113,6 +113,7 @@ The repository includes the pinned OpenAPI snapshot, workflow mappings, generate
 | [Mock development](docs/testing-mock.md) | Fixtures, scenarios, test commands, and fidelity limits |
 | [Publishing](docs/publishing.md) | Plugin registry releases and iOS TestFlight/App Store distribution |
 | [Xcode Cloud](docs/xcode-cloud.md) | Cloud builds, GitHub PR checks, SonarQube analysis, and merged Swift coverage |
+| [Checkout reconciliation](docs/repository-state.md) | Preserved local edits, current-main worktree and remaining work |
 | [Verification](docs/verification.md) | Recorded checks and outstanding release evidence |
 | [Implementation guide](docs/implementation-guide.md) | Integration boundaries and release criteria |
 | [Implementation decisions](docs/implementation-decisions.md) | Engineering choices and verification dependencies |
