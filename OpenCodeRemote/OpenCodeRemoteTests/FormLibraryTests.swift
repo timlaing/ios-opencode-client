@@ -390,9 +390,9 @@ final class FormLibraryTests: XCTestCase {
         XCTAssertTrue(library.entries.isEmpty, "the one-off refresh is routinely too early")
 
         responses.set("session.form.list", .success(json(listJSON(ownList))))
-        library.startPostSendWatch(host: host, sessionID: "ses_current",
-                                   childSessionIDs: [],
-                                   attempts: 10, intervalNanoseconds: 10_000_000)
+        library.startPostSendWatch(PostSendWatchRequest(host: host, sessionID: "ses_current",
+                                                        childSessionIDs: [],
+                                                        attempts: 10, intervalNanoseconds: 10_000_000))
         await waitUntil { library.hasPending }
         library.stopPostSendWatch()
         XCTAssertEqual(library.entries.map(\.id), ["frm_own"],
@@ -422,9 +422,9 @@ final class FormLibraryTests: XCTestCase {
         await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
         XCTAssertEqual(library.entries.map(\.id), ["frm_own"])
 
-        library.startPostSendWatch(host: host, sessionID: "ses_current",
-                                   childSessionIDs: [],
-                                   attempts: 10, intervalNanoseconds: 10_000_000)
+        library.startPostSendWatch(PostSendWatchRequest(host: host, sessionID: "ses_current",
+                                                        childSessionIDs: [],
+                                                        attempts: 10, intervalNanoseconds: 10_000_000))
         await waitUntil { library.entries.count == 2 }
         library.stopPostSendWatch()
         XCTAssertEqual(library.entries.map(\.id), ["frm_own", "frm_second"],
@@ -444,9 +444,9 @@ final class FormLibraryTests: XCTestCase {
                 try? await Task.sleep(nanoseconds: 250_000_000)
             }
         })
-        library.startPostSendWatch(host: host, sessionID: "ses_current",
-                                   childSessionIDs: [],
-                                   attempts: 10, intervalNanoseconds: 10_000_000)
+        library.startPostSendWatch(PostSendWatchRequest(host: host, sessionID: "ses_current",
+                                                        childSessionIDs: [],
+                                                        attempts: 10, intervalNanoseconds: 10_000_000))
         var iterator = entered.makeAsyncIterator()
         _ = await iterator.next()
         library.stopPostSendWatch()
@@ -471,9 +471,9 @@ final class FormLibraryTests: XCTestCase {
         ])
         let recorder = Recorder()
         let library = library(responses, recorder: recorder)
-        library.recordWatchContext(host: host, sessionID: "ses_current",
-                                   childSessionIDs: [],
-                                   attempts: 10, intervalNanoseconds: 10_000_000)
+        library.recordWatchContext(PostSendWatchRequest(host: host, sessionID: "ses_current",
+                                                        childSessionIDs: [],
+                                                        attempts: 10, intervalNanoseconds: 10_000_000))
         XCTAssertTrue(recorder.requests.isEmpty, "recording the context polls nothing")
 
         await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
@@ -503,9 +503,9 @@ final class FormLibraryTests: XCTestCase {
             replyContinuation.yield()
             try? await Task.sleep(nanoseconds: 250_000_000)
         })
-        library.recordWatchContext(host: host, sessionID: "ses_current",
-                                   childSessionIDs: [],
-                                   attempts: 5, intervalNanoseconds: 10_000_000)
+        library.recordWatchContext(PostSendWatchRequest(host: host, sessionID: "ses_current",
+                                                        childSessionIDs: [],
+                                                        attempts: 5, intervalNanoseconds: 10_000_000))
         await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
         let pending = try XCTUnwrap(library.entries.first)
 
