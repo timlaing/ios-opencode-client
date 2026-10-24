@@ -52,20 +52,56 @@ def command(*args):
     return subprocess.check_output(args, text=True)
 
 
+def xccov_report(bundle):
+    """Return the bundle's JSON coverage, or None when it carries no coverage."""
+    result = subprocess.run(['xcrun', 'xccov', 'view', '--report', '--json', str(bundle)],
+                            capture_output=True, text=True)
+    if not result.returncode:
+        return json.loads(result.stdout)
+    # Xcode Cloud attaches build-only result bundles alongside test results.
+    if 'No coverage data' in result.stderr:
+        return None
+    raise ValueError(f'xccov could not read the result bundle (exit {result.returncode})')
+
+
+def merge_bundle_file(coverage, filename, bundle, root):
+    """Merge one file's rows from a Cloud bundle; report whether any row matched."""
+    relative = source_path(filename, root)
+    if not relative:
+        return False
+    rows = parse_xccov(command('xcrun', 'xccov', 'view', '--archive', '--file', filename, str(bundle)))
+    for line, covered in rows.items():
+        merge_line(coverage, relative, line, covered)
+    return bool(rows)
+
+
 def add_xccov(coverage, bundle, root):
-    report = json.loads(command('xcrun', 'xccov', 'view', '--report', '--json', str(bundle)))
-    files = {f['path'] for target in report['targets'] for f in target.get('files', [])}
-    found = False
+    """Merge one bundle's lines, returning whether it carried matching coverage."""
+    report = xccov_report(bundle)
+    if report is None:
+        return False
+    files = {f['path'] for target in report.get('targets', []) for f in target.get('files', [])}
+    if not files:
+        # A report without file entries carries no coverage, like 'No coverage data':
+        # skip it so one empty bundle cannot abort an import another bundle can finish.
+        return False
+    matched = False
     for filename in sorted(files):
-        relative = source_path(filename, root)
-        if not relative:
-            continue
-        rows = parse_xccov(command('xcrun', 'xccov', 'view', '--archive', '--file', filename, str(bundle)))
-        for line, covered in rows.items():
-            merge_line(coverage, relative, line, covered)
-        found = found or bool(rows)
-    if not found:
+        # Evaluate every file: later merges must not be skipped by an early match.
+        matched = merge_bundle_file(coverage, filename, bundle, root) or matched
+    if not matched:
         raise ValueError('A Cloud result bundle contains no matching Swift source line coverage')
+    return matched
+
+
+def merge_llvm_region(coverage, relative, current, following):
+    """Merge one segment's lines; a region ending at column 1 stops short."""
+    line, _, count, has_count = current[:4]
+    if not has_count or (len(current) > 5 and current[5]):
+        return
+    end_line, end_column = following[:2]
+    for number in range(line, end_line - (end_column == 1) + 1):
+        merge_line(coverage, relative, number, count > 0)
 
 
 def add_llvm(coverage, report, root):
@@ -76,19 +112,17 @@ def add_llvm(coverage, report, root):
                 continue
             segments = source['segments']
             for current, following in zip(segments, segments[1:]):
-                line, column, count, has_count = current[:4]
-                is_gap = len(current) > 5 and current[5]
-                if not has_count or is_gap:
-                    continue
-                end_line, end_column = following[:2]
-                # A region ending at column 1 excludes that final line.
-                last = end_line - (end_column == 1)
-                for number in range(line, last + 1):
-                    merge_line(coverage, relative, number, count > 0)
+                merge_llvm_region(coverage, relative, current, following)
 
 
 def extract_bundle(archive, destination):
-    """Never allow paths or symlinks in an artifact to escape its directory."""
+    """Unpack an artifact, returning its .xcresult bundles (possibly none).
+
+    Never allow paths or symlinks in an artifact to escape its directory.
+    Apple attaches crash-log bundles to test actions and reports them with the
+    RESULT_BUNDLE file type, so an archive without an .xcresult is skipped by
+    the caller rather than trusted as coverage.
+    """
     destination.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive) as zipped:
         entries = zipped.infolist()
@@ -100,10 +134,7 @@ def extract_bundle(archive, destination):
                     or stat.S_ISLNK(item.external_attr >> 16)):
                 raise ValueError('Unsafe result archive entry')
         zipped.extractall(destination)
-    bundles = list(destination.rglob('*.xcresult'))
-    if not bundles:
-        raise ValueError('Result archive contains no .xcresult bundle')
-    return bundles
+    return list(destination.rglob('*.xcresult'))
 
 
 def write_report(coverage, root, output):
@@ -151,12 +182,20 @@ def main():
     verify_revision(metadata, args.root)
     if metadata['status'] != 'SUCCEEDED' or not metadata['artifacts']:
         raise ValueError('Only successful Cloud builds with result artifacts can be imported')
+    imported = skipped = 0
     for index, artifact in enumerate(metadata['artifacts']):
         filename = artifact['file']
         if Path(filename).name != filename or not re.fullmatch(r'result-\d+\.zip', filename):
             raise ValueError('Unexpected result artifact filename')
-        for bundle in extract_bundle(args.cloud / filename, args.cloud / f'extracted-{index}'):
-            add_xccov(coverage, bundle, args.root)
+        bundles = extract_bundle(args.cloud / filename, args.cloud / f'extracted-{index}')
+        if not bundles:
+            skipped += 1
+        for bundle in bundles:
+            imported += add_xccov(coverage, bundle, args.root)
+    if skipped:
+        print(f'Skipped {skipped} artifact archive(s) without an .xcresult bundle')
+    if not imported:
+        raise ValueError('No Cloud result bundle contained Swift source line coverage')
     add_llvm(coverage, json.loads(args.llvm.read_text()), args.root)
     covered, total = write_report(coverage, args.root, args.output)
     print(f'Merged Swift line coverage: {covered}/{total} ({100 * covered / total:.2f}%)')

@@ -406,8 +406,8 @@ final class ApprovalLibraryTests: XCTestCase {
         // The request exists from the next poll on.
         responses.set("session.permission.list", .success(json(listJSON(okList))))
         library.startPostSendWatch(
-            host: host, sessionID: "ses_current", childSessionIDs: [],
-            attempts: 50, intervalNanoseconds: 20_000_000
+            PostSendWatchRequest(host: host, sessionID: "ses_current", childSessionIDs: [],
+                                 attempts: 50, intervalNanoseconds: 20_000_000)
         )
         await waitUntil { library.hasPending }
         library.stopPostSendWatch()
@@ -423,8 +423,8 @@ final class ApprovalLibraryTests: XCTestCase {
         let recorder = Recorder()
         let library = library(responses, recorder: recorder)
         library.startPostSendWatch(
-            host: host, sessionID: "ses_current", childSessionIDs: [],
-            attempts: 100, intervalNanoseconds: 10_000_000
+            PostSendWatchRequest(host: host, sessionID: "ses_current", childSessionIDs: [],
+                                 attempts: 100, intervalNanoseconds: 10_000_000)
         )
         await waitUntil { library.hasPending }
 
@@ -446,8 +446,8 @@ final class ApprovalLibraryTests: XCTestCase {
         let recorder = Recorder()
         let library = library(responses, recorder: recorder)
         library.startPostSendWatch(
-            host: host, sessionID: "ses_current", childSessionIDs: [],
-            attempts: 100, intervalNanoseconds: 10_000_000
+            PostSendWatchRequest(host: host, sessionID: "ses_current", childSessionIDs: [],
+                                 attempts: 100, intervalNanoseconds: 10_000_000)
         )
         // Stop only once a tick has demonstrably landed.
         await waitUntil { !recorder.requests.isEmpty }
@@ -476,8 +476,8 @@ final class ApprovalLibraryTests: XCTestCase {
         ])
         let library = library(responses)
         library.startPostSendWatch(
-            host: host, sessionID: "ses_current", childSessionIDs: [],
-            attempts: 10, intervalNanoseconds: 10_000_000
+            PostSendWatchRequest(host: host, sessionID: "ses_current", childSessionIDs: [],
+                                 attempts: 10, intervalNanoseconds: 10_000_000)
         )
         await waitUntil { library.hasPending }
         let first = try XCTUnwrap(library.entries.first)
@@ -507,8 +507,8 @@ final class ApprovalLibraryTests: XCTestCase {
         let recorder = Recorder()
         let library = library(responses, recorder: recorder)
         library.recordWatchContext(
-            host: host, sessionID: "ses_current", childSessionIDs: [],
-            attempts: 10, intervalNanoseconds: 10_000_000
+            PostSendWatchRequest(host: host, sessionID: "ses_current", childSessionIDs: [],
+                                 attempts: 10, intervalNanoseconds: 10_000_000)
         )
         XCTAssertTrue(recorder.requests.isEmpty, "recording the context polls nothing")
 
@@ -555,8 +555,8 @@ final class ApprovalLibraryTests: XCTestCase {
         XCTAssertEqual(library.entries.map(\.id), ["per_own"], "the earlier turn's approval")
 
         library.startPostSendWatch(
-            host: host, sessionID: "ses_current", childSessionIDs: [],
-            attempts: 10, intervalNanoseconds: 10_000_000
+            PostSendWatchRequest(host: host, sessionID: "ses_current", childSessionIDs: [],
+                                 attempts: 10, intervalNanoseconds: 10_000_000)
         )
         await waitUntil { library.entries.map(\.id).count == 2 }
         library.stopPostSendWatch()
@@ -583,8 +583,8 @@ final class ApprovalLibraryTests: XCTestCase {
             }
         })
         library.startPostSendWatch(
-            host: host, sessionID: "ses_current", childSessionIDs: [],
-            attempts: 10, intervalNanoseconds: 10_000_000
+            PostSendWatchRequest(host: host, sessionID: "ses_current", childSessionIDs: [],
+                                 attempts: 10, intervalNanoseconds: 10_000_000)
         )
         var iterator = entered.makeAsyncIterator()
         _ = await iterator.next() // poll 1 has its payload and is holding
@@ -610,8 +610,8 @@ final class ApprovalLibraryTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 250_000_000)
         })
         library.recordWatchContext(
-            host: host, sessionID: "ses_current", childSessionIDs: [],
-            attempts: 5, intervalNanoseconds: 10_000_000
+            PostSendWatchRequest(host: host, sessionID: "ses_current", childSessionIDs: [],
+                                 attempts: 5, intervalNanoseconds: 10_000_000)
         )
         await library.load(host: host, sessionID: "ses_current", childSessionIDs: [])
         let pending = try XCTUnwrap(library.entries.first)

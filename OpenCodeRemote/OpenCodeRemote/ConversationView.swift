@@ -525,7 +525,7 @@ struct ConversationView: View {
     /// same admission-late timing as a sent prompt's (review R3).
     private func loadApprovals() async {
         let childSessionIDs = sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
-        approvals.recordWatchContext(host: host, sessionID: session.id, childSessionIDs: childSessionIDs)
+        approvals.recordWatchContext(.init(host: host, sessionID: session.id, childSessionIDs: childSessionIDs))
         await approvals.load(host: host, sessionID: session.id, childSessionIDs: childSessionIDs)
     }
 
@@ -534,11 +534,11 @@ struct ConversationView: View {
     /// view goes away — the same attribution as a refresh, re-read
     /// once at watch start.
     private func startApprovalWatch() {
-        approvals.startPostSendWatch(
+        approvals.startPostSendWatch(.init(
             host: host,
             sessionID: session.id,
             childSessionIDs: sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
-        )
+        ))
     }
 
     /// S12 dock (W10): pending questions above the composer, with a
@@ -585,7 +585,7 @@ struct ConversationView: View {
     /// sent prompt does.
     private func loadForms() async {
         let childSessionIDs = sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
-        forms.recordWatchContext(host: host, sessionID: session.id, childSessionIDs: childSessionIDs)
+        forms.recordWatchContext(.init(host: host, sessionID: session.id, childSessionIDs: childSessionIDs))
         await forms.load(host: host, sessionID: session.id, childSessionIDs: childSessionIDs)
     }
 
@@ -596,11 +596,11 @@ struct ConversationView: View {
     /// dock immediately; the bounded watch stays as the fallback that
     /// needs no stream.
     private func startFormWatch() {
-        forms.startPostSendWatch(
+        forms.startPostSendWatch(.init(
             host: host,
             sessionID: session.id,
             childSessionIDs: sessions?.descendantSessionIDs(of: session.id, on: host.id) ?? []
-        )
+        ))
     }
 
     /// W16: subscribes this host's `/api/event` stream and reconciles
@@ -664,12 +664,12 @@ struct ConversationView: View {
             // Same attribution as the view's own loads (child
             // sessions from the sessions inventory).
             let children = sessions?.descendantSessionIDs(of: sessionID, on: host.id) ?? []
-            approvals.recordWatchContext(host: host, sessionID: sessionID, childSessionIDs: children)
+            approvals.recordWatchContext(.init(host: host, sessionID: sessionID, childSessionIDs: children))
             await approvals.load(host: host, sessionID: sessionID, childSessionIDs: children)
         }
         reconciler.loadForms = {
             let children = sessions?.descendantSessionIDs(of: sessionID, on: host.id) ?? []
-            forms.recordWatchContext(host: host, sessionID: sessionID, childSessionIDs: children)
+            forms.recordWatchContext(.init(host: host, sessionID: sessionID, childSessionIDs: children))
             await forms.load(host: host, sessionID: sessionID, childSessionIDs: children)
         }
         reconciler.descendantSessionIDs = {

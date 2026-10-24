@@ -25,6 +25,7 @@
 		323C25D93319E5FAE736AA03 /* OpenCodeStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 3CE58B3F620052B4312CB22F /* OpenCodeStorage */; };
 		34EF3C9B7D723CE097E55706 /* EventReconcilerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 282B434CF3AC0A47D0D0BE05 /* EventReconcilerTests.swift */; };
 		38E27308B0C17F7DF9C63A94 /* FormLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4508FD00803E68C1319DD772 /* FormLibrary.swift */; };
+		395D06E3F26E867A11F01292 /* PostSendWatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C91D28F90F51C0AAFA80D0C3 /* PostSendWatch.swift */; };
 		3D278520E2E9573DDFF88C19 /* OpenCodeStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 437A60895CC53C06DCB5DDAC /* OpenCodeStorage */; };
 		3DC50A0BA4E8796BE12B45A9 /* SettingsLibraryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7036127A72AF97A66BE20A61 /* SettingsLibraryTests.swift */; };
 		3E0B6F6FCB767690D722FA56 /* ModelAgentPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D65D183486C0DE9CB0FE855 /* ModelAgentPickerView.swift */; };
@@ -181,6 +182,7 @@
 		C33883AD144C6131A8F3B463 /* FormLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormLibraryTests.swift; sourceTree = "<group>"; };
 		C706802D2672E7FBB027B1F0 /* MarkdownRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownRendering.swift; sourceTree = "<group>"; };
 		C7D041FE39CB8F3C2BFCB896 /* IntegrationsLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationsLibraryTests.swift; sourceTree = "<group>"; };
+		C91D28F90F51C0AAFA80D0C3 /* PostSendWatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PostSendWatch.swift; sourceTree = "<group>"; };
 		CA22CA901A78F72EA315B4F2 /* ProjectsLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsLibraryTests.swift; sourceTree = "<group>"; };
 		D4F090F10283F08A0EDA9738 /* ExecutionNotifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExecutionNotifierTests.swift; sourceTree = "<group>"; };
 		D544CC0D1391BC960867BE0C /* FormSheetView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormSheetView.swift; sourceTree = "<group>"; };
@@ -292,6 +294,7 @@
 				FF7B5FB6BE35E3E86815166B /* OpenCodeRemoteApp.swift */,
 				DA34063BB50B17F6C8B8267B /* PhotoPreparation.swift */,
 				D828DA2CD94DCBD223D8611D /* PluginDirectives.swift */,
+				C91D28F90F51C0AAFA80D0C3 /* PostSendWatch.swift */,
 				7399DAFE9DF27EF5573D5849 /* PrivacyStorageView.swift */,
 				4C466BAF460750530CE6C4B7 /* ProjectsLibrary.swift */,
 				41CCFF7F3899E21E1A364102 /* QRScannerView.swift */,
@@ -509,6 +512,7 @@
 				8E4B2CD43229D0019A2010A3 /* OpenCodeRemoteApp.swift in Sources */,
 				4008004D825D380126F68A53 /* PhotoPreparation.swift in Sources */,
 				F1D8B21BCF33AC020745A1C1 /* PluginDirectives.swift in Sources */,
+				395D06E3F26E867A11F01292 /* PostSendWatch.swift in Sources */,
 				865FDEFE243EB360A036E8FE /* PrivacyStorageView.swift in Sources */,
 				B89B7447BDCC8F810822DDDA /* ProjectsLibrary.swift in Sources */,
 				FAFCA844E6C424603A12F3C6 /* QRScannerView.swift in Sources */,
@@ -589,6 +593,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenCodeRemote.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = OpenCodeRemote/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -623,6 +628,7 @@
 				CODE_SIGN_ENTITLEMENTS = OpenCodeRemote.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = OpenCodeRemote/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

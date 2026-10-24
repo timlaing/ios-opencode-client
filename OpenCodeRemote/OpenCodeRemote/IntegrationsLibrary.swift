@@ -296,7 +296,7 @@ final class IntegrationsLibrary {
         // IDs cover declared (== target) and runtime keys alike.
         unreflected = unreflected.intersection(rows.map(\.id))
         switch inventory.mcp {
-        case .success(let answered, let servers):
+        case .success((let answered, let servers)):
             if let requested = directory, !Self.sameLocation(answered, requested) {
                 // Fail-closed like the plugin rule: statuses from
                 // another scope are never shown under this session —
@@ -880,7 +880,7 @@ final class IntegrationsLibrary {
     ) -> [McpRow] {
         var declared: [String: Bool] = [:]
         for entry in entries {
-            guard case .document(let path, let info) = entry, let path,
+            guard case .document(.some, let info) = entry,
                   case .object(let fields) = info,
                   case .object(let mcp)? = fields["mcp"],
                   case .object(let declaredServers)? = mcp["servers"]

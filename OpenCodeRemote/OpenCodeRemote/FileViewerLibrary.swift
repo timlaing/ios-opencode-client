@@ -23,8 +23,8 @@ final class FileViewerLibrary {
     /// thresholds, not truncation or upload limits." A file within both
     /// budgets previews complete with no Load More; every budget overrun is
     /// reachable by pressing Load More — never permanently truncated.
-    static let defaultByteStep = 1_048_576 // 1 MiB per ranged fetch
-    static let defaultLineStep = 10_000 // lines initially / per Load More
+    nonisolated static let defaultByteStep = 1_048_576 // 1 MiB per ranged fetch
+    nonisolated static let defaultLineStep = 10_000 // lines initially / per Load More
 
     /// The preview kind, chosen from the file's extension before any bytes
     /// arrive — it decides the fetch strategy (text ranges, media fetches

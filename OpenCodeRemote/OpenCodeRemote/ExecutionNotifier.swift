@@ -274,6 +274,6 @@ final class ExecutionNotifier {
             title: detailed ? (sessionTitle ?? "OpenCode Client") : "OpenCode Client",
             body: detailed ? phrase : "Open the app for details."
         )
-        diagnostics?.record(.notifications, "Banner posted: \(event.type)")
+        diagnostics?.record(.notifications, "Banner posted: \(event.type ?? "unknown")")
     }
 }

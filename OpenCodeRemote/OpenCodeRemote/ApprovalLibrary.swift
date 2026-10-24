@@ -22,7 +22,7 @@ import OpenCodeTransport
 /// (still pending until the host says otherwise).
 @MainActor
 @Observable
-final class ApprovalLibrary {
+final class ApprovalLibrary: PostSendDock {
     typealias CredentialProvider = @MainActor (HostID) -> BasicCredential?
 
     /// One pending request plus its dock attribution.
@@ -59,23 +59,15 @@ final class ApprovalLibrary {
     /// Monotonic load token — results from a superseded load are
     /// discarded, so overlapping refreshes cannot finish out of order.
     private var loadGeneration = 0
-    /// The running (or last) post-send watch, with the exact context
-    /// it polls under — reused when an answer through S11 re-opens the
-    /// window (the released turn may ask again).
-    private var watchTask: Task<Void, Never>?
-    private var watchContext: (
-        host: OpenCodeDomain.Host, sessionID: String,
-        childSessionIDs: Set<String>, attempts: Int, intervalNanoseconds: UInt64
-    )?
+    /// The bounded post-send window this dock drives (shared with the
+    /// form dock — see `PostSendDock`); the runner holds this dock
+    /// only weakly.
+    let watch = PostSendWatchRunner()
 
     var hasPending: Bool { !entries.isEmpty }
     var pendingCount: Int { entries.count }
-
-    /// Post-send watch cadence: a bounded ~2-minute window per
-    /// admission/answer. Best-effort until the live event stream (W16)
-    /// replaces polling.
-    static let postSendWatchAttempts = 30
-    static let postSendWatchIntervalNanoseconds: UInt64 = 4_000_000_000
+    /// What the watch compares against: this dock's pending IDs.
+    var pendingIDs: [String] { entries.map(\.id) }
 
     init(
         service: PermissionService? = nil,
@@ -184,92 +176,6 @@ final class ApprovalLibrary {
         } catch {
             return .failed(Self.message(for: error))
         }
-    }
-
-    // MARK: - Post-send watch (review R2)
-
-    /// Starts (or restarts) the bounded post-send dock watch. The
-    /// host creates a permission request only when the agent REACHES
-    /// the guarded tool — after `send` has already returned on durable
-    /// admission — and the empty/error transcript states offer no
-    /// pull-to-refresh, so one refresh after send routinely ran too
-    /// early. Until the live event stream (W16) arrives, the dock
-    /// polls on this cadence instead: each tick reconciles through
-    /// `load` (same generation, settled-ID, and cancellation guards),
-    /// and the watch ends early once the dock gains a request THIS
-    /// window discovered — a request that predates the window is not
-    /// what it is for, and must not end it (the admitted prompt may
-    /// still raise its own). Cancellation — a newer watch superseding
-    /// it, the view going away — is routine and silent.
-    func startPostSendWatch(
-        host: OpenCodeDomain.Host,
-        sessionID: String,
-        childSessionIDs: Set<String>,
-        attempts: Int = ApprovalLibrary.postSendWatchAttempts,
-        intervalNanoseconds: UInt64 = ApprovalLibrary.postSendWatchIntervalNanoseconds
-    ) {
-        watchTask?.cancel()
-        watchContext = (host, sessionID, childSessionIDs, attempts, intervalNanoseconds)
-        // Whatever is already on the dock predates this window (an
-        // earlier turn's approval, a linked child's) — only a request
-        // the window itself surfaces ends it.
-        let preexisting = Set(entries.map(\.id))
-        watchTask = Task { [weak self] in
-            for _ in 0..<max(1, attempts) {
-                do {
-                    try await Task.sleep(nanoseconds: intervalNanoseconds)
-                } catch {
-                    return // cancelled — a newer watch or the view went away
-                }
-                guard let self, !Task.isCancelled else { return }
-                await load(host: host, sessionID: sessionID, childSessionIDs: childSessionIDs)
-                // The window found what it was opened for — a request
-                // nobody had seen yet is on the dock; the sheet takes
-                // over from here and an answer re-opens the watch.
-                if entries.contains(where: { !preexisting.contains($0.id) }) { return }
-            }
-        }
-    }
-
-    /// Ends the watch (view dismissed) and forgets its context: a
-    /// reply still in flight when the view went away must not revive
-    /// a watch for a dock nobody can see. The view re-records the
-    /// context on its next load (appear, pull-to-refresh, or send), so
-    /// an answer after coming back still re-opens the watch.
-    func stopPostSendWatch() {
-        watchTask?.cancel()
-        watchTask = nil
-        watchContext = nil
-    }
-
-    /// Records the context an answer re-opens the watch under, WITHOUT
-    /// starting to poll: a conversation opened onto an approval that
-    /// predates any send here still releases its turn on answer, and
-    /// that next request has the same admission-late timing. Called on
-    /// every load so attribution stays current; the parameters carry
-    /// the watch cadence the reopen should reuse (tests shorten it).
-    func recordWatchContext(
-        host: OpenCodeDomain.Host,
-        sessionID: String,
-        childSessionIDs: Set<String>,
-        attempts: Int = ApprovalLibrary.postSendWatchAttempts,
-        intervalNanoseconds: UInt64 = ApprovalLibrary.postSendWatchIntervalNanoseconds
-    ) {
-        watchContext = (host, sessionID, childSessionIDs, attempts, intervalNanoseconds)
-    }
-
-    /// Re-opens the watch after S11 answered (or found settled
-    /// elsewhere): the released turn continues and may raise the next
-    /// request with the same admission-late timing.
-    private func reopenWatchAfterAnswer() {
-        guard let context = watchContext else { return }
-        startPostSendWatch(
-            host: context.host,
-            sessionID: context.sessionID,
-            childSessionIDs: context.childSessionIDs,
-            attempts: context.attempts,
-            intervalNanoseconds: context.intervalNanoseconds
-        )
     }
 
     private func remove(_ id: String) {
