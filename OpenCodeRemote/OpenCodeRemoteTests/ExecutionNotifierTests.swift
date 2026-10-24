@@ -36,11 +36,10 @@ final class ExecutionNotifierTests: XCTestCase {
         }
 
         func requestAuthorization() async -> Bool {
-            lock.lock()
-            _authorizationRequests += 1
-            let result = _authorized
-            let gate = _authorizationGate
-            lock.unlock()
+            let (result, gate) = lock.withLock {
+                _authorizationRequests += 1
+                return (_authorized, _authorizationGate)
+            }
             if let gate {
                 // Held until the test releases it — this models the
                 // OS alert being on screen.
@@ -50,9 +49,9 @@ final class ExecutionNotifierTests: XCTestCase {
         }
 
         func post(identifier: String, title: String, body: String) async {
-            lock.lock()
-            _posted.append((identifier, title, body))
-            lock.unlock()
+            lock.withLock {
+                _posted.append((identifier, title, body))
+            }
         }
     }
 

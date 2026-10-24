@@ -54,7 +54,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-          XCODE_CLOUD_WORKFLOW_ID: ${{ vars.XCODE_CLOUD_WORKFLOW_ID }}
+          XCODE_CLOUD_WORKFLOW_ID: ${{ github.event_name == 'pull_request' && vars.XCODE_CLOUD_PR_WORKFLOW_ID || vars.XCODE_CLOUD_WORKFLOW_ID }}
           XCODE_CLOUD_RUN_ID: ${{ inputs.cloud_run_id }}
           EXPECTED_SHA: ${{ steps.revision.outputs.sha }}
           EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}

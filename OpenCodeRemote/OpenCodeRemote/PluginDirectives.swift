@@ -248,7 +248,7 @@ enum PluginDirectives {
     private static func makeElement(
         from start: String.Index, to end: String.Index, in raw: String
     ) -> Element {
-        var index = skipTrivia(from: start, in: raw)
+        let index = skipTrivia(from: start, in: raw)
         guard index < end, raw[index] == "\"",
               let token = stringToken(from: index, in: raw),
               token.range.upperBound <= end

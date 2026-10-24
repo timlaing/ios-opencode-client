@@ -59,7 +59,7 @@ final class CloudSettingsSyncTests: XCTestCase {
     }
 
     private func makeSettings() -> SettingsLibrary {
-        SettingsLibrary(defaults: UserDefaults(suiteName: "\(suiteName).settings-\(UUID().uuidString)")!)
+        SettingsLibrary(defaults: UserDefaults(suiteName: "\(suiteName!).settings-\(UUID().uuidString)")!)
     }
 
     /// Seeds the fake KVS with a snapshot (encoding the way the

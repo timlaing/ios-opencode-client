@@ -79,8 +79,8 @@ coverage whose commit equals the checked-out HEAD.
    targeting maintained branches, including changes to existing PRs. Make the
    iOS Test action **Required to Pass**, with iPhone and iPad destinations and
    coverage enabled. Give Actions enough time for Cloud's queue and tests to
-   complete (the default wait is 60 minutes). Use one workflow for both starts;
-   its ID is configured below.
+   complete (the default wait is 60 minutes). Use one workflow for both starts, or set the separate PR workflow ID below.
+   A PR workflow must start automatically for new and updated pull requests.
 2. Create an App Store Connect **team API key** with access to the app and
    Xcode Cloud build/artifact APIs. Save its issuer ID, key ID and `.p8` key
    directly as GitHub Actions secrets. Do not paste credentials into source,
@@ -97,7 +97,8 @@ coverage whose commit equals the checked-out HEAD.
    | Secret | `ASC_ISSUER_ID` | Team issuer UUID |
    | Secret | `ASC_PRIVATE_KEY` | Entire downloaded `.p8` PEM content |
    | Secret | `SONAR_TOKEN` | Project analysis token |
-   | Variable | `XCODE_CLOUD_WORKFLOW_ID` | Workflow UUID, not the app ID or build number |
+   | Variable | `XCODE_CLOUD_WORKFLOW_ID` | Branch workflow UUID, not the app ID or build number |
+   | Variable | `XCODE_CLOUD_PR_WORKFLOW_ID` | Optional separate PR workflow UUID; defaults to the branch workflow when unset |
    | Variable | `SONAR_PROJECT_KEY` | Existing SonarQube project key (defaults to `timlaing_ios-opencode-client`) |
    | Variable | `SONAR_HOST_URL` | SonarQube Server URL, or `https://sonarcloud.io` for Cloud (default: `https://sonarcloud.io`) |
    | Variable | `SONAR_ORGANIZATION` | Optional override; existing Cloud organization is `timlaing` |

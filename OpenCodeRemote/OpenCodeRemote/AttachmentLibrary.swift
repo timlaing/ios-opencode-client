@@ -526,7 +526,6 @@ final class AttachmentLibrary {
             let data = try Data(contentsOf: url)
             return (data, MimeType.sniff(data))
         case .photo(let item):
-            let mime = item.supportedContentTypes.first?.preferredMIMEType ?? "application/octet-stream"
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 throw CocoaError(.fileReadCorruptFile)
             }

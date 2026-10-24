@@ -30,6 +30,32 @@ Tests include schema vocabulary/fixtures, route/scope coverage, token expiry/pas
 
 No further routine initial-version preference questions are needed. Discovery that requires a changed feature/privacy/cost/release decision must still be surfaced. The confirmed baseline archive/restore limitation is documented in the API and screen contracts. Future relay enrollment/security/funding remain separately staged.
 
+## Xcode warning cleanup (22 October 2026)
+
+With Xcode 27.1 (27A9275), the app and test targets build without Swift
+source diagnostics after the warning cleanup. The Swift package suite passes
+258 tests with no warnings. The OpenCodeRemote scheme passes all 419 tests
+on each of the iPhone 18 Pro and iPad (A16) simulators running iOS 27.0,
+including the UI suite's portrait/landscape rotation checks. These results do not
+verify a real OpenCode host, signed-device behavior, or iCloud delivery. The
+simulators have no iCloud account and log the corresponding SyncedDefaults
+"No account" message; this is not evidence of successful cloud synchronization.
+
+Remaining build-tool diagnostics are kept visible:
+
+- The build-for-testing dependency scanner reports that `OpenCodeDomain` lacks
+  `OpenCodeTransport`, although that edge is declared in `Package.swift`. This
+  matches [Swift Build issue 1801](https://github.com/swiftlang/swift-build/issues/1801)
+  for dynamically selected package variants in hosted test builds.
+- Package framework link tasks report a macOS 27.0 sysroot while targeting the
+  iOS simulator, including the unchanged pinned GRDB dependency. The logged
+  Swift linker commands specify the iPhoneSimulator27.1 SDK; the origin of the
+  conflicting macOS sysroot diagnostic remains unresolved.
+- App Intents metadata extraction is skipped because these targets have no
+  AppIntents framework dependency. No App Intents are implemented.
+
+No warning suppression, dependency upgrade, or package linkage change was added.
+
 ## Repository and hosted evidence — checked 24 October 2026
 
 - Current GitHub `main` was `0a172d6798eba5704f595716b49bae9c20173d04`.
