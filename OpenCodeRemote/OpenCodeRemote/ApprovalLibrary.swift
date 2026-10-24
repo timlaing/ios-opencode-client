@@ -71,12 +71,6 @@ final class ApprovalLibrary {
     var hasPending: Bool { !entries.isEmpty }
     var pendingCount: Int { entries.count }
 
-    /// Post-send watch cadence: a bounded ~2-minute window per
-    /// admission/answer. Best-effort until the live event stream (W16)
-    /// replaces polling.
-    nonisolated static let postSendWatchAttempts = 30
-    nonisolated static let postSendWatchIntervalNanoseconds: UInt64 = 4_000_000_000
-
     init(
         service: PermissionService? = nil,
         credentialProvider: CredentialProvider? = nil
@@ -205,8 +199,8 @@ final class ApprovalLibrary {
         host: OpenCodeDomain.Host,
         sessionID: String,
         childSessionIDs: Set<String>,
-        attempts: Int = ApprovalLibrary.postSendWatchAttempts,
-        intervalNanoseconds: UInt64 = ApprovalLibrary.postSendWatchIntervalNanoseconds
+        attempts: Int = PostSendWatch.attempts,
+        intervalNanoseconds: UInt64 = PostSendWatch.intervalNanoseconds
     ) {
         watchTask?.cancel()
         watchContext = (host, sessionID, childSessionIDs, attempts, intervalNanoseconds)
@@ -252,8 +246,8 @@ final class ApprovalLibrary {
         host: OpenCodeDomain.Host,
         sessionID: String,
         childSessionIDs: Set<String>,
-        attempts: Int = ApprovalLibrary.postSendWatchAttempts,
-        intervalNanoseconds: UInt64 = ApprovalLibrary.postSendWatchIntervalNanoseconds
+        attempts: Int = PostSendWatch.attempts,
+        intervalNanoseconds: UInt64 = PostSendWatch.intervalNanoseconds
     ) {
         watchContext = (host, sessionID, childSessionIDs, attempts, intervalNanoseconds)
     }

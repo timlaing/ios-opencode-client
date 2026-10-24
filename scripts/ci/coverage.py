@@ -64,24 +64,27 @@ def xccov_report(bundle):
     raise ValueError(f'xccov could not read the result bundle (exit {result.returncode})')
 
 
+def merge_bundle_file(coverage, filename, bundle, root):
+    """Merge one file's rows from a Cloud bundle; report whether any row matched."""
+    relative = source_path(filename, root)
+    if not relative:
+        return False
+    rows = parse_xccov(command('xcrun', 'xccov', 'view', '--archive', '--file', filename, str(bundle)))
+    for line, covered in rows.items():
+        merge_line(coverage, relative, line, covered)
+    return bool(rows)
+
+
 def add_xccov(coverage, bundle, root):
     """Merge one bundle's lines, returning whether it carried matching coverage."""
     report = xccov_report(bundle)
     if report is None:
         return False
     files = {f['path'] for target in report['targets'] for f in target.get('files', [])}
-    found = False
-    for filename in sorted(files):
-        relative = source_path(filename, root)
-        if not relative:
-            continue
-        rows = parse_xccov(command('xcrun', 'xccov', 'view', '--archive', '--file', filename, str(bundle)))
-        for line, covered in rows.items():
-            merge_line(coverage, relative, line, covered)
-        found = found or bool(rows)
-    if not found:
+    merged = [merge_bundle_file(coverage, filename, bundle, root) for filename in sorted(files)]
+    if not any(merged):
         raise ValueError('A Cloud result bundle contains no matching Swift source line coverage')
-    return found
+    return True
 
 
 def add_llvm(coverage, report, root):
@@ -92,7 +95,7 @@ def add_llvm(coverage, report, root):
                 continue
             segments = source['segments']
             for current, following in zip(segments, segments[1:]):
-                line, column, count, has_count = current[:4]
+                line, _, count, has_count = current[:4]
                 is_gap = len(current) > 5 and current[5]
                 if not has_count or is_gap:
                     continue

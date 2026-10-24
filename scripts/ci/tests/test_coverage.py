@@ -197,8 +197,9 @@ class SonarConfigTests(unittest.TestCase):
 
     def test_missing_key_and_newline_injection_are_rejected(self):
         for extra in ({'SONAR_PROJECT_KEY': ''}, {'PR_NUMBER': '42'}, {'BRANCH': 'main\nsonar.projectKey=bad'}):
+            environment = self.env(**extra)
             with self.assertRaises(ValueError):
-                sonar.properties(self.env(**extra))
+                sonar.properties(environment)
 
 class RevisionTests(unittest.TestCase):
     def test_branch_and_pr_merge_parent_identity(self):

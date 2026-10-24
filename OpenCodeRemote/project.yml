@@ -71,6 +71,11 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: uk.co.laingcorp.opencode-client.OpenCodeRemote
         CODE_SIGN_ENTITLEMENTS: OpenCodeRemote.entitlements
+        # Export-compliance answer for App Store Connect: the app uses only
+        # exempt encryption (ATS HTTPS), so the generated plist records
+        # ITSAppUsesNonExemptEncryption = NO. Kept here so regeneration
+        # cannot silently drop it.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
     dependencies:
       - package: OpenCodeKit
         product: OpenCodeDomain
