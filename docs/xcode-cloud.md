@@ -55,7 +55,7 @@ The workflow has four named checks (nested under Native Cloud and SonarQube):
 | Check | Result |
 | --- | --- |
 | CI integration tests | Tests the Apple API bridge and coverage conversion without credentials |
-| Xcode Cloud tests | Waits up to 60 minutes for the configured Cloud workflow and exact source commit/base, fails on unsuccessful/canceled/skipped builds, downloads every test action's result bundles |
+| Xcode Cloud tests | Waits up to 75 minutes for the configured Cloud workflow and exact source commit/base (override with `XCODE_CLOUD_WAIT_SECONDS`), names the runs it rejected and why while waiting, reports every action's status when a run ends other than success, fails on unsuccessful/canceled/skipped builds, downloads every test action's result bundles |
 | Coverage and SonarQube quality gate | Runs package tests, merges Cloud and package line coverage, submits analysis and waits for SonarQube's quality gate |
 | Required CI | Passes only when all three stages succeed; skipped jobs cannot produce an overall pass |
 
@@ -79,7 +79,8 @@ coverage whose commit equals the checked-out HEAD.
    targeting maintained branches, including changes to existing PRs. Make the
    iOS Test action **Required to Pass**, with iPhone and iPad destinations and
    coverage enabled. Give Actions enough time for Cloud's queue and tests to
-   complete (the default wait is 60 minutes). Use one workflow for both starts, or set the separate PR workflow ID below.
+   complete (the default wait is 75 minutes; the `cloud` job's 95-minute job
+   timeout leaves room for result downloads). Use one workflow for both starts, or set the separate PR workflow ID below.
    A PR workflow must start automatically for new and updated pull requests.
 2. Create an App Store Connect **team API key** with access to the app and
    Xcode Cloud build/artifact APIs. Save its issuer ID, key ID and `.p8` key
@@ -317,3 +318,28 @@ coverage/SonarQube was skipped. Result bundles were retained as artifacts.
 The earlier integration notes above describe setup-time observations; they do
 not describe the final hosted result. A successful end-to-end quality gate
 remains outstanding.
+
+## Hosted status — checked 25 October 2026
+
+For main commit `6b3a3619be164b19a13d43f56bf5db050efdbbe7` (PR #6, merged
+24 October), every action check Apple publishes — Build, Test, Analyze and now
+Archive — reports success, yet the [push run](https://github.com/timlaing/ios-opencode-client/actions/runs/40143654070)
+still failed: the bridge exhausted its 60-minute wait before the run reported
+`executionProgress: COMPLETE`, so Required CI failed with coverage skipped.
+
+Re-selecting that same build with the workflow's `cloud_run_id` retry input
+([run 40195284145](https://github.com/timlaing/ios-opencode-client/actions/runs/40195284145),
+25 October) matched immediately and exposed the second, independent problem:
+the run-level `completionStatus` for build 15 is `ERRORED` while each of its
+actions reports `SUCCEEDED`, and the bridge treats any non-success run status
+as a failure. Its Analyze action recorded no issues and all 18 test result
+bundles downloaded, so the run status — not the tests — is what blocks the
+gate. The action responsible has not been identified yet.
+
+The repository-side response is diagnosis, not relaxation: the bridge logs the
+runs it considered and the reason each was rejected while waiting, prints a
+per-action status line whenever a run ends other than `SUCCEEDED`, and waits 75
+minutes by default. Neither change alters which statuses count as success. The
+next build on `main` will name the failing action in the bridge log; until a
+full Cloud → SonarQube run succeeds, Required CI remains failing and this
+document claims no hosted pass.

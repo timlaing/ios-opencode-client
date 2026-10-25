@@ -37,7 +37,9 @@ jobs:
     # Fork PRs never receive Apple credentials or execute this privileged job.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    # The bridge waits up to 75 minutes (scripts/ci/xcode_cloud.mjs); leave
+    # headroom for result-bundle downloads after the wait.
+    timeout-minutes: 95
     outputs:
       sha: ${{ steps.revision.outputs.sha }}
     steps:

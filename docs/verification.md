@@ -73,10 +73,42 @@ No warning suppression, dependency upgrade, or package linkage change was added.
   do not establish a successful overall workflow or SonarQube quality gate.
 - Python 3.11/3.14, plugin, SwiftLint, lint and CodeQL checks passed for that
   commit. These checks do not establish real-host or physical-device behavior.
-- [PR #6](https://github.com/timlaing/ios-opencode-client/pull/6) remains open
-  for Swift compiler warning fixes. Its recorded validation belongs to its
-  branch and must not be attributed to main before merge.
+- [PR #6](https://github.com/timlaing/ios-opencode-client/pull/6) was open
+  when this section was written; it merged as `6b3a361` on 24 October 2026,
+  so its warning-fix validation now belongs to `main`.
 
 Remaining release evidence includes disposable macOS/Linux host acceptance,
 physical-device operation, actual iCloud propagation, live relay/APNs delivery,
 accessibility acceptance and a successful full Cloud/SonarQube workflow.
+
+## Hosted CI — checked 25 October 2026
+
+- Current `main` is `6b3a3619be164b19a13d43f56bf5db050efdbbe7` (PR #6, merged
+  24 October 2026). Its push run
+  [40143654070](https://github.com/timlaing/ios-opencode-client/actions/runs/40143654070)
+  passed Python 3.11/3.14, the plugin suite, SwiftLint, lint, CodeQL and the
+  Apple Build, Test, Analyze and Archive checks for that commit, but failed:
+  the Cloud bridge waited 60 minutes and gave up with
+  `Timed out waiting for the matching Xcode Cloud build`, so
+  coverage/SonarQube was skipped and Required CI failed.
+- A manual dispatch of the same workflow with the documented `cloud_run_id`
+  retry input
+  ([40195284145](https://github.com/timlaing/ios-opencode-client/actions/runs/40195284145),
+  25 October 2026) selected that identical Cloud build (run `61e2115d…`,
+  build 15) within seconds and reported a different terminal state: the
+  **run-level** `completionStatus` is `ERRORED` while all four action checks
+  Apple publishes for the commit (Build, Test, Analyze, Archive) report
+  success. The run's Analyze action succeeded with no issues, and its 18 test
+  result bundles downloaded normally, so the run-level status is the only
+  reason that build cannot pass the gate. Which action Apple blames has not
+  yet been observed.
+- The bridge now logs its candidates when a wait times out, prints the
+  per-action statuses whenever a run ends other than `SUCCEEDED`, and waits 75
+  minutes (overridable with `XCODE_CLOUD_WAIT_SECONDS`) instead of 60, because
+  the 24 October run had not reached `COMPLETE` within the old window. These
+  are repository-side diagnostics; they do not by themselves make Required CI
+  pass. A fresh build on `main` is needed to name the failing action and to
+  record whether a full Cloud → SonarQube workflow can succeed.
+
+A successful end-to-end Required CI run on `main` therefore remains
+outstanding, alongside the real-host and device evidence listed above.

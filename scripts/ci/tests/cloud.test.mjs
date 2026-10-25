@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { AppleAPI, apiURL, collect, downloadArtifact, jwt, main, matches, waitForRun, collectAnalysis, issueAnnotation } from '../xcode_cloud.mjs';
+import { AppleAPI, apiURL, collect, downloadArtifact, jwt, main, matches, waitForRun, waitSeconds, collectAnalysis, issueAnnotation } from '../xcode_cloud.mjs';
 
 const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const env = { ASC_KEY_ID: 'key', ASC_ISSUER_ID: 'issuer', ASC_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
@@ -68,7 +68,44 @@ test('explicit run IDs must belong to configured workflow and exact SHA', async 
 test('a missing build times out rather than reporting success', async () => {
   let now = 0;
   const api = { list: async () => [] };
-  await assert.rejects(waitForRun(api, expected, { timeout: 1, clock: () => now, pause: async () => { now += 1000; } }), /Timed out/);
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  assert.match(lines.join('\n'), /newest none/);
+});
+
+test('timeouts explain which runs were seen and why they did not match', async () => {
+  let now = 0;
+  const wrongSha = run({ number: 12, sourceCommit: { commitSha: 'b'.repeat(40) } });
+  const wrongMode = run({ number: 13, isPullRequestBuild: true });
+  const api = { list: async () => [wrongSha, wrongMode] };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  const log = lines.join('\n');
+  assert.match(log, /#12 b{40} source commit is b{40} but this GitHub run needs a{40}/);
+  assert.match(log, /#13 a{40} pull-request build is true but this GitHub run expects false/);
+});
+
+test('a selected run that never finishes says so instead of reporting no candidates', async () => {
+  let now = 0;
+  const api = {
+    list: async () => [run()],
+    get: async () => ({ data: run({ completionStatus: 'RUNNING', executionProgress: 'RUNNING' }) }),
+  };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  assert.match(lines.join('\n'), /still running; executionProgress never reached COMPLETE/);
+});
+
+test('the wait window can be tuned without editing the bridge', () => {
+  assert.equal(waitSeconds({}), 4500);
+  assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: '120' }), 120);
+  for (const value of ['0', '-1', 'soon']) assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: value }), 4500);
 });
 
 test('collects all result bundles from all test actions', async () => {
@@ -152,6 +189,39 @@ test('missing bridge credentials and invalid revisions fail before network calls
   const configured = { ...env, XCODE_CLOUD_WORKFLOW_ID: expected.workflow, EXPECTED_SHA: 'wrong' };
   await assert.rejects(main(configured), /full Git commit/);
   await assert.rejects(main({ ...configured, EXPECTED_SHA: expected.sha, EXPECTED_BASE_SHA: 'wrong' }), /full PR base/);
+});
+
+test('a failed run names the action Apple blames while its checks look green', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-error-'));
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const lines = [];
+  console.log = value => lines.push(String(value));
+  try {
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname;
+      if (path.includes('/ciWorkflows/')) return Response.json({ data: [run({ completionStatus: 'ERRORED' })] });
+      if (path.endsWith('/ciBuildRuns/run')) return Response.json({ data: run({ number: 15, completionStatus: 'ERRORED' }) });
+      if (path.endsWith('/issues')) return Response.json({ data: [] });
+      if (path.endsWith('/actions')) return Response.json({ data: [
+        { id: 'build', attributes: { name: 'Build - iOS', actionType: 'BUILD', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+        { id: 'test', attributes: { name: 'Test - iOS', actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+        { id: 'analyze', attributes: { name: 'Analyze - iOS', actionType: 'ANALYZE', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+        { id: 'notify', attributes: { name: 'Notify - iOS', actionType: 'NOTIFY', executionProgress: 'COMPLETE', completionStatus: 'FAILED' } },
+      ] });
+      if (path.endsWith('/artifacts')) return Response.json({ data: [{ id: 'bundle', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/signed-private-url' } }] });
+      return new Response('bundle-data');
+    };
+    await assert.rejects(main({
+      ...env, XCODE_CLOUD_WORKFLOW_ID: expected.workflow, EXPECTED_SHA: expected.sha, CLOUD_REPORTS_DIR: directory,
+    }), /ended with ERRORED/);
+    assert.match(lines.join('\n'), /Actions: Build - iOS: SUCCEEDED; Test - iOS: SUCCEEDED; Analyze - iOS: SUCCEEDED; Notify - iOS: FAILED/);
+    assert.equal(JSON.parse(await readFile(join(directory, 'build.json'), 'utf8')).status, 'ERRORED');
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    await rm(directory, { recursive: true });
+  }
 });
 
 

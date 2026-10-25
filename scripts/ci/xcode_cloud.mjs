@@ -70,21 +70,59 @@ export class AppleAPI {
   }
 }
 
-export function matches(run, expected) {
+export function mismatch(run, expected) {
   const a = run.attributes;
-  return a?.sourceCommit?.commitSha === expected.sha
-    && a.isPullRequestBuild === Boolean(expected.baseSha)
-    && (!expected.baseSha || a.destinationCommit?.commitSha === expected.baseSha);
+  if (a?.sourceCommit?.commitSha !== expected.sha) {
+    return `source commit is ${a?.sourceCommit?.commitSha || 'unknown'} but this GitHub run needs ${expected.sha}`;
+  }
+  if (a.isPullRequestBuild !== Boolean(expected.baseSha)) {
+    return `pull-request build is ${Boolean(a.isPullRequestBuild)} but this GitHub run expects ${Boolean(expected.baseSha)}`;
+  }
+  if (expected.baseSha && a.destinationCommit?.commitSha !== expected.baseSha) {
+    return `base commit is ${a.destinationCommit?.commitSha || 'unknown'} but this GitHub run needs ${expected.baseSha}`;
+  }
+  return '';
 }
 
-export async function waitForRun(api, expected, { timeout = 3600, pause = sleep, clock = Date.now, runId = '' } = {}) {
+export function matches(run, expected) {
+  return mismatch(run, expected) === '';
+}
+
+export function describe(run, expected) {
+  const a = run.attributes;
+  const reason = mismatch(run, expected);
+  return `#${a?.number ?? '?'} ${a?.sourceCommit?.commitSha || 'no-commit'} ${reason || 'eligible'} `
+    + `(${a?.isPullRequestBuild ? 'PR' : 'branch'} build, ${a?.completionStatus || 'pending'}/${a?.executionProgress || 'unknown'})`;
+}
+
+// 75 minutes covers the observed Cloud queue plus a full iPhone/iPad test
+// matrix, while leaving headroom for result downloads inside the job timeout.
+export const DEFAULT_WAIT_SECONDS = 4500;
+
+export function waitSeconds(env) {
+  const value = Number(env.XCODE_CLOUD_WAIT_SECONDS);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_WAIT_SECONDS;
+}
+
+export async function waitForRun(api, expected, {
+  timeout = DEFAULT_WAIT_SECONDS, pause = sleep, clock = Date.now, runId = '', emit = () => {},
+} = {}) {
   const deadline = clock() + timeout * 1000;
   let selected = runId;
+  let scanned = [];
+  let polls = 0;
   while (clock() < deadline) {
+    polls++;
     if (!selected) {
-      const runs = await api.list(`ciWorkflows/${encodeURIComponent(expected.workflow)}/buildRuns?sort=-number&limit=200`);
+      scanned = await api.list(`ciWorkflows/${encodeURIComponent(expected.workflow)}/buildRuns?sort=-number&limit=200`);
       // Apple returns newest first; once selected, keep polling the same run.
-      selected = runs.find(run => matches(run, expected))?.id;
+      selected = scanned.find(candidate => matches(candidate, expected))?.id;
+      // A wait is never silent: report what the workflow actually contains,
+      // at the first poll and then roughly every two minutes.
+      if (!selected && (polls === 1 || polls % 4 === 1)) {
+        emit(`Waiting for Xcode Cloud: ${scanned.length} build run(s) in the configured workflow; `
+          + `newest ${scanned.length ? describe(scanned[0], expected) : 'none'}.`);
+      }
     }
     if (selected) {
       const { data: run } = await api.get(`ciBuildRuns/${encodeURIComponent(selected)}?include=workflow`);
@@ -92,8 +130,17 @@ export async function waitForRun(api, expected, { timeout = 3600, pause = sleep,
         throw new Error('Cloud build workflow, commit or PR base does not match this GitHub run');
       }
       if (run.attributes.executionProgress === 'COMPLETE') return run;
+      if (polls === 1 || polls % 4 === 1) {
+        emit(`Waiting for Xcode Cloud: build ${run.attributes.number ?? selected} is `
+          + `${run.attributes.completionStatus || 'pending'}/${run.attributes.executionProgress}.`);
+      }
     }
     await pause(30_000);
+  }
+  if (selected) {
+    emit(`Timed out while build ${selected} was still running; executionProgress never reached COMPLETE.`);
+  } else {
+    emit(`Timed out without a match. Newest build runs: ${scanned.length ? scanned.slice(0, 5).map(run => describe(run, expected)).join('; ') : 'none'}.`);
   }
   throw new Error('Timed out waiting for the matching Xcode Cloud build');
 }
@@ -197,7 +244,11 @@ export async function main(env = process.env) {
   const api = new AppleAPI(env);
   const run = await waitForRun(api, {
     sha: env.EXPECTED_SHA, baseSha: env.EXPECTED_BASE_SHA || '', workflow: env.XCODE_CLOUD_WORKFLOW_ID,
-  }, { runId: env.XCODE_CLOUD_RUN_ID || '' });
+  }, {
+    runId: env.XCODE_CLOUD_RUN_ID || '',
+    timeout: waitSeconds(env),
+    emit: console.log,
+  });
   const status = run.attributes.completionStatus;
   const metadata = { run: run.id, number: run.attributes.number, sha: env.EXPECTED_SHA, baseSha: env.EXPECTED_BASE_SHA || '', status, artifacts: [] };
   // Persist failure metadata as well; never persist signed URLs or API responses.
@@ -208,7 +259,16 @@ export async function main(env = process.env) {
   metadata.artifacts = await collect(api, run, directory);
   await writeFile(resolve(directory, 'build.json'), JSON.stringify(metadata, null, 2) + '\n');
   await collectAnalysis(api, run, directory);
-  if (status !== 'SUCCEEDED') throw new Error(`Xcode Cloud build ended with ${status}`);
+  if (status !== 'SUCCEEDED') {
+    // The run-level status can disagree with the individual action checks
+    // GitHub already shows, so name the action Apple blames.
+    const actions = await api.list(`ciBuildRuns/${encodeURIComponent(run.id)}/actions?limit=200`);
+    const detail = actions
+      .map(action => `${action.attributes.name || action.attributes.actionType}: ${action.attributes.completionStatus || action.attributes.executionProgress}`)
+      .join('; ');
+    console.log(`Xcode Cloud run ${run.attributes.number ?? run.id} ended with ${status}. Actions: ${detail || 'none'}`);
+    throw new Error(`Xcode Cloud build ended with ${status}`);
+  }
   console.log(`Downloaded ${metadata.artifacts.length} result bundle(s) for ${metadata.sha}`);
 }
 
