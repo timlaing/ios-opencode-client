@@ -102,13 +102,19 @@ accessibility acceptance and a successful full Cloud/SonarQube workflow.
   result bundles downloaded normally, so the run-level status is the only
   reason that build cannot pass the gate. Which action Apple blames has not
   yet been observed.
-- The bridge now logs its candidates when a wait times out, prints the
-  per-action statuses whenever a run ends other than `SUCCEEDED`, and waits 75
-  minutes (overridable with `XCODE_CLOUD_WAIT_SECONDS`) instead of 60, because
-  the 24 October run had not reached `COMPLETE` within the old window. These
-  are repository-side diagnostics; they do not by themselves make Required CI
-  pass. A fresh build on `main` is needed to name the failing action and to
-  record whether a full Cloud → SonarQube workflow can succeed.
+- The bridge now reports what its wait actually contains — a bounded sample of
+  the rejected candidates with the reason for each, beside the number of runs
+  scanned — prints every action's status as soon as a run ends other than
+  `SUCCEEDED` (before results are collected, so a download failure cannot hide
+  it), downloads result bundles concurrently instead of one at a time, and
+  waits 75 minutes instead of 60, because the 24 October run had not reached
+  `COMPLETE` within the old window. The wait is overridable with the workflow's
+  `wait_seconds` input or the `XCODE_CLOUD_WAIT_SECONDS` variable, capped at
+  4800 seconds so it cannot outlive the 95-minute job timeout. These are
+  repository-side diagnostics; they do not by themselves make Required CI
+  pass, and they cannot explain a run whose actions all succeed while its
+  run-level status is `ERRORED`. A fresh build on `main` is needed to record
+  whether a full Cloud → SonarQube workflow can succeed.
 
 A successful end-to-end Required CI run on `main` therefore remains
 outstanding, alongside the real-host and device evidence listed above.

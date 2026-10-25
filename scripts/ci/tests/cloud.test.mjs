@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { AppleAPI, apiURL, collect, downloadArtifact, jwt, main, matches, waitForRun, waitSeconds, collectAnalysis, issueAnnotation } from '../xcode_cloud.mjs';
+import { AppleAPI, apiURL, collect, downloadArtifact, jwt, logSafe, main, matches, MAX_WAIT_SECONDS, waitForRun, waitSeconds, collectAnalysis, issueAnnotation } from '../xcode_cloud.mjs';
 
 const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const env = { ASC_KEY_ID: 'key', ASC_ISSUER_ID: 'issuer', ASC_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
@@ -106,6 +106,71 @@ test('the wait window can be tuned without editing the bridge', () => {
   assert.equal(waitSeconds({}), 4500);
   assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: '120' }), 120);
   for (const value of ['0', '-1', 'soon']) assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: value }), 4500);
+  // An override can never outlive the 95-minute cloud job, which still needs
+  // time for setup, result downloads and analysis after the wait.
+  assert.equal(MAX_WAIT_SECONDS, 4800);
+  assert.ok(MAX_WAIT_SECONDS < 95 * 60);
+  assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: '99999' }), MAX_WAIT_SECONDS);
+});
+
+test('logSafe flattens control characters so a value cannot forge a log line', () => {
+  assert.equal(logSafe('build 17\r\n::error::forged'), 'build 17  ::error::forged');
+  assert.equal(logSafe('plain'), 'plain');
+  assert.equal(logSafe(17), '17');
+  assert.equal(logSafe(null), '');
+});
+
+test('rejected candidates are reported as a bounded sample beside the totals', async () => {
+  let now = 0;
+  const stale = Array.from({ length: 25 }, (_, index) =>
+    run({ number: index, sourceCommit: { commitSha: 'b'.repeat(40) } }));
+  const api = { list: async () => stale };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  assert.ok(lines.length > 0);
+  for (const line of lines) {
+    assert.match(line, /25 of 25 scanned run\(s\) rejected/);
+    assert.match(line, /and 5 older run\(s\) not listed/);
+    // 20 sampled rejections plus, at most, the newest run repeated.
+    const described = (line.match(/source commit is/g) || []).length;
+    assert.ok(described >= 20 && described <= 21, `expected a bounded sample, got ${described}`);
+  }
+});
+
+test('remote values cannot forge log lines or workflow commands', async () => {
+  let now = 0;
+  const hostile = run({ number: '17\r\n::error::forged', sourceCommit: { commitSha: 'b'.repeat(40) } });
+  const api = { list: async () => [hostile] };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  assert.ok(lines.length > 0);
+  for (const line of lines) {
+    assert.equal(/[\r\n]/.test(line), false, `control characters leaked: ${JSON.stringify(line)}`);
+    assert.equal(line.startsWith('::'), false, `forged workflow command: ${JSON.stringify(line)}`);
+  }
+});
+
+test('all result bundles download together so collection fits the job timeout', async () => {
+  const action = id => ({ id, attributes: { actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } });
+  const api = {
+    list: async path => path.includes('/actions?')
+      ? [action('phone'), action('pad')]
+      : [{ id: 'artifact', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/private' } }],
+  };
+  const started = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const pending = collect(api, run(), '/tmp/report', (url, target) => { started.push(target); return gate; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(started.length, 2, 'both downloads start before either finishes');
+  release();
+  const result = await pending;
+  assert.deepEqual(result.map(entry => entry.file), ['result-0.zip', 'result-1.zip']);
+  assert.equal(JSON.stringify(result).includes('private'), false);
 });
 
 test('collects all result bundles from all test actions', async () => {
@@ -208,6 +273,7 @@ test('a failed run names the action Apple blames while its checks look green', a
         { id: 'test', attributes: { name: 'Test - iOS', actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
         { id: 'analyze', attributes: { name: 'Analyze - iOS', actionType: 'ANALYZE', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
         { id: 'notify', attributes: { name: 'Notify - iOS', actionType: 'NOTIFY', executionProgress: 'COMPLETE', completionStatus: 'FAILED' } },
+        { id: 'forged', attributes: { name: 'Notify - iOS\r\n::error::forged', actionType: 'NOTIFY', executionProgress: 'COMPLETE', completionStatus: 'FAILED' } },
       ] });
       if (path.endsWith('/artifacts')) return Response.json({ data: [{ id: 'bundle', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/signed-private-url' } }] });
       return new Response('bundle-data');
@@ -216,6 +282,7 @@ test('a failed run names the action Apple blames while its checks look green', a
       ...env, XCODE_CLOUD_WORKFLOW_ID: expected.workflow, EXPECTED_SHA: expected.sha, CLOUD_REPORTS_DIR: directory,
     }), /ended with ERRORED/);
     assert.match(lines.join('\n'), /Actions: Build - iOS: SUCCEEDED; Test - iOS: SUCCEEDED; Analyze - iOS: SUCCEEDED; Notify - iOS: FAILED/);
+    assert.equal(lines.some(line => /[\r\n]/.test(line)), false, `control characters leaked: ${JSON.stringify(lines)}`);
     assert.equal(JSON.parse(await readFile(join(directory, 'build.json'), 'utf8')).status, 'ERRORED');
   } finally {
     globalThis.fetch = originalFetch;
@@ -224,6 +291,70 @@ test('a failed run names the action Apple blames while its checks look green', a
   }
 });
 
+test('action statuses are reported before results are collected', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-order-'));
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const lines = [];
+  console.log = value => lines.push(String(value));
+  try {
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname;
+      if (path.includes('/ciWorkflows/')) return Response.json({ data: [run({ completionStatus: 'ERRORED' })] });
+      if (path.endsWith('/ciBuildRuns/run')) return Response.json({ data: run({ number: 16, completionStatus: 'ERRORED' }) });
+      // Analysis collection fails, after the status line has already been written.
+      if (path.endsWith('/issues')) return new Response('', { status: 404 });
+      if (path.endsWith('/actions')) return Response.json({ data: [
+        { id: 'analyze', attributes: { name: 'Analyze - iOS', actionType: 'ANALYZE', executionProgress: 'COMPLETE', completionStatus: 'FAILED' } },
+      ] });
+      return new Response('unused');
+    };
+    await assert.rejects(main({
+      ...env, XCODE_CLOUD_WORKFLOW_ID: expected.workflow, EXPECTED_SHA: expected.sha, CLOUD_REPORTS_DIR: directory,
+    }), /HTTP 404/);
+    assert.match(lines.join('\n'), /run 16 ended with ERRORED\. Actions: Analyze - iOS: FAILED/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('a failed action lookup is reported without replacing the terminal status', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-bestafter-'));
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const lines = [];
+  console.log = value => lines.push(String(value));
+  try {
+    let actionLists = 0;
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname;
+      if (path.includes('/ciWorkflows/')) return Response.json({ data: [run({ completionStatus: 'ERRORED' })] });
+      if (path.endsWith('/ciBuildRuns/run')) return Response.json({ data: run({ number: 17, completionStatus: 'ERRORED' }) });
+      if (path.endsWith('/issues')) return Response.json({ data: [] });
+      if (path.endsWith('/actions')) {
+        actionLists++;
+        // The diagnostic lookup fails; collection and analysis still succeed.
+        if (actionLists === 1) return new Response('', { status: 404 });
+        return Response.json({ data: [
+          { id: 'analyze', attributes: { name: 'Analyze - iOS', actionType: 'ANALYZE', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+          { id: 'test', attributes: { name: 'Test - iOS', actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+        ] });
+      }
+      if (path.endsWith('/artifacts')) return Response.json({ data: [{ id: 'bundle', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/signed-private-url' } }] });
+      return new Response('bundle-data');
+    };
+    await assert.rejects(main({
+      ...env, XCODE_CLOUD_WORKFLOW_ID: expected.workflow, EXPECTED_SHA: expected.sha, CLOUD_REPORTS_DIR: directory,
+    }), /ended with ERRORED/);
+    assert.match(lines.join('\n'), /run 17 ended with ERRORED; action statuses unavailable \(App Store Connect HTTP 404/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    await rm(directory, { recursive: true });
+  }
+});
 
 test('Analyze issues annotate repo paths with escaped workflow-command data', () => {
   const annotation = issueAnnotation({ attributes: {

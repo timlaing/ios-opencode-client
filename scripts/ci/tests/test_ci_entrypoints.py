@@ -67,6 +67,16 @@ class ToolingEntrypointTests(unittest.TestCase):
             self.assertEqual(len(errors),2)
             self.assertTrue(any('missing local link' in error for error in errors))
 
+    def test_cloud_wait_override_reaches_the_bridge_and_is_bounded(self):
+        # A wait override that never reaches the bridge (or that can outlive the
+        # job timeout) is a silent misconfiguration, so both ends are pinned.
+        workflows = Path(__file__).resolve().parents[3] / '.github' / 'workflows'
+        cloud = (workflows / 'xcode-cloud.yml').read_text()
+        self.assertIn('XCODE_CLOUD_WAIT_SECONDS: ${{ inputs.wait_seconds || vars.XCODE_CLOUD_WAIT_SECONDS }}', cloud)
+        self.assertIn('timeout-minutes: 95', cloud)
+        caller = (workflows / 'tests.yml').read_text()
+        self.assertIn("wait_seconds: ${{ inputs.wait_seconds || '' }}", caller)
+
     def test_release_metadata_entrypoint_outputs_plugin_version(self):
         script=str(CI / 'release_metadata.py')
         with tempfile.TemporaryDirectory() as directory, patch.object(sys,'argv',[script,'plugin-v1.2.3']):
