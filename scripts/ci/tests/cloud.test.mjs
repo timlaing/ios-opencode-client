@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { AppleAPI, apiURL, collect, downloadArtifact, jwt, main, matches, waitForRun, collectAnalysis, issueAnnotation } from '../xcode_cloud.mjs';
+import { AppleAPI, apiURL, collect, describe, downloadArtifact, jwt, logSafe, main, matches, MAX_WAIT_SECONDS, waitForRun, waitSeconds, collectAnalysis, issueAnnotation } from '../xcode_cloud.mjs';
 
 const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const env = { ASC_KEY_ID: 'key', ASC_ISSUER_ID: 'issuer', ASC_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
@@ -68,7 +68,172 @@ test('explicit run IDs must belong to configured workflow and exact SHA', async 
 test('a missing build times out rather than reporting success', async () => {
   let now = 0;
   const api = { list: async () => [] };
-  await assert.rejects(waitForRun(api, expected, { timeout: 1, clock: () => now, pause: async () => { now += 1000; } }), /Timed out/);
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  assert.match(lines.join('\n'), /newest none/);
+});
+
+test('timeouts explain which runs were seen and why they did not match', async () => {
+  let now = 0;
+  const wrongSha = run({ number: 12, sourceCommit: { commitSha: 'b'.repeat(40) } });
+  const wrongMode = run({ number: 13, isPullRequestBuild: true });
+  const api = { list: async () => [wrongSha, wrongMode] };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  const log = lines.join('\n');
+  assert.match(log, /#12 b{40} source commit is b{40} but this GitHub run needs a{40}/);
+  assert.match(log, /#13 a{40} pull-request build is true but this GitHub run expects false/);
+});
+
+test('a selected run that never finishes says so instead of reporting no candidates', async () => {
+  let now = 0;
+  const api = {
+    list: async () => [run()],
+    get: async () => ({ data: run({ completionStatus: 'RUNNING', executionProgress: 'RUNNING' }) }),
+  };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  assert.match(lines.join('\n'), /still running; executionProgress never reached COMPLETE/);
+});
+
+test('a run without progress attributes renders pending/unknown, never undefined', async () => {
+  let now = 0;
+  // Apple's ciBuildRun schema does not require either attribute; a run that
+  // has been matched but has not started reporting progress omits them.
+  const sparse = run({ number: 15 });
+  delete sparse.attributes.executionProgress;
+  delete sparse.attributes.completionStatus;
+  const api = { get: async () => ({ data: sparse }) };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    runId: 'run', timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  const log = lines.join('\n');
+  assert.match(log, /build 15 is pending\/unknown/);
+  assert.equal(log.includes('undefined'), false, `undefined leaked into the log: ${JSON.stringify(log)}`);
+  // Both log paths render the same absent values the same way.
+  assert.match(describe(sparse, expected), /branch build, pending\/unknown/);
+});
+
+test('the wait window can be tuned without editing the bridge', () => {
+  assert.equal(waitSeconds({}), 4500);
+  assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: '120' }), 120);
+  for (const value of ['0', '-1', 'soon']) assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: value }), 4500);
+  // An override can never outlive the 95-minute cloud job, which still needs
+  // time for setup, result downloads and analysis after the wait.
+  assert.equal(MAX_WAIT_SECONDS, 4800);
+  assert.ok(MAX_WAIT_SECONDS < 95 * 60);
+  assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: '99999' }), MAX_WAIT_SECONDS);
+});
+
+test('logSafe flattens control characters so a value cannot forge a log line', () => {
+  assert.equal(logSafe('build 17\r\n::error::forged'), 'build 17  ::error::forged');
+  assert.equal(logSafe('plain'), 'plain');
+  assert.equal(logSafe(17), '17');
+  assert.equal(logSafe(null), '');
+});
+
+test('rejected candidates are reported as a bounded sample beside the totals', async () => {
+  let now = 0;
+  const stale = Array.from({ length: 25 }, (_, index) =>
+    run({ number: index, sourceCommit: { commitSha: 'b'.repeat(40) } }));
+  const api = { list: async () => stale };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  assert.ok(lines.length > 0);
+  for (const line of lines) {
+    assert.match(line, /25 of 25 scanned run\(s\) rejected/);
+    assert.match(line, /and 5 older run\(s\) not listed/);
+    // 20 sampled rejections plus, at most, the newest run repeated.
+    const described = (line.match(/source commit is/g) || []).length;
+    assert.ok(described >= 20 && described <= 21, `expected a bounded sample, got ${described}`);
+  }
+});
+
+test('remote values cannot forge log lines or workflow commands', async () => {
+  let now = 0;
+  const hostile = run({ number: '17\r\n::error::forged', sourceCommit: { commitSha: 'b'.repeat(40) } });
+  const api = { list: async () => [hostile] };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  assert.ok(lines.length > 0);
+  for (const line of lines) {
+    assert.equal(/[\r\n]/.test(line), false, `control characters leaked: ${JSON.stringify(line)}`);
+    assert.equal(line.startsWith('::'), false, `forged workflow command: ${JSON.stringify(line)}`);
+  }
+});
+
+test('all result bundles download together so collection fits the job timeout', async () => {
+  const action = id => ({ id, attributes: { actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } });
+  const api = {
+    list: async path => path.includes('/actions?')
+      ? [action('phone'), action('pad')]
+      : [{ id: 'artifact', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/private' } }],
+  };
+  const started = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const pending = collect(api, run(), '/tmp/report', (url, target) => { started.push(target); return gate; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(started.length, 2, 'both downloads start before either finishes');
+  release();
+  const result = await pending;
+  assert.deepEqual(result.map(entry => entry.file), ['result-0.zip', 'result-1.zip']);
+  assert.equal(JSON.stringify(result).includes('private'), false);
+});
+
+test('a failed bundle download aborts its siblings so the process can exit promptly', async () => {
+  const action = id => ({ id, attributes: { actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } });
+  const api = {
+    list: async path => path.includes('/actions?')
+      ? [action('phone'), action('pad')]
+      : [{ id: 'artifact', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/private' } }],
+  };
+  const signals = [];
+  const pending = collect(api, run(), '/tmp/report', (url, target, { signal }) => {
+    signals.push(signal);
+    // The first download fails fast; its sibling waits on the shared signal
+    // exactly like an in-flight fetch would.
+    if (target.endsWith('result-0.zip')) return Promise.reject(new Error('Artifact download HTTP 404'));
+    return new Promise((_, reject) => signal.addEventListener(
+      'abort', () => reject(new Error('Download canceled')), { once: true }));
+  });
+  await assert.rejects(pending, /HTTP 404/);
+  assert.equal(signals.length, 2, 'both downloads received the shared signal');
+  // The rejection must reach collect() (and then the top-level handler)
+  // while the sibling is cancelled, not after its own timeout elapses —
+  // lingering fetches keep the event loop alive past process.exitCode and
+  // delay the `Save Cloud result bundles` upload.
+  assert.ok(signals.every(signal => signal.aborted), 'every in-flight download is aborted when one fails');
+});
+
+test('artifact download signals link the per-download timeout with the collection signal', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-signal-'));
+  try {
+    const controller = new AbortController();
+    let observed;
+    await downloadArtifact('https://example.com/signed', join(directory, 'bundle.zip'), {
+      signal: controller.signal,
+      fetcher: async (_url, options) => {
+        observed = options.signal;
+        return new Response('bundle');
+      },
+    });
+    assert.ok(observed instanceof AbortSignal, 'the fetch receives an AbortSignal');
+    assert.equal(observed.aborted, false);
+    controller.abort();
+    assert.equal(observed.aborted, true, 'aborting the collection aborts the linked fetch signal');
+  } finally { await rm(directory, { recursive: true }); }
 });
 
 test('collects all result bundles from all test actions', async () => {
@@ -90,9 +255,11 @@ test('successful workflow without tests or missing result bundles is rejected', 
 test('signed artifact download has no Apple Authorization header', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'cloud-test-'));
   try {
-    await downloadArtifact('https://example.com/signed', join(directory, 'bundle.zip'), async (_url, options) => {
-      assert.equal(options.headers, undefined);
-      return new Response('bundle');
+    await downloadArtifact('https://example.com/signed', join(directory, 'bundle.zip'), {
+      fetcher: async (_url, options) => {
+        assert.equal(options.headers, undefined);
+        return new Response('bundle');
+      },
     });
     assert.equal(await readFile(join(directory, 'bundle.zip'), 'utf8'), 'bundle');
     await assert.rejects(downloadArtifact('http://example.com/insecure', join(directory, 'bad')), /HTTPS/);
@@ -111,13 +278,16 @@ test('artifact redirects remain HTTPS and never receive Apple credentials', asyn
   const directory = await mkdtemp(join(tmpdir(), 'cloud-redirect-'));
   try {
     let calls = 0;
-    await downloadArtifact('https://example.com/signed', join(directory, 'result.zip'), async (_url, options) => {
-      assert.equal(options.headers, undefined);
-      return ++calls === 1 ? new Response('', { status: 302, headers: { location: 'https://cdn.example.com/bundle' } }) : new Response('zip');
+    await downloadArtifact('https://example.com/signed', join(directory, 'result.zip'), {
+      fetcher: async (_url, options) => {
+        assert.equal(options.headers, undefined);
+        return ++calls === 1 ? new Response('', { status: 302, headers: { location: 'https://cdn.example.com/bundle' } }) : new Response('zip');
+      },
     });
     assert.equal(calls, 2);
-    await assert.rejects(downloadArtifact('https://example.com/signed', join(directory, 'bad'), async () =>
-      new Response('', { status: 302, headers: { location: 'http://example.com/bundle' } })), /HTTPS/);
+    await assert.rejects(downloadArtifact('https://example.com/signed', join(directory, 'bad'), {
+      fetcher: async () => new Response('', { status: 302, headers: { location: 'http://example.com/bundle' } }),
+    }), /HTTPS/);
   } finally { await rm(directory, { recursive: true }); }
 });
 
@@ -154,6 +324,105 @@ test('missing bridge credentials and invalid revisions fail before network calls
   await assert.rejects(main({ ...configured, EXPECTED_SHA: expected.sha, EXPECTED_BASE_SHA: 'wrong' }), /full PR base/);
 });
 
+test('a failed run names the action Apple blames while its checks look green', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-error-'));
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const lines = [];
+  console.log = value => lines.push(String(value));
+  try {
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname;
+      if (path.includes('/ciWorkflows/')) return Response.json({ data: [run({ completionStatus: 'ERRORED' })] });
+      if (path.endsWith('/ciBuildRuns/run')) return Response.json({ data: run({ number: 15, completionStatus: 'ERRORED' }) });
+      if (path.endsWith('/issues')) return Response.json({ data: [] });
+      if (path.endsWith('/actions')) return Response.json({ data: [
+        { id: 'build', attributes: { name: 'Build - iOS', actionType: 'BUILD', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+        { id: 'test', attributes: { name: 'Test - iOS', actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+        { id: 'analyze', attributes: { name: 'Analyze - iOS', actionType: 'ANALYZE', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+        { id: 'notify', attributes: { name: 'Notify - iOS', actionType: 'NOTIFY', executionProgress: 'COMPLETE', completionStatus: 'FAILED' } },
+        { id: 'forged', attributes: { name: 'Notify - iOS\r\n::error::forged', actionType: 'NOTIFY', executionProgress: 'COMPLETE', completionStatus: 'FAILED' } },
+      ] });
+      if (path.endsWith('/artifacts')) return Response.json({ data: [{ id: 'bundle', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/signed-private-url' } }] });
+      return new Response('bundle-data');
+    };
+    await assert.rejects(main({
+      ...env, XCODE_CLOUD_WORKFLOW_ID: expected.workflow, EXPECTED_SHA: expected.sha, CLOUD_REPORTS_DIR: directory,
+    }), /ended with ERRORED/);
+    assert.match(lines.join('\n'), /Actions: Build - iOS: SUCCEEDED; Test - iOS: SUCCEEDED; Analyze - iOS: SUCCEEDED; Notify - iOS: FAILED/);
+    assert.equal(lines.some(line => /[\r\n]/.test(line)), false, `control characters leaked: ${JSON.stringify(lines)}`);
+    assert.equal(JSON.parse(await readFile(join(directory, 'build.json'), 'utf8')).status, 'ERRORED');
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('action statuses are reported before results are collected', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-order-'));
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const lines = [];
+  console.log = value => lines.push(String(value));
+  try {
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname;
+      if (path.includes('/ciWorkflows/')) return Response.json({ data: [run({ completionStatus: 'ERRORED' })] });
+      if (path.endsWith('/ciBuildRuns/run')) return Response.json({ data: run({ number: 16, completionStatus: 'ERRORED' }) });
+      // Analysis collection fails, after the status line has already been written.
+      if (path.endsWith('/issues')) return new Response('', { status: 404 });
+      if (path.endsWith('/actions')) return Response.json({ data: [
+        { id: 'analyze', attributes: { name: 'Analyze - iOS', actionType: 'ANALYZE', executionProgress: 'COMPLETE', completionStatus: 'FAILED' } },
+      ] });
+      return new Response('unused');
+    };
+    await assert.rejects(main({
+      ...env, XCODE_CLOUD_WORKFLOW_ID: expected.workflow, EXPECTED_SHA: expected.sha, CLOUD_REPORTS_DIR: directory,
+    }), /HTTP 404/);
+    assert.match(lines.join('\n'), /run 16 ended with ERRORED\. Actions: Analyze - iOS: FAILED/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    await rm(directory, { recursive: true });
+  }
+});
+
+test('a failed action lookup is reported without replacing the terminal status', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-bestafter-'));
+  const originalFetch = globalThis.fetch;
+  const originalLog = console.log;
+  const lines = [];
+  console.log = value => lines.push(String(value));
+  try {
+    let actionLists = 0;
+    globalThis.fetch = async url => {
+      const path = new URL(url).pathname;
+      if (path.includes('/ciWorkflows/')) return Response.json({ data: [run({ completionStatus: 'ERRORED' })] });
+      if (path.endsWith('/ciBuildRuns/run')) return Response.json({ data: run({ number: 17, completionStatus: 'ERRORED' }) });
+      if (path.endsWith('/issues')) return Response.json({ data: [] });
+      if (path.endsWith('/actions')) {
+        actionLists++;
+        // The diagnostic lookup fails; collection and analysis still succeed.
+        if (actionLists === 1) return new Response('', { status: 404 });
+        return Response.json({ data: [
+          { id: 'analyze', attributes: { name: 'Analyze - iOS', actionType: 'ANALYZE', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+          { id: 'test', attributes: { name: 'Test - iOS', actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } },
+        ] });
+      }
+      if (path.endsWith('/artifacts')) return Response.json({ data: [{ id: 'bundle', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/signed-private-url' } }] });
+      return new Response('bundle-data');
+    };
+    await assert.rejects(main({
+      ...env, XCODE_CLOUD_WORKFLOW_ID: expected.workflow, EXPECTED_SHA: expected.sha, CLOUD_REPORTS_DIR: directory,
+    }), /ended with ERRORED/);
+    assert.match(lines.join('\n'), /run 17 ended with ERRORED; action statuses unavailable \(App Store Connect HTTP 404/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.log = originalLog;
+    await rm(directory, { recursive: true });
+  }
+});
 
 test('Analyze issues annotate repo paths with escaped workflow-command data', () => {
   const annotation = issueAnnotation({ attributes: {

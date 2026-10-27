@@ -9,6 +9,10 @@ on:
         description: Optional Cloud run ID matching this branch commit
         required: false
         type: string
+      wait_seconds:
+        description: Optional Xcode Cloud wait in seconds (capped at 4800)
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -93,3 +97,4 @@ jobs:
     secrets: inherit
     with:
       cloud_run_id: ${{ inputs.cloud_run_id || '' }}
+      wait_seconds: ${{ inputs.wait_seconds || '' }}

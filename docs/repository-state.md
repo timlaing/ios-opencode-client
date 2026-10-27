@@ -26,5 +26,9 @@ Continue new work from the isolated current-main worktree.
 ## Outstanding work
 
 See [verification](verification.md) for hosted CI failures and remaining
-real-host/device acceptance. The open warning-fix PR is separate work; this
-reconciliation neither merges it nor claims its results for main.
+real-host/device acceptance. The warning-fix PR that was open when this note
+was written merged to `main` as `6b3a361` on 24 October 2026, so its results
+are no longer separate from `main`; the reconciliation itself changed no
+product code. Hosted CI still fails — see the 25 October evidence in
+[verification](verification.md#hosted-ci--checked-25-october-2026) and
+[xcode-cloud](xcode-cloud.md#hosted-status--checked-25-october-2026).

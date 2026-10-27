@@ -7,6 +7,11 @@ on:
         type: string
         required: false
         default: ""
+      wait_seconds:
+        description: Optional Xcode Cloud wait in seconds (capped at 4800)
+        type: string
+        required: false
+        default: ""
 permissions:
   contents: read
 jobs:
@@ -37,7 +42,10 @@ jobs:
     # Fork PRs never receive Apple credentials or execute this privileged job.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    # The bridge waits up to 75 minutes by default and never more than the
+    # 4800-second cap in scripts/ci/xcode_cloud.mjs, so 95 minutes always leaves
+    # ~15 minutes for setup, concurrent result downloads and analysis.
+    timeout-minutes: 95
     outputs:
       sha: ${{ steps.revision.outputs.sha }}
     steps:
@@ -56,6 +64,9 @@ jobs:
           ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
           XCODE_CLOUD_WORKFLOW_ID: ${{ github.event_name == 'pull_request' && vars.XCODE_CLOUD_PR_WORKFLOW_ID || vars.XCODE_CLOUD_WORKFLOW_ID }}
           XCODE_CLOUD_RUN_ID: ${{ inputs.cloud_run_id }}
+          # The operator's override reaches the bridge; the bridge caps it so
+          # the wait can never outlive timeout-minutes above.
+          XCODE_CLOUD_WAIT_SECONDS: ${{ inputs.wait_seconds || vars.XCODE_CLOUD_WAIT_SECONDS }}
           EXPECTED_SHA: ${{ steps.revision.outputs.sha }}
           EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: node scripts/ci/xcode_cloud.mjs

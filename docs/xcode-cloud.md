@@ -52,12 +52,12 @@ it does not start a second Cloud build and needs no GitHub token in Xcode Cloud.
 
 The workflow has four named checks (nested under Native Cloud and SonarQube):
 
-| Check | Result |
-| --- | --- |
-| CI integration tests | Tests the Apple API bridge and coverage conversion without credentials |
-| Xcode Cloud tests | Waits up to 60 minutes for the configured Cloud workflow and exact source commit/base, fails on unsuccessful/canceled/skipped builds, downloads every test action's result bundles |
-| Coverage and SonarQube quality gate | Runs package tests, merges Cloud and package line coverage, submits analysis and waits for SonarQube's quality gate |
-| Required CI | Passes only when all three stages succeed; skipped jobs cannot produce an overall pass |
+| Check                               | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CI integration tests                | Tests the Apple API bridge and coverage conversion without credentials                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Xcode Cloud tests                   | Waits up to 75 minutes for the configured Cloud workflow and exact source commit/base (override with the `wait_seconds` input or the `XCODE_CLOUD_WAIT_SECONDS` variable, capped at 4800 seconds so it cannot outlive the job), reports a bounded sample of the runs it rejected and why beside the total scanned, reports every action's status as soon as a run ends other than success — before results are collected —, fails on unsuccessful/canceled/skipped builds, downloads every test action's result bundles concurrently |
+| Coverage and SonarQube quality gate | Runs package tests, merges Cloud and package line coverage, submits analysis and waits for SonarQube's quality gate                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Required CI                         | Passes only when all three stages succeed; skipped jobs cannot produce an overall pass                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 The API wait runs on Linux; only coverage extraction, Swift package tests and
 scanning use a macOS runner. Missing credentials, missing builds, expired
@@ -79,7 +79,12 @@ coverage whose commit equals the checked-out HEAD.
    targeting maintained branches, including changes to existing PRs. Make the
    iOS Test action **Required to Pass**, with iPhone and iPad destinations and
    coverage enabled. Give Actions enough time for Cloud's queue and tests to
-   complete (the default wait is 60 minutes). Use one workflow for both starts, or set the separate PR workflow ID below.
+   complete (the default wait is 75 minutes). Raise or lower it with the
+   `wait_seconds` dispatch input or the `XCODE_CLOUD_WAIT_SECONDS` repository
+   variable; the bridge caps any override at 4800 seconds so the `cloud` job's
+   95-minute timeout always leaves about 15 minutes for setup, concurrent
+   result downloads and analysis. Use one workflow for both starts, or set
+   the separate PR workflow ID below.
    A PR workflow must start automatically for new and updated pull requests.
 2. Create an App Store Connect **team API key** with access to the app and
    Xcode Cloud build/artifact APIs. Save its issuer ID, key ID and `.p8` key
@@ -91,17 +96,18 @@ coverage whose commit equals the checked-out HEAD.
    branch analysis and PR analysis support. Create a project analysis token.
 4. Configure the following repository settings:
 
-   | Kind | Name | Value |
-   | --- | --- | --- |
-   | Secret | `ASC_KEY_ID` | Apple's API key ID |
-   | Secret | `ASC_ISSUER_ID` | Team issuer UUID |
-   | Secret | `ASC_PRIVATE_KEY` | Entire downloaded `.p8` PEM content |
-   | Secret | `SONAR_TOKEN` | Project analysis token |
-   | Variable | `XCODE_CLOUD_WORKFLOW_ID` | Branch workflow UUID, not the app ID or build number |
-   | Variable | `XCODE_CLOUD_PR_WORKFLOW_ID` | Optional separate PR workflow UUID; defaults to the branch workflow when unset |
-   | Variable | `SONAR_PROJECT_KEY` | Existing SonarQube project key (defaults to `timlaing_ios-opencode-client`) |
-   | Variable | `SONAR_HOST_URL` | SonarQube Server URL, or `https://sonarcloud.io` for Cloud (default: `https://sonarcloud.io`) |
-   | Variable | `SONAR_ORGANIZATION` | Optional override; existing Cloud organization is `timlaing` |
+   | Kind     | Name                         | Value                                                                                                      |
+   | -------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
+   | Secret   | `ASC_KEY_ID`                 | Apple's API key ID                                                                                         |
+   | Secret   | `ASC_ISSUER_ID`              | Team issuer UUID                                                                                           |
+   | Secret   | `ASC_PRIVATE_KEY`            | Entire downloaded `.p8` PEM content                                                                        |
+   | Secret   | `SONAR_TOKEN`                | Project analysis token                                                                                     |
+   | Variable | `XCODE_CLOUD_WORKFLOW_ID`    | Branch workflow UUID, not the app ID or build number                                                       |
+   | Variable | `XCODE_CLOUD_PR_WORKFLOW_ID` | Optional separate PR workflow UUID; defaults to the branch workflow when unset                             |
+   | Variable | `XCODE_CLOUD_WAIT_SECONDS`   | Optional default wait in seconds; a dispatch `wait_seconds` input wins, and the bridge caps either at 4800 |
+   | Variable | `SONAR_PROJECT_KEY`          | Existing SonarQube project key (defaults to `timlaing_ios-opencode-client`)                                |
+   | Variable | `SONAR_HOST_URL`             | SonarQube Server URL, or `https://sonarcloud.io` for Cloud (default: `https://sonarcloud.io`)              |
+   | Variable | `SONAR_ORGANIZATION`         | Optional override; existing Cloud organization is `timlaing`                                               |
 
 5. Use the existing `xcode-27` runner with `/Applications/Xcode_27.0.app`
    and select compatible Xcode tools in Cloud. The custom runner label is
@@ -317,3 +323,32 @@ coverage/SonarQube was skipped. Result bundles were retained as artifacts.
 The earlier integration notes above describe setup-time observations; they do
 not describe the final hosted result. A successful end-to-end quality gate
 remains outstanding.
+
+## Hosted status — checked 25 October 2026
+
+For main commit `6b3a3619be164b19a13d43f56bf5db050efdbbe7` (PR #6, merged
+24 October), every action check Apple publishes — Build, Test, Analyze and now
+Archive — reports success, yet the [push run](https://github.com/timlaing/ios-opencode-client/actions/runs/40143654070)
+still failed: the bridge exhausted its 60-minute wait before the run reported
+`executionProgress: COMPLETE`, so Required CI failed with coverage skipped.
+
+Re-selecting that same build with the workflow's `cloud_run_id` retry input
+([run 40195284145](https://github.com/timlaing/ios-opencode-client/actions/runs/40195284145),
+25 October) matched immediately and exposed the second, independent problem:
+the run-level `completionStatus` for build 15 is `ERRORED` while each of its
+actions reports `SUCCEEDED`, and the bridge treats any non-success run status
+as a failure. Its Analyze action recorded no issues and all 18 test result
+bundles downloaded, so the run status — not the tests — is what blocks the
+gate. The action responsible has not been identified yet.
+
+The repository-side response is diagnosis, not relaxation: while waiting, the
+bridge reports what the workflow contains — a bounded sample of the runs it
+rejected with the reason for each, beside the total scanned — and prints every
+action's status as soon as a run ends other than `SUCCEEDED`, before results
+are collected. That status line shows what Apple reported; it cannot identify
+the cause of a run whose actions all succeed, which is what build 15 looks
+like. The default wait rose from 60 to 75 minutes, and any override through the
+`wait_seconds` input or the `XCODE_CLOUD_WAIT_SECONDS` variable is capped so it
+cannot outlive the job timeout. None of this changes which statuses count as
+success. Until a full Cloud → SonarQube run succeeds, Required CI remains
+failing and this document claims no hosted pass.
