@@ -5,7 +5,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { AppleAPI, apiURL, collect, downloadArtifact, jwt, logSafe, main, matches, MAX_WAIT_SECONDS, waitForRun, waitSeconds, collectAnalysis, issueAnnotation } from '../xcode_cloud.mjs';
+import { AppleAPI, apiURL, collect, describe, downloadArtifact, jwt, logSafe, main, matches, MAX_WAIT_SECONDS, waitForRun, waitSeconds, collectAnalysis, issueAnnotation } from '../xcode_cloud.mjs';
 
 const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const env = { ASC_KEY_ID: 'key', ASC_ISSUER_ID: 'issuer', ASC_PRIVATE_KEY: privateKey.export({ type: 'pkcs8', format: 'pem' }) };
@@ -102,6 +102,25 @@ test('a selected run that never finishes says so instead of reporting no candida
   assert.match(lines.join('\n'), /still running; executionProgress never reached COMPLETE/);
 });
 
+test('a run without progress attributes renders pending/unknown, never undefined', async () => {
+  let now = 0;
+  // Apple's ciBuildRun schema does not require either attribute; a run that
+  // has been matched but has not started reporting progress omits them.
+  const sparse = run({ number: 15 });
+  delete sparse.attributes.executionProgress;
+  delete sparse.attributes.completionStatus;
+  const api = { get: async () => ({ data: sparse }) };
+  const lines = [];
+  await assert.rejects(waitForRun(api, expected, {
+    runId: 'run', timeout: 1, clock: () => now, pause: async () => { now += 1000; }, emit: line => lines.push(line),
+  }), /Timed out/);
+  const log = lines.join('\n');
+  assert.match(log, /build 15 is pending\/unknown/);
+  assert.equal(log.includes('undefined'), false, `undefined leaked into the log: ${JSON.stringify(log)}`);
+  // Both log paths render the same absent values the same way.
+  assert.match(describe(sparse, expected), /branch build, pending\/unknown/);
+});
+
 test('the wait window can be tuned without editing the bridge', () => {
   assert.equal(waitSeconds({}), 4500);
   assert.equal(waitSeconds({ XCODE_CLOUD_WAIT_SECONDS: '120' }), 120);
@@ -173,6 +192,50 @@ test('all result bundles download together so collection fits the job timeout', 
   assert.equal(JSON.stringify(result).includes('private'), false);
 });
 
+test('a failed bundle download aborts its siblings so the process can exit promptly', async () => {
+  const action = id => ({ id, attributes: { actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } });
+  const api = {
+    list: async path => path.includes('/actions?')
+      ? [action('phone'), action('pad')]
+      : [{ id: 'artifact', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/private' } }],
+  };
+  const signals = [];
+  const pending = collect(api, run(), '/tmp/report', (url, target, { signal }) => {
+    signals.push(signal);
+    // The first download fails fast; its sibling waits on the shared signal
+    // exactly like an in-flight fetch would.
+    if (target.endsWith('result-0.zip')) return Promise.reject(new Error('Artifact download HTTP 404'));
+    return new Promise((_, reject) => signal.addEventListener(
+      'abort', () => reject(new Error('Download canceled')), { once: true }));
+  });
+  await assert.rejects(pending, /HTTP 404/);
+  assert.equal(signals.length, 2, 'both downloads received the shared signal');
+  // The rejection must reach collect() (and then the top-level handler)
+  // while the sibling is cancelled, not after its own timeout elapses —
+  // lingering fetches keep the event loop alive past process.exitCode and
+  // delay the `Save Cloud result bundles` upload.
+  assert.ok(signals.every(signal => signal.aborted), 'every in-flight download is aborted when one fails');
+});
+
+test('artifact download signals link the per-download timeout with the collection signal', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'cloud-signal-'));
+  try {
+    const controller = new AbortController();
+    let observed;
+    await downloadArtifact('https://example.com/signed', join(directory, 'bundle.zip'), {
+      signal: controller.signal,
+      fetcher: async (_url, options) => {
+        observed = options.signal;
+        return new Response('bundle');
+      },
+    });
+    assert.ok(observed instanceof AbortSignal, 'the fetch receives an AbortSignal');
+    assert.equal(observed.aborted, false);
+    controller.abort();
+    assert.equal(observed.aborted, true, 'aborting the collection aborts the linked fetch signal');
+  } finally { await rm(directory, { recursive: true }); }
+});
+
 test('collects all result bundles from all test actions', async () => {
   const action = id => ({ id, attributes: { actionType: 'TEST', executionProgress: 'COMPLETE', completionStatus: 'SUCCEEDED' } });
   const api = { list: async path => path.includes('/actions?') ? [action('phone'), action('pad')] : [{ id: 'artifact', attributes: { fileType: 'RESULT_BUNDLE', downloadUrl: 'https://example.com/private' } }] };
@@ -192,9 +255,11 @@ test('successful workflow without tests or missing result bundles is rejected', 
 test('signed artifact download has no Apple Authorization header', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'cloud-test-'));
   try {
-    await downloadArtifact('https://example.com/signed', join(directory, 'bundle.zip'), async (_url, options) => {
-      assert.equal(options.headers, undefined);
-      return new Response('bundle');
+    await downloadArtifact('https://example.com/signed', join(directory, 'bundle.zip'), {
+      fetcher: async (_url, options) => {
+        assert.equal(options.headers, undefined);
+        return new Response('bundle');
+      },
     });
     assert.equal(await readFile(join(directory, 'bundle.zip'), 'utf8'), 'bundle');
     await assert.rejects(downloadArtifact('http://example.com/insecure', join(directory, 'bad')), /HTTPS/);
@@ -213,13 +278,16 @@ test('artifact redirects remain HTTPS and never receive Apple credentials', asyn
   const directory = await mkdtemp(join(tmpdir(), 'cloud-redirect-'));
   try {
     let calls = 0;
-    await downloadArtifact('https://example.com/signed', join(directory, 'result.zip'), async (_url, options) => {
-      assert.equal(options.headers, undefined);
-      return ++calls === 1 ? new Response('', { status: 302, headers: { location: 'https://cdn.example.com/bundle' } }) : new Response('zip');
+    await downloadArtifact('https://example.com/signed', join(directory, 'result.zip'), {
+      fetcher: async (_url, options) => {
+        assert.equal(options.headers, undefined);
+        return ++calls === 1 ? new Response('', { status: 302, headers: { location: 'https://cdn.example.com/bundle' } }) : new Response('zip');
+      },
     });
     assert.equal(calls, 2);
-    await assert.rejects(downloadArtifact('https://example.com/signed', join(directory, 'bad'), async () =>
-      new Response('', { status: 302, headers: { location: 'http://example.com/bundle' } })), /HTTPS/);
+    await assert.rejects(downloadArtifact('https://example.com/signed', join(directory, 'bad'), {
+      fetcher: async () => new Response('', { status: 302, headers: { location: 'http://example.com/bundle' } }),
+    }), /HTTPS/);
   } finally { await rm(directory, { recursive: true }); }
 });
 

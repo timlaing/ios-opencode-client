@@ -151,10 +151,13 @@ function scanUpdate(expected, state) {
     + `newest ${newest}. ${rejectionSummary(expected, state.scanned)}.`;
 }
 
+// Same fallbacks as describe(): Apple does not require either attribute, so
+// an absent value must not render as "undefined" in one log path and
+// "unknown" in the other.
 function progressUpdate(polls, run, selected) {
   if (!due(polls)) return '';
   return `Waiting for Xcode Cloud: build ${run.attributes.number ?? selected} is `
-    + `${run.attributes.completionStatus || 'pending'}/${run.attributes.executionProgress}.`;
+    + `${run.attributes.completionStatus || 'pending'}/${run.attributes.executionProgress || 'unknown'}.`;
 }
 
 function timeoutUpdate(expected, state) {
@@ -208,12 +211,20 @@ export async function waitForRun(api, expected, {
   throw new Error('Timed out waiting for the matching Xcode Cloud build');
 }
 
-export async function downloadArtifact(url, destination, fetcher = fetch) {
+// The options object keeps the test-only fetcher override explicit and makes
+// the cancellation channel (signal) self-documenting at every call site.
+export async function downloadArtifact(url, destination, { fetcher = fetch, signal } = {}) {
   let response;
   for (let redirects = 0; redirects <= 5; redirects++) {
     if (new URL(url).protocol !== 'https:') throw new Error('Artifact download requires HTTPS');
-    // Signed URLs and redirects are intentionally fetched WITHOUT the Apple JWT.
-    response = await fetcher(url, { redirect: 'manual', signal: AbortSignal.timeout(600_000) });
+    // Signed URLs and redirects are intentionally fetched WITHOUT the Apple
+    // JWT. The per-download timeout is linked to the collection's signal so
+    // one failed bundle cancels its siblings instead of outliving the failure.
+    const timeout = AbortSignal.timeout(600_000);
+    response = await fetcher(url, {
+      redirect: 'manual',
+      signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
+    });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const location = response.headers.get('location');
       if (!location || redirects === 5) throw new Error('Invalid artifact redirect chain');
@@ -247,7 +258,19 @@ export async function collect(api, run, directory, download = downloadArtifact) 
     .map((bundle, index) => ({ ...bundle, target: resolve(directory, `result-${index}.zip`) }));
   // Bundles download together: a run that publishes many result files would
   // otherwise spend more time downloading sequentially than the job has left.
-  await Promise.all(targets.map(bundle => download(bundle.url, bundle.target)));
+  // One shared controller ties them together: when a download fails, the
+  // survivors are aborted at once, so the rejection reaches the top-level
+  // handler and the process exits promptly — `process.exitCode` alone does
+  // not terminate a process whose event loop still holds in-flight fetches,
+  // and lingering downloads would delay `Save Cloud result bundles` past the
+  // headroom the job timeout leaves.
+  const cancelled = new AbortController();
+  try {
+    await Promise.all(targets.map(bundle => download(bundle.url, bundle.target, { signal: cancelled.signal })));
+  } catch (error) {
+    cancelled.abort(error);
+    throw error;
+  }
   return targets.map(({ action, artifact, target }) => ({ action, artifact, file: target.split('/').pop() }));
 }
 
