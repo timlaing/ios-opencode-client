@@ -62,6 +62,10 @@ struct ConnectHostView: View {
         NavigationStack {
             // Transparent form over one screen-sized, clipped background; the
             // image is a background so it never affects the form's layout.
+            // The form itself sits on a material card (issue #10): text over
+            // the raw artwork failed contrast in places, and material is the
+            // system treatment designed to stay legible over any backdrop,
+            // in light and dark mode alike.
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let review {
@@ -75,6 +79,10 @@ struct ConnectHostView: View {
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
             .scrollDismissesKeyboard(.interactively)
             .background {
@@ -86,6 +94,10 @@ struct ConnectHostView: View {
             }
             .navigationTitle("Connect Host")
             .navigationBarTitleDisplayMode(.inline)
+            // The inline title renders over the image, not the form card, so
+            // it needs its own legibility treatment (issue #10).
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -158,6 +170,13 @@ struct ConnectHostView: View {
             .ignoresSafeArea()
 
             VStack(spacing: 10) {
+                // Dismissal is always available (issue #9): the full-screen
+                // cover has no swipe-down gesture, and hiding the only exit
+                // inside the error branch left a working scanner with no way
+                // out — the camera ran until the app was force-quit.
+                Button("Cancel") { showScanner = false }
+                    .buttonStyle(.borderedProminent)
+
                 Text("Point at the QR code shown by opencode pair")
                     .font(.subheadline)
                     .padding(.horizontal, 16)
@@ -176,7 +195,6 @@ struct ConnectHostView: View {
                                 }
                             }
                         }
-                        Button("Done") { showScanner = false }
                     }
                     .padding(16)
                     .frame(maxWidth: 320)
