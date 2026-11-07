@@ -57,6 +57,6 @@ jobs:
         if: matrix.language == 'swift'
         run: |
           xcodebuild clean build -project OpenCodeRemote/OpenCodeRemote.xcodeproj -scheme OpenCodeRemote -destination 'generic/platform=iOS Simulator' -derivedDataPath Build -clonedSourcePackagesDirPath Build/SourcePackages -disableAutomaticPackageResolution ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO
-      - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
         with:
           category: /language:${{ matrix.language }}
