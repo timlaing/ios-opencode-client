@@ -3,8 +3,6 @@ on:
   push:
     branches: [main, integration, opencode-plugin]
   pull_request:
-  schedule:
-    - cron: "18 16 * * 2"
   workflow_dispatch:
 permissions:
   contents: read
