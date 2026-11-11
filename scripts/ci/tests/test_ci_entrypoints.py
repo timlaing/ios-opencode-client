@@ -100,7 +100,7 @@ class ToolingEntrypointTests(unittest.TestCase):
         # installed Xcode, never on fork PR code, and Tests must call it.
         workflows = Path(__file__).resolve().parents[3] / ".github" / "workflows"
         native = (workflows / "native-tests.yml").read_text()
-        self.assertIn("runs-on: xcode-27", native)
+        self.assertIn("runs-on: [self-hosted, macOS, ARM64, xcode, xcode-27]", native)
         self.assertIn(
             "DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer", native
         )

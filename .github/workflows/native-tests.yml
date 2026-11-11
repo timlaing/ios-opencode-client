@@ -30,7 +30,7 @@ jobs:
     name: Native iOS tests
     # Fork PRs never execute on the self-hosted macOS runner.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: xcode-27
+    runs-on: [self-hosted, macOS, ARM64, xcode, xcode-27]
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     timeout-minutes: 60
@@ -59,8 +59,7 @@ jobs:
             -scheme OpenCodeRemote \
             -destination "id=$SIMULATOR_ID" \
             -enableCodeCoverage YES \
-            -resultBundlePath reports/cloud/TestResults-iPhone.xcresult \
-            CODE_SIGNING_ALLOWED=NO
+            -resultBundlePath reports/cloud/TestResults-iPhone.xcresult
       - name: Select iPad simulator
         env:
           DEVICE_FAMILY: iPad
@@ -74,8 +73,7 @@ jobs:
             -scheme OpenCodeRemote \
             -destination "id=$SIMULATOR_ID" \
             -enableCodeCoverage YES \
-            -resultBundlePath reports/cloud/TestResults-iPad.xcresult \
-            CODE_SIGNING_ALLOWED=NO
+            -resultBundlePath reports/cloud/TestResults-iPad.xcresult
       - name: Package result bundles for the coverage stage
         env:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -115,7 +113,7 @@ jobs:
   sonar:
     name: Coverage and SonarQube quality gate
     needs: [validate, native]
-    runs-on: xcode-27
+    runs-on: [self-hosted, macOS, ARM64, xcode, xcode-27]
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     timeout-minutes: 30

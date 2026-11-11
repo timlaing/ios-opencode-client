@@ -2,3 +2,6 @@
 self-hosted-runner:
   labels:
     - xcode-27
+    - macOS
+    - ARM64
+    - xcode
