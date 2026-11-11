@@ -1,4 +1,4 @@
-# Xcode Cloud testing and coverage
+# Native tests, Xcode Cloud and coverage
 
 The committed shared `OpenCodeRemote` scheme runs app unit tests and UI tests
 with code coverage enabled. Edit `OpenCodeRemote/project.yml` and regenerate
@@ -44,85 +44,83 @@ separately downloadable Cloud coverage artifact.
 ## GitHub PR checks and SonarQube
 
 The existing [Tests workflow](../.github/workflows/tests.yml) calls the reusable
-[xcode-cloud.yml](../.github/workflows/xcode-cloud.yml) after Python/plugin tests
+[native-tests.yml](../.github/workflows/native-tests.yml) after Python/plugin tests
 on pushes to `main`, `integration`, `opencode-plugin`, PR updates and manual dispatches.
-Python and plugin/classifier coverage is retained in the same Sonar analysis. Xcode Cloud
-starts independently from its own GitHub integration. Actions reads Apple's API;
-it does not start a second Cloud build and needs no GitHub token in Xcode Cloud.
+Python and plugin/classifier coverage is retained in the same Sonar analysis. The
+native stage runs on the repository's `xcode-27` self-hosted runner on the
+maintainer's Mac; Actions no longer starts or waits for Apple Cloud builds. The
+retained bridge (`scripts/ci/xcode_cloud.mjs`) and its tests remain as historical
+tooling but no workflow invokes them.
 
-The workflow has four named checks (nested under Native Cloud and SonarQube):
+The workflow has four named checks (nested under Native tests and SonarQube):
 
-| Check                               | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CI integration tests                | Tests the Apple API bridge and coverage conversion without credentials                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| Xcode Cloud tests                   | Waits up to 75 minutes for the configured Cloud workflow and exact source commit/base (override with the `wait_seconds` input or the `XCODE_CLOUD_WAIT_SECONDS` variable, capped at 4800 seconds so it cannot outlive the job), reports a bounded sample of the runs it rejected and why beside the total scanned, reports every action's status as soon as a run ends other than success — before results are collected —, fails on unsuccessful/canceled/skipped builds, downloads every test action's result bundles concurrently |
-| Coverage and SonarQube quality gate | Runs package tests, merges Cloud and package line coverage, submits analysis and waits for SonarQube's quality gate                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Required CI                         | Passes only when all three stages succeed; skipped jobs cannot produce an overall pass                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| Check                               | Result                                                                                                                                                                                                                                             |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CI integration tests                | Tests the Apple API bridge and coverage conversion without credentials                                                                                                                                                                             |
+| Native iOS tests                    | Runs the shared scheme's unit and UI tests on the self-hosted `xcode-27` runner for one iPhone and one iPad simulator, packages both `.xcresult` bundles as `result-N.zip` with `build.json` for the coverage stage, and runs `xcodebuild analyze` |
+| Coverage and SonarQube quality gate | Runs package tests, merges native app and package line coverage, submits analysis and waits for SonarQube's quality gate                                                                                                                           |
+| Required CI                         | Passes only when all three stages succeed; skipped jobs cannot produce an overall pass                                                                                                                                                             |
 
-The API wait runs on Linux; only coverage extraction, Swift package tests and
-scanning use a macOS runner. Missing credentials, missing builds, expired
-artifacts, missing tests, missing coverage and scanner failures cause a failed
-check. `build.json` and the GitHub step summary record the Cloud build number,
-commit and terminal status. No JWTs or signed artifact download URLs are saved.
-Failed Cloud runs retain any available test-result bundles for diagnosis.
+The native test job runs on the self-hosted macOS runner; the integration-test
+and required-gate stages run on Linux, and coverage extraction, Swift package
+tests and scanning also use the macOS runner. Missing simulators, failing tests,
+missing coverage and scanner failures cause a failed check. `build.json` records
+the source/base commit and terminal status for the coverage stage. Failed runs
+retain any available test-result bundles for diagnosis.
 
-For PRs, Apple builds a temporary merge of the source and destination commits.
-The bridge matches **both** commits and the workflow ID. Analysis checks out
-GitHub's PR merge commit and verifies its two parents before importing coverage;
+For PRs, GitHub checks out a temporary merge of the source and destination
+commits, and the native tests run on that merge tree. Analysis checks out the
+same PR merge commit and verifies its two parents before importing coverage;
 using the head-only checkout could assign coverage to the wrong source lines.
-A base-branch advance requires an updated PR build. Branch analysis imports only
-coverage whose commit equals the checked-out HEAD.
+A base-branch advance produces a new merge commit on the next push. Branch
+analysis imports only coverage whose commit equals the checked-out HEAD.
 
 ### Configure Apple and GitHub
 
-1. In the Cloud workflow above, enable starts for pushes to `main`, `integration`, `opencode-plugin` and for PRs
-   targeting maintained branches, including changes to existing PRs. Make the
-   iOS Test action **Required to Pass**, with iPhone and iPad destinations and
-   coverage enabled. Give Actions enough time for Cloud's queue and tests to
-   complete (the default wait is 75 minutes). Raise or lower it with the
-   `wait_seconds` dispatch input or the `XCODE_CLOUD_WAIT_SECONDS` repository
-   variable; the bridge caps any override at 4800 seconds so the `cloud` job's
-   95-minute timeout always leaves about 15 minutes for setup, concurrent
-   result downloads and analysis. Use one workflow for both starts, or set
-   the separate PR workflow ID below.
-   A PR workflow must start automatically for new and updated pull requests.
+1. GitHub checks no longer read Apple's API: the native job builds and tests
+   locally, so no Cloud wait, workflow ID or bridge credential is needed for
+   the Tests workflow. The Xcode Cloud workflow remains service-side
+   configuration for Archive/TestFlight distribution (see
+   [publishing.md](publishing.md)); its Test and Analyze actions are optional
+   there and are no longer required to pass for GitHub checks.
 2. Create an App Store Connect **team API key** with access to the app and
-   Xcode Cloud build/artifact APIs. Save its issuer ID, key ID and `.p8` key
-   directly as GitHub Actions secrets. Do not paste credentials into source,
-   logs, PR comments or chat.
+   Xcode Cloud build/artifact APIs only if the optional Apple-side automation
+   (such as [Configure Xcode Cloud Analyze](../.github/workflows/xcode-cloud-configure.yml))
+   should run. Save its issuer ID, key ID and `.p8` key directly as GitHub
+   Actions secrets. Do not paste credentials into source, logs, PR comments
+   or chat.
 3. Create/import the Swift project in SonarQube, bind its GitHub repository and
    enable PR decoration. For SonarQube Cloud, disable automatic analysis so
    the scanner analysis can supply coverage. Use a plan/edition with Swift,
    branch analysis and PR analysis support. Create a project analysis token.
 4. Configure the following repository settings:
 
-   | Kind     | Name                         | Value                                                                                                      |
-   | -------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------- |
-   | Secret   | `ASC_KEY_ID`                 | Apple's API key ID                                                                                         |
-   | Secret   | `ASC_ISSUER_ID`              | Team issuer UUID                                                                                           |
-   | Secret   | `ASC_PRIVATE_KEY`            | Entire downloaded `.p8` PEM content                                                                        |
-   | Secret   | `SONAR_TOKEN`                | Project analysis token                                                                                     |
-   | Variable | `XCODE_CLOUD_WORKFLOW_ID`    | Branch workflow UUID, not the app ID or build number                                                       |
-   | Variable | `XCODE_CLOUD_PR_WORKFLOW_ID` | Optional separate PR workflow UUID; defaults to the branch workflow when unset                             |
-   | Variable | `XCODE_CLOUD_WAIT_SECONDS`   | Optional default wait in seconds; a dispatch `wait_seconds` input wins, and the bridge caps either at 4800 |
-   | Variable | `SONAR_PROJECT_KEY`          | Existing SonarQube project key (defaults to `timlaing_ios-opencode-client`)                                |
-   | Variable | `SONAR_HOST_URL`             | SonarQube Server URL, or `https://sonarcloud.io` for Cloud (default: `https://sonarcloud.io`)              |
-   | Variable | `SONAR_ORGANIZATION`         | Optional override; existing Cloud organization is `timlaing`                                               |
+   | Kind     | Name                         | Value                                                                                                       |
+   | -------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------- |
+   | Secret   | `SONAR_TOKEN`                | Project analysis token; used by the quality-gate job                                                        |
+   | Variable | `SONAR_PROJECT_KEY`          | Existing SonarQube project key (defaults to `timlaing_ios-opencode-client`)                                 |
+   | Variable | `SONAR_HOST_URL`             | SonarQube Server URL, or `https://sonarcloud.io` for Cloud (default: `https://sonarcloud.io`)               |
+   | Variable | `SONAR_ORGANIZATION`         | Optional override; existing Cloud organization is `timlaing`                                                |
+   | Secret   | `ASC_KEY_ID`                 | Optional, Apple-side automation only: Apple's API key ID                                                    |
+   | Secret   | `ASC_ISSUER_ID`              | Optional, Apple-side automation only: team issuer UUID                                                      |
+   | Secret   | `ASC_PRIVATE_KEY`            | Optional, Apple-side automation only: entire downloaded `.p8` PEM content                                   |
+   | Variable | `XCODE_CLOUD_WORKFLOW_ID`    | Optional, Apple-side automation only: branch workflow UUID, not the app ID or build number                  |
+   | Variable | `XCODE_CLOUD_PR_WORKFLOW_ID` | Optional, Apple-side automation only: separate PR workflow UUID; defaults to the branch workflow when unset |
 
-5. Use the existing `xcode-27` runner with `/Applications/Xcode_27.0.app`
-   and select compatible Xcode tools in Cloud. The custom runner label is
-   declared in `.github/actionlint.yaml`. If Cloud uses a newer/beta Xcode,
-   update the runner and selected installation before enabling those builds.
-   Apple reports crash-log bundles and build-only result bundles from a test
-   action with the `RESULT_BUNDLE` file type. The converter skips archives
-   with no `.xcresult` and bundles with no coverage, and fails unless at
-   least one bundle yields Swift line coverage. Unsafe archive entries,
-   unreadable bundles and coverage that matches no repository source still
-   fail extraction.
+5. Both runners use the existing `xcode-27` label (declared in
+   `.github/actionlint.yaml`) with `/Applications/Xcode.app` — the
+   installation selected by `xcode-select` — selected through `DEVELOPER_DIR`.
+   They live in `~/actions-runner/<repository>` and are kept running by
+   per-user LaunchAgents (`com.github.actions.runner.*`), so they start at
+   login and stop at logout. When Xcode is upgraded, update `DEVELOPER_DIR`
+   and the runner labels together. The converter skips archives with no
+   `.xcresult` and bundles with no coverage, and fails unless at least one
+   bundle yields Swift line coverage. Unsafe archive entries, unreadable
+   bundles and coverage that matches no repository source still fail
+   extraction.
 6. Merge the workflow and scripts, push a branch and open a PR. In GitHub
-   branch protection/rulesets, require **Native Cloud and SonarQube / Required CI** and keep branches up to
-   date. Also require Apple's native Cloud check if desired. Avoid path filters
-   on a required workflow: every PR needs a check result.
+   branch protection/rulesets, require **Native tests and SonarQube / Required CI** and keep branches up to
+   date. Avoid path filters on a required workflow: every PR needs a check result.
 
 The SonarCloud project key, organization and URL already have repository defaults;
 Apple API credentials and `XCODE_CLOUD_WORKFLOW_ID` were supplied to the
@@ -130,10 +128,10 @@ Apple API credentials and `XCODE_CLOUD_WORKFLOW_ID` were supplied to the
 override Sonar settings only when changing projects or servers.
 
 Secrets and service-side workflow/ruleset settings are not created by these
-repository files. The first real Cloud → GitHub → SonarQube run is still needed
-to validate authentication, artifact availability, runner compatibility and PR
-decoration. SonarQube quality gates are configured in SonarQube; this workflow
-waits for the configured gate, and does not set a new coverage threshold.
+repository files. The first native → GitHub → SonarQube run is still needed
+to validate runner compatibility, artifact availability and PR decoration.
+SonarQube quality gates are configured in SonarQube; this workflow waits for
+the configured gate, and does not set a new coverage threshold.
 
 ## Coverage import failure on PR #6 — 24 October 2026
 
@@ -156,20 +154,19 @@ The hosted quality gate's outcome for this PR is whatever the rerun of
 [the Tests workflow](../.github/workflows/tests.yml) reports; no hosted
 success is claimed here in advance of that result.
 
-Fork PRs run only the credential-free integration tests. Cloud and analysis
-jobs skip, and **Required CI fails**, rather than allowing a misleading pass.
+Fork PRs run only the credential-free integration tests. Native, SwiftLint and
+analysis jobs skip, and **Required CI fails**, rather than allowing a misleading pass.
 Review the contribution, then test it on a maintainer-owned branch/PR to run
 the full pipeline. No `pull_request_target` workflow exposes credentials to
-fork code. Treat same-repository workflow edits as trusted maintainer code.
+fork code, and no fork code executes on the self-hosted runner. Treat
+same-repository workflow edits as trusted maintainer code.
 
 ### Reports and retries
 
-- `xcode-cloud-results` retains every downloaded test-action ZIP — including
-  crash-log bundles Apple reports with the result-bundle file type — and
-  sanitized build metadata as GitHub artifacts for seven days, including
-  available results from failed Cloud runs. The coverage stage imports only
-  the `.xcresult` bundles that carry coverage, reporting how many archives
-  it skipped.
+- `xcode-results` retains the packaged `.xcresult` ZIPs and `build.json`
+  metadata as GitHub artifacts for seven days, including available results
+  from failed runs. The coverage stage imports only the `.xcresult` bundles
+  that carry coverage, reporting how many archives it skipped.
 - `swift-coverage` retains the Sonar generic `coverage.xml`, SwiftPM LLVM JSON,
   build metadata and scanner task metadata for 14 days. Coverage paths are
   repository-relative, and tests/dependency/generated sources are excluded.
@@ -178,23 +175,23 @@ fork code. Treat same-repository workflow edits as trusted maintainer code.
   source lines; Xcode's aggregated target percentages can differ. This pipeline
   imports line coverage, not branch coverage or Sonar's generic test-execution
   format. Test details remain in the downloadable `.xcresult` bundles.
-- To retry a specific Cloud build, rerun the GitHub workflow or use manual
-  dispatch with `cloud_run_id`. A supplied ID must belong to the configured
-  workflow and the selected branch's commit. PR runs should be retried from the
+- To retry a run, rerun the GitHub workflow. PR runs should be retried from the
   original PR workflow run to preserve both merge parents and PR context.
 - For fork or Dependabot contributions, move reviewed changes to a trusted
   maintainer PR before expecting secret-backed analysis.
 
 The standalone package suite runs once in the reusable workflow in GitHub because the post-clone
-hook's generated coverage is not a downloadable Cloud artifact. Native app
-unit/UI tests run only in Xcode Cloud in this pipeline. The retained bundles
+hook's generated coverage is not a downloadable artifact. Native app
+unit/UI tests run on the `xcode-27` self-hosted runner, once per device family
+(iPhone and iPad), replacing the Xcode Cloud Test actions. The retained bundles
 can contain test logs/screenshots, so use the repository's normal artifact
 access controls.
 
 ## SwiftLint and Xcode Analyze
 
 The `SwiftLint` job in [linting.yml](../.github/workflows/linting.yml) runs on
-pushes and PRs, including fork PRs, without secrets. It downloads SwiftLint
+pushes and same-repository PRs, without secrets; fork PRs skip it so untrusted
+code never executes on the self-hosted runner. It downloads SwiftLint
 **0.65.1** from the official release and verifies its pinned SHA-256. The local
 runner also enforces the version in `.swiftlint-version`.
 
@@ -208,13 +205,14 @@ changes; do not regenerate it merely to make a failing PR green. SwiftLint
 matches baseline records by source text/rule, so this is an incremental gate,
 not proof that the codebase is lint-clean.
 
-Add **SwiftLint** alongside **Native Cloud and SonarQube / Required CI** to
+Add **SwiftLint** alongside **Native tests and SonarQube / Required CI** to
 required GitHub checks. The exact-commit publishing gate also requires the
 successful `Lint and documentation` workflow on `main`.
 
-The scheme's Analyze configuration is explicit in `OpenCodeRemote/project.yml`.
-Cloud additionally needs the **Analyze iOS** action, configured for iOS,
-`OpenCodeRemote`, Any iOS Simulator, and **Required to Pass**. Its API definition
+The scheme's Analyze configuration is explicit in `OpenCodeRemote/project.yml`,
+and the native workflow runs `xcodebuild analyze` after the tests. An **Analyze
+iOS** Cloud action (configured for iOS, `OpenCodeRemote`, Any iOS Simulator)
+is optional and only matters for the Apple-side workflow; its API definition
 is [analyze-action.json](../OpenCodeRemote/ci_scripts/analyze-action.json).
 
 After merging these files and configuring the Apple API secrets/workflow ID:
@@ -227,14 +225,9 @@ After merging these files and configuring the Apple API secrets/workflow ID:
 3. Alternatively, add Analyze through App Store Connect → Xcode Cloud →
    your workflow → Actions, using the settings above.
 
-The result bridge requires an Analyze action to exist and succeed. Static
-analyzer warnings also fail the bridge, even if Apple's action returned a
-successful status. Compiler warnings appear as annotations but do not by
-themselves fail the check. Cloud issues are escaped before becoming GitHub
-annotations, with repository-relative source locations when available.
-`xcode-cloud-results` also retains `analysis.json` for diagnosis. Analyze is
-Xcode's analysis action; SwiftLint and Sonar provide the Swift-specific lint
-and quality rules.
+The native `xcodebuild analyze` step fails on analyzer errors; compiler
+warnings appear as annotations but do not by themselves fail the check.
+SwiftLint and Sonar provide the Swift-specific lint and quality rules.
 
 Run SwiftLint locally with `scripts/ci/lint_swift.sh`. To inspect all findings,
 open `reports/swiftlint-all.json`. Existing-debt maintenance should use the
@@ -352,3 +345,33 @@ like. The default wait rose from 60 to 75 minutes, and any override through the
 cannot outlive the job timeout. None of this changes which statuses count as
 success. Until a full Cloud → SonarQube run succeeds, Required CI remains
 failing and this document claims no hosted pass.
+
+## Self-hosted runner migration — 11 November 2026
+
+Native builds and tests moved off Xcode Cloud onto two repository-scoped
+self-hosted runners on the maintainer's Mac (Actions runner v2.338.2,
+installed under `~/actions-runner/<repository>` and kept alive by the
+per-user LaunchAgents `com.github.actions.runner.*`, so they start at login
+and stop at logout). Both register the `xcode-27` label that `linting.yml`
+and the reusable workflow already expected, plus `xcode`, `macOS` and
+`ARM64`, and select `/Applications/Xcode.app` (Xcode 27.2) through
+`DEVELOPER_DIR`.
+
+- `.github/workflows/xcode-cloud.yml` was replaced by
+  [native-tests.yml](../.github/workflows/native-tests.yml). The `cloud`
+  job's Apple-API wait became a native `xcodebuild test` job — one iPhone and
+  one iPad simulator selected by `scripts/ci/select_simulator.py` — that
+  packages both `.xcresult` bundles as `result-N.zip` with a `build.json`
+  the existing converter accepts, then runs `xcodebuild analyze`. The
+  `validate`, `sonar` and `required` jobs are unchanged apart from artifact
+  naming, and the Tests workflow dispatches the new file without the
+  `cloud_run_id`/`wait_seconds` inputs.
+- The `SwiftLint` job gained the same-repository guard the native jobs
+  already carried: fork PR code no longer executes on the self-hosted runner.
+- The bridge script (`scripts/ci/xcode_cloud.mjs`) and its tests remain in
+  the repository but no workflow invokes them. Apple API secrets and
+  `XCODE_CLOUD_*` variables are now only relevant to the optional
+  Configure Xcode Cloud Analyze workflow and to distribution.
+- The runner machine must be logged in for CI to run; each repository has
+  its own runner, so both can execute at once without queueing behind the
+  other repository's jobs.
