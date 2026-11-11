@@ -102,24 +102,24 @@ The repository includes the pinned OpenAPI snapshot, workflow mappings, generate
 
 ## Documentation
 
-| Guide | Contents |
-| --- | --- |
-| [App features](docs/app-design.md) | Feature checklist and staged scope |
-| [Screens and navigation](docs/navigation-screens.md) | Native screens, actions, and state handling |
-| [Defaults and settings](docs/implementation-defaults.md) | Storage, privacy, security, sync, and user controls |
-| [Notifications](docs/notifications.md) | Live Activities and remote push architecture |
-| [API contract](docs/api-contract.md) | Workflows, payloads, events, errors, and baseline limitations |
-| [API route catalog](docs/api-route-catalog.md) | Pinned operations, scope, and mock coverage |
-| [Mock development](docs/testing-mock.md) | Fixtures, scenarios, test commands, and fidelity limits |
-| [Publishing](docs/publishing.md) | Plugin registry releases and iOS TestFlight/App Store distribution |
-| [Xcode Cloud](docs/xcode-cloud.md) | Cloud builds, GitHub PR checks, SonarQube analysis, and merged Swift coverage |
-| [Checkout reconciliation](docs/repository-state.md) | Preserved local edits, current-main worktree and remaining work |
-| [Verification](docs/verification.md) | Recorded checks and outstanding release evidence |
-| [Implementation guide](docs/implementation-guide.md) | Integration boundaries and release criteria |
-| [Implementation decisions](docs/implementation-decisions.md) | Engineering choices and verification dependencies |
-| [Design review](docs/design-review.md) | Outstanding compatibility, accessibility, and release work |
-| [Free app decision](docs/monetisation.md) | Free model and inactive earlier analysis |
-| [Server plugin](plugins/opencode-push-relay/README.md) | Configuration, commands, enrollment, delivery, and loading compatibility |
+| Guide                                                        | Contents                                                                                                         |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| [App features](docs/app-design.md)                           | Feature checklist and staged scope                                                                               |
+| [Screens and navigation](docs/navigation-screens.md)         | Native screens, actions, and state handling                                                                      |
+| [Defaults and settings](docs/implementation-defaults.md)     | Storage, privacy, security, sync, and user controls                                                              |
+| [Notifications](docs/notifications.md)                       | Live Activities and remote push architecture                                                                     |
+| [API contract](docs/api-contract.md)                         | Workflows, payloads, events, errors, and baseline limitations                                                    |
+| [API route catalog](docs/api-route-catalog.md)               | Pinned operations, scope, and mock coverage                                                                      |
+| [Mock development](docs/testing-mock.md)                     | Fixtures, scenarios, test commands, and fidelity limits                                                          |
+| [Publishing](docs/publishing.md)                             | Plugin registry releases and iOS TestFlight/App Store distribution                                               |
+| [Testing and coverage](docs/xcode-cloud.md)                  | Native self-hosted test runs, Xcode Cloud setup, GitHub PR checks, SonarQube analysis, and merged Swift coverage |
+| [Checkout reconciliation](docs/repository-state.md)          | Preserved local edits, current-main worktree and remaining work                                                  |
+| [Verification](docs/verification.md)                         | Recorded checks and outstanding release evidence                                                                 |
+| [Implementation guide](docs/implementation-guide.md)         | Integration boundaries and release criteria                                                                      |
+| [Implementation decisions](docs/implementation-decisions.md) | Engineering choices and verification dependencies                                                                |
+| [Design review](docs/design-review.md)                       | Outstanding compatibility, accessibility, and release work                                                       |
+| [Free app decision](docs/monetisation.md)                    | Free model and inactive earlier analysis                                                                         |
+| [Server plugin](plugins/opencode-push-relay/README.md)       | Configuration, commands, enrollment, delivery, and loading compatibility                                         |
 
 ## Contributing
 

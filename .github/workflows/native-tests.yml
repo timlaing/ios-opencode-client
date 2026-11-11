@@ -1,17 +1,6 @@
-name: Xcode Cloud and SonarQube
+name: Native tests and SonarQube
 on:
   workflow_call:
-    inputs:
-      cloud_run_id:
-        description: Optional Cloud build ID for an exact-commit retry
-        type: string
-        required: false
-        default: ""
-      wait_seconds:
-        description: Optional Xcode Cloud wait in seconds (capped at 4800)
-        type: string
-        required: false
-        default: ""
 permissions:
   contents: read
 jobs:
@@ -37,15 +26,14 @@ jobs:
           retention-days: 7
       - run: python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py' -v
 
-  cloud:
-    name: Xcode Cloud tests
-    # Fork PRs never receive Apple credentials or execute this privileged job.
+  native:
+    name: Native iOS tests
+    # Fork PRs never execute on the self-hosted macOS runner.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: ubuntu-latest
-    # The bridge waits up to 75 minutes by default and never more than the
-    # 4800-second cap in scripts/ci/xcode_cloud.mjs, so 95 minutes always leaves
-    # ~15 minutes for setup, concurrent result downloads and analysis.
-    timeout-minutes: 95
+    runs-on: xcode-27
+    env:
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
+    timeout-minutes: 60
     outputs:
       sha: ${{ steps.revision.outputs.sha }}
     steps:
@@ -57,46 +45,91 @@ jobs:
         env:
           EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: echo "sha=$EXPECTED_SHA" >> "$GITHUB_OUTPUT"
-      - name: Wait for Cloud and download test results
+      - name: Select iPhone simulator
         env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
-          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-          XCODE_CLOUD_WORKFLOW_ID: ${{ github.event_name == 'pull_request' && vars.XCODE_CLOUD_PR_WORKFLOW_ID || vars.XCODE_CLOUD_WORKFLOW_ID }}
-          XCODE_CLOUD_RUN_ID: ${{ inputs.cloud_run_id }}
-          # The operator's override reaches the bridge; the bridge caps it so
-          # the wait can never outlive timeout-minutes above.
-          XCODE_CLOUD_WAIT_SECONDS: ${{ inputs.wait_seconds || vars.XCODE_CLOUD_WAIT_SECONDS }}
-          EXPECTED_SHA: ${{ steps.revision.outputs.sha }}
-          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: node scripts/ci/xcode_cloud.mjs
-      - name: Save Cloud result bundles
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+          DEVICE_FAMILY: iPhone
+        run: python3 scripts/ci/select_simulator.py
+      - name: Run app unit and UI tests on iPhone
+        run: |
+          set -euo pipefail
+          mkdir -p reports/cloud
+          rm -rf reports/cloud/TestResults-iPhone.xcresult
+          xcodebuild test \
+            -project OpenCodeRemote/OpenCodeRemote.xcodeproj \
+            -scheme OpenCodeRemote \
+            -destination "id=$SIMULATOR_ID" \
+            -enableCodeCoverage YES \
+            -resultBundlePath reports/cloud/TestResults-iPhone.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Select iPad simulator
+        env:
+          DEVICE_FAMILY: iPad
+        run: python3 scripts/ci/select_simulator.py
+      - name: Run app unit and UI tests on iPad
+        run: |
+          set -euo pipefail
+          rm -rf reports/cloud/TestResults-iPad.xcresult
+          xcodebuild test \
+            -project OpenCodeRemote/OpenCodeRemote.xcodeproj \
+            -scheme OpenCodeRemote \
+            -destination "id=$SIMULATOR_ID" \
+            -enableCodeCoverage YES \
+            -resultBundlePath reports/cloud/TestResults-iPad.xcresult \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Package result bundles for the coverage stage
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          cd reports/cloud
+          zip -qry result-1.zip TestResults-iPhone.xcresult
+          zip -qry result-2.zip TestResults-iPad.xcresult
+          python3 - "$HEAD_SHA" "$BASE_SHA" <<'PY'
+          import json
+          import sys
+          bundle = {
+              'status': 'SUCCEEDED',
+              'sha': sys.argv[1],
+              'baseSha': sys.argv[2],
+              'artifacts': [{'file': 'result-1.zip'}, {'file': 'result-2.zip'}],
+          }
+          with open('build.json', 'w') as stream:
+              json.dump(bundle, stream)
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
-          name: xcode-cloud-results
+          name: xcode-results
           path: reports/cloud/
           if-no-files-found: ignore
           retention-days: 7
+      - name: Analyze app sources
+        run: |
+          xcodebuild analyze \
+            -project OpenCodeRemote/OpenCodeRemote.xcodeproj \
+            -scheme OpenCodeRemote \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO
 
   sonar:
     name: Coverage and SonarQube quality gate
-    needs: [validate, cloud]
+    needs: [validate, native]
     runs-on: xcode-27
     env:
-      DEVELOPER_DIR: /Applications/Xcode_27.0.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # PR builds use the same source/base merge tree tested by Cloud.
+          # PR builds use the same source/base merge tree tested natively.
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Download Cloud result bundles
+      - name: Download native result bundles
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: xcode-cloud-results
+          name: xcode-results
           path: reports/cloud
       - name: Download Python and plugin coverage from Tests
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -117,7 +150,7 @@ jobs:
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
           SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY || 'timlaing_ios-opencode-client' }}
           SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
-          EXPECTED_SHA: ${{ needs.cloud.outputs.sha }}
+          EXPECTED_SHA: ${{ needs.native.outputs.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_BRANCH: ${{ github.head_ref }}
           BASE_BRANCH: ${{ github.base_ref }}
@@ -144,16 +177,16 @@ jobs:
   required:
     name: Required CI
     if: always()
-    needs: [validate, cloud, sonar]
+    needs: [validate, native, sonar]
     runs-on: ubuntu-latest
     steps:
       - name: Require every stage to succeed
         env:
           VALIDATE_RESULT: ${{ needs.validate.result }}
-          CLOUD_RESULT: ${{ needs.cloud.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
           SONAR_RESULT: ${{ needs.sonar.result }}
         run: |
-          if [ "$VALIDATE_RESULT" != success ] || [ "$CLOUD_RESULT" != success ] || [ "$SONAR_RESULT" != success ]; then
-            echo 'CI incomplete: integration tests, Xcode Cloud and SonarQube must all succeed.'
+          if [ "$VALIDATE_RESULT" != success ] || [ "$NATIVE_RESULT" != success ] || [ "$SONAR_RESULT" != success ]; then
+            echo 'CI incomplete: integration tests, native iOS tests and SonarQube must all succeed.'
             exit 1
           fi

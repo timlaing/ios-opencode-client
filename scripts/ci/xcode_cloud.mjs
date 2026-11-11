@@ -114,8 +114,9 @@ export function describe(run, expected) {
 // 75 minutes covers the observed Cloud queue plus a full iPhone/iPad test
 // matrix, while leaving headroom for result downloads inside the job timeout.
 export const DEFAULT_WAIT_SECONDS = 4500;
-// The `cloud` job times out after 95 minutes (.github/workflows/xcode-cloud.yml),
-// which allows ~15 minutes for checkout, result downloads and analysis once the
+// The `cloud` job that invoked this bridge timed out after 95 minutes
+// (.github/workflows/xcode-cloud.yml, since replaced by native-tests.yml),
+// which allowed ~15 minutes for checkout, result downloads and analysis once the
 // wait is done. Capping the override there keeps a configured wait inside the
 // job budget, so GitHub cannot cancel the job before results are collected.
 export const MAX_WAIT_SECONDS = 4800;

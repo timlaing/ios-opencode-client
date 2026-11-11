@@ -14,81 +14,127 @@ from test_helpers import load
 
 CI = Path(__file__).resolve().parents[1]
 
+
 class ToolingEntrypointTests(unittest.TestCase):
     def test_simulator_selection_is_family_and_runtime_specific(self):
-        devices = {'devices': {
-            'com.apple.CoreSimulator.SimRuntime.iOS-27-0': [{'name':'iPad Air','udid':'ipad','isAvailable':True}, {'name':'iPhone Pro','udid':'phone','isAvailable':True}],
-            'com.apple.CoreSimulator.SimRuntime.iOS-28-0': [{'name':'iPhone','udid':'wrong','isAvailable':True}],
-        }}
-        with tempfile.TemporaryDirectory() as directory, patch('subprocess.check_output', return_value=json.dumps(devices).encode()):
-            env = Path(directory) / 'env'
-            for family, expected in [('iPhone','phone'),('iPad','ipad')]:
-                env.write_text('')
-                with patch.dict(os.environ, {'DEVICE_FAMILY':family,'GITHUB_ENV':str(env)}), contextlib.redirect_stdout(io.StringIO()):
-                    runpy.run_path(str(CI / 'select_simulator.py'), run_name='__main__')
-                self.assertEqual(env.read_text(), f'SIMULATOR_ID={expected}\n')
-            with patch.dict(os.environ, {'DEVICE_FAMILY':'watch','GITHUB_ENV':str(env)}):
-                with self.assertRaisesRegex(SystemExit, 'No available'):
-                    runpy.run_path(str(CI / 'select_simulator.py'), run_name='__main__')
+        devices = {
+            "devices": {
+                "com.apple.CoreSimulator.SimRuntime.iOS-27-0": [
+                    {"name": "iPad Air", "udid": "ipad", "isAvailable": True},
+                    {"name": "iPhone Pro", "udid": "phone", "isAvailable": True},
+                ],
+                "com.apple.CoreSimulator.SimRuntime.iOS-28-0": [
+                    {"name": "iPhone", "udid": "wrong", "isAvailable": True}
+                ],
+            }
+        }
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("subprocess.check_output", return_value=json.dumps(devices).encode()),
+        ):
+            env = Path(directory) / "env"
+            for family, expected in [("iPhone", "phone"), ("iPad", "ipad")]:
+                env.write_text("")
+                with (
+                    patch.dict(
+                        os.environ, {"DEVICE_FAMILY": family, "GITHUB_ENV": str(env)}
+                    ),
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
+                    runpy.run_path(str(CI / "select_simulator.py"), run_name="__main__")
+                self.assertEqual(env.read_text(), f"SIMULATOR_ID={expected}\n")
+            with patch.dict(
+                os.environ, {"DEVICE_FAMILY": "watch", "GITHUB_ENV": str(env)}
+            ):
+                with self.assertRaisesRegex(SystemExit, "No available"):
+                    runpy.run_path(str(CI / "select_simulator.py"), run_name="__main__")
 
-    def test_test_bundle_uses_declared_executable_and_rejects_missing_or_ambiguous_bundles(self):
-        script = str(CI / 'package_test_binary.py')
-        with tempfile.TemporaryDirectory() as directory, patch.object(sys, 'argv', [script, directory]):
+    def test_test_bundle_uses_declared_executable_and_rejects_missing_or_ambiguous_bundles(
+        self,
+    ):
+        script = str(CI / "package_test_binary.py")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(sys, "argv", [script, directory]),
+        ):
             root = Path(directory)
-            with self.assertRaisesRegex(SystemExit, 'Expected one'):
-                runpy.run_path(script, run_name='__main__')
-            bundle = root / 'OpenCodeKitTests.xctest/Contents'
-            (bundle / 'MacOS').mkdir(parents=True)
-            (bundle / 'Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'ActualTests'}))
-            with self.assertRaisesRegex(SystemExit, 'executable missing'):
-                runpy.run_path(script, run_name='__main__')
-            executable = bundle / 'MacOS/ActualTests'
+            with self.assertRaisesRegex(SystemExit, "Expected one"):
+                runpy.run_path(script, run_name="__main__")
+            bundle = root / "OpenCodeKitTests.xctest/Contents"
+            (bundle / "MacOS").mkdir(parents=True)
+            (bundle / "Info.plist").write_bytes(
+                plistlib.dumps({"CFBundleExecutable": "ActualTests"})
+            )
+            with self.assertRaisesRegex(SystemExit, "executable missing"):
+                runpy.run_path(script, run_name="__main__")
+            executable = bundle / "MacOS/ActualTests"
             executable.touch()
             output = io.StringIO()
-            with contextlib.redirect_stdout(output): runpy.run_path(script, run_name='__main__')
+            with contextlib.redirect_stdout(output):
+                runpy.run_path(script, run_name="__main__")
             self.assertEqual(output.getvalue().strip(), str(executable))
-            (root / 'Other.xctest').mkdir()
-            with self.assertRaisesRegex(SystemExit, 'Expected one'):
-                runpy.run_path(script, run_name='__main__')
+            (root / "Other.xctest").mkdir()
+            with self.assertRaisesRegex(SystemExit, "Expected one"):
+                runpy.run_path(script, run_name="__main__")
 
     def test_json_and_document_links_are_checked_without_external_link_requests(self):
-        checker = load('check_repository')
+        checker = load("check_repository")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / 'docs').mkdir()
-            (root / 'docs/target.md').write_text('ok')
-            (root / 'data.json').write_text('{"valid":true}')
-            (root / 'README.md').write_text('[local](docs/target.md#anchor) [external](https://example.com)\n```\n[ignored](absent.md)\n```\n')
-            names=['README.md','data.json','deleted.md','docs/target.md']
-            self.assertEqual(checker.validate_files(root,names), [])
-            (root / 'data.json').write_text('invalid json')
-            (root / 'README.md').write_text('[broken](docs/missing.md)')
-            errors = checker.validate_files(root,names)
-            self.assertEqual(len(errors),2)
-            self.assertTrue(any('missing local link' in error for error in errors))
+            (root / "docs").mkdir()
+            (root / "docs/target.md").write_text("ok")
+            (root / "data.json").write_text('{"valid":true}')
+            (root / "README.md").write_text(
+                "[local](docs/target.md#anchor) [external](https://example.com)\n```\n[ignored](absent.md)\n```\n"
+            )
+            names = ["README.md", "data.json", "deleted.md", "docs/target.md"]
+            self.assertEqual(checker.validate_files(root, names), [])
+            (root / "data.json").write_text("invalid json")
+            (root / "README.md").write_text("[broken](docs/missing.md)")
+            errors = checker.validate_files(root, names)
+            self.assertEqual(len(errors), 2)
+            self.assertTrue(any("missing local link" in error for error in errors))
 
-    def test_cloud_wait_override_reaches_the_bridge_and_is_bounded(self):
-        # A wait override that never reaches the bridge (or that can outlive the
-        # job timeout) is a silent misconfiguration, so both ends are pinned.
-        workflows = Path(__file__).resolve().parents[3] / '.github' / 'workflows'
-        cloud = (workflows / 'xcode-cloud.yml').read_text()
-        self.assertIn('XCODE_CLOUD_WAIT_SECONDS: ${{ inputs.wait_seconds || vars.XCODE_CLOUD_WAIT_SECONDS }}', cloud)
-        self.assertIn('timeout-minutes: 95', cloud)
-        caller = (workflows / 'tests.yml').read_text()
-        self.assertIn("wait_seconds: ${{ inputs.wait_seconds || '' }}", caller)
+    def test_native_workflow_targets_the_self_hosted_runner(self):
+        # The native stage must run on the xcode-27 self-hosted runner with the
+        # installed Xcode, never on fork PR code, and Tests must call it.
+        workflows = Path(__file__).resolve().parents[3] / ".github" / "workflows"
+        native = (workflows / "native-tests.yml").read_text()
+        self.assertIn("runs-on: xcode-27", native)
+        self.assertIn(
+            "DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer", native
+        )
+        self.assertIn(
+            "github.event.pull_request.head.repo.full_name == github.repository", native
+        )
+        caller = (workflows / "tests.yml").read_text()
+        self.assertIn("uses: ./.github/workflows/native-tests.yml", caller)
 
     def test_release_metadata_entrypoint_outputs_plugin_version(self):
-        script=str(CI / 'release_metadata.py')
-        with tempfile.TemporaryDirectory() as directory, patch.object(sys,'argv',[script,'plugin-v1.2.3']):
-            output=Path(directory)/'output'
-            with patch.dict(os.environ,{'GITHUB_OUTPUT':str(output)}):
-                runpy.run_path(script,run_name='__main__')
-            self.assertEqual(output.read_text(),'kind=plugin\nversion=1.2.3\n')
+        script = str(CI / "release_metadata.py")
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.object(sys, "argv", [script, "plugin-v1.2.3"]),
+        ):
+            output = Path(directory) / "output"
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}):
+                runpy.run_path(script, run_name="__main__")
+            self.assertEqual(output.read_text(), "kind=plugin\nversion=1.2.3\n")
 
     def test_release_metadata_rejects_mismatched_prerelease_flag(self):
-        script=str(CI / 'release_metadata.py')
-        for tag, flag in [('plugin-v1.2.3', 'true'), ('plugin-v1.2.3-beta.1', 'false')]:
-            with self.subTest(tag=tag), tempfile.TemporaryDirectory() as directory, patch.object(sys,'argv',[script,tag]):
-                with patch.dict(os.environ, {'GITHUB_OUTPUT':str(Path(directory)/'out'), 'RELEASE_PRERELEASE':flag}):
-                    with self.assertRaisesRegex(ValueError,'prerelease flag'):
-                        runpy.run_path(script,run_name='__main__')
+        script = str(CI / "release_metadata.py")
+        for tag, flag in [("plugin-v1.2.3", "true"), ("plugin-v1.2.3-beta.1", "false")]:
+            with (
+                self.subTest(tag=tag),
+                tempfile.TemporaryDirectory() as directory,
+                patch.object(sys, "argv", [script, tag]),
+            ):
+                with patch.dict(
+                    os.environ,
+                    {
+                        "GITHUB_OUTPUT": str(Path(directory) / "out"),
+                        "RELEASE_PRERELEASE": flag,
+                    },
+                ):
+                    with self.assertRaisesRegex(ValueError, "prerelease flag"):
+                        runpy.run_path(script, run_name="__main__")
