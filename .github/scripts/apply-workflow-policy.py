@@ -42,7 +42,7 @@ def api(path: str, method: str = "GET", body: dict[str, Any] | None = None) -> A
 
 
 def match_segments(pattern: list[str], target: list[str]) -> bool:
-    """Match pathname components with recursive globstars, including zero levels."""
+    """Match pathname components with recursive wildcards, including zero levels."""
     if not pattern:
         return not target
     if pattern[0] == "**":
@@ -179,7 +179,12 @@ def main() -> None:
         },
     )
     api("automated-security-fixes", "PUT")
-    for workflow in ["coderabbit-after-checks.yml", "dependabot-auto-merge.yml"]:
+    for workflow in [
+        "coderabbit-after-checks.yml",
+        "dependabot-auto-merge.yml",
+        "review-events.yml",
+        "review-notifier-policy.yml",
+    ]:
         api(f"actions/workflows/{workflow}/enable", "PUT")
     actual = api(f"rulesets/{selected['id']}")
     actual_checks = next(
