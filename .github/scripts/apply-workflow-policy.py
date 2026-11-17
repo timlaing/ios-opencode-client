@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Apply the reviewed workflow policy only after it exists on the default branch."""
 
 from __future__ import annotations

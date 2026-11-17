@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Action pinning must validate complete YAML values rather than text prefixes."""
 
 from __future__ import annotations

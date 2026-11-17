@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Regression checks for the guarded repository-settings migration."""
 
 from __future__ import annotations

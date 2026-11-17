@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MPL-2.0
 """Validate actual YAML action invocations, including quoted and folded values."""
 
 from __future__ import annotations
