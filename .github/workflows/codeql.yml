@@ -10,7 +10,7 @@ jobs:
   analyze:
     name: CodeQL (${{ matrix.language }})
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 40
+    timeout-minutes: ${{ matrix.language == 'swift' && 90 || 40 }}
     env:
       DEVELOPER_DIR: ${{ matrix.xcode }}
     permissions:
