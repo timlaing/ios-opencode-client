@@ -6,9 +6,9 @@ from __future__ import annotations
 import argparse
 import base64
 import json
-from fnmatch import fnmatchcase
 import shutil
 import subprocess
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any
 
