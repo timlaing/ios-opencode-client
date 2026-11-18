@@ -8,7 +8,8 @@
     "Validate tests",
     "Workflow policy",
     "Review passed",
-    "Review notifier policy"
+    "Review notifier policy",
+    "Analysis passed"
   ],
   "review_gate_requires_main": true,
   "sha_pinning_required": true,
@@ -19,6 +20,7 @@
     "Validate linting",
     "Validate tests",
     "Workflow policy",
-    "Review notifier policy"
+    "Review notifier policy",
+    "Analysis passed"
   ]
 }

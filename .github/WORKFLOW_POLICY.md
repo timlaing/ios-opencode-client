@@ -16,7 +16,7 @@ Native Xcode tests use a persistent self-hosted runner. Fork PRs must not execut
 
 ## Apply the matching repository policy
 
-After merging, run `python3 .github/scripts/apply-workflow-policy.py` to inspect the exact ruleset change, then run it with `--apply`. The script refuses to apply an unmerged policy, preserves unrelated rules and bypass actors, binds checks to GitHub Actions, enables SHA enforcement and the replacement automation, and verifies the result. Repository settings shared with the existing workflows can be corrected before merge; new check names and action enforcement must wait for their producing workflows.
+After merging, run `python3 .github/scripts/apply-workflow-policy.py` to inspect the exact ruleset change, then run it with `--apply --validated-head <full-PR-head-SHA>`. The script refuses to apply an unmerged policy, preserves unrelated rules and bypass actors, binds checks to GitHub Actions, enables SHA enforcement and the replacement automation, and verifies the result. Repository settings shared with the existing workflows can be corrected before merge; new check names and action enforcement must wait for their producing workflows.
 
 ## Explicit review requester
 
@@ -35,3 +35,7 @@ The required `Review notifier policy` commit status is written by a checkout-fre
 After the harmless PR registration job has registered the workflow, the repository owner must inspect the exact workflow revision and dispatch `review-notifier-policy.yml` on the reviewed PR branch with `revision` set to the full current head SHA. Wait for its successful `Review notifier policy` status before dispatching the coordinator. This initial dispatch is an explicit owner attestation of the reviewed baseline; arbitrary writers are not authorized to attest a feature-branch validator. Normal validation uses the default-branch `pull_request_target` workflow. A status from another workflow, revision, failed run or untrusted feature-branch actor must not satisfy this gate.
 
 Privileged Sonar workers perform static source/report analysis only, with `sonar.sca.enabled=false` preventing implicit dependency/build-tool execution. Fork-triggered CI never receives the scanner token; the trusted receiver consumes validated source and coverage without running fork-selected commands. Existing dependency audits and Dependabot protection remain independent. Every configured coverage report must be present before scanning.
+
+Settings activation enables replacement workflows first, then verifies successful hosted replacement checks on the explicit reviewed PR head before writing required-check rules. Keep existing protection until that proof exists; failed enablement or missing proof leaves the rules unchanged.
+
+PR native tests and coverage generation run without Sonar credentials, including Dependabot. A registered trusted `sonarqube.yml` receiver scans validated `analysis-inputs` from a successful `Tests` run and reports the required `Analysis passed` gate. Bootstrap/recovery dispatches that receiver with `source_run_id`. Non-PR native/release pipelines still require their trusted-branch Sonar scan before `Required CI` succeeds. No Dependabot copy of `SONAR_TOKEN` is needed.
