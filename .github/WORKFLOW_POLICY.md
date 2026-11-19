@@ -39,3 +39,5 @@ Privileged Sonar workers perform static source/report analysis only, with `sonar
 Settings activation enables replacement workflows first, then verifies successful hosted replacement checks on the explicit reviewed PR head before writing required-check rules. Keep existing protection until that proof exists; failed enablement or missing proof leaves the rules unchanged.
 
 PR native tests and coverage generation run without Sonar credentials, including Dependabot. A registered trusted `sonarqube.yml` receiver scans validated `analysis-inputs` from a successful `Tests` run and reports the required `Analysis passed` gate. Bootstrap/recovery dispatches that receiver with `source_run_id`. Non-PR native/release pipelines still require their trusted-branch Sonar scan before `Required CI` succeeds. No Dependabot copy of `SONAR_TOKEN` is needed.
+
+During activation, serialize repository-settings changes: run one activation at a time and do not edit rulesets concurrently. The updater re-reads protections immediately before writing and aborts if they changed during hosted validation.
