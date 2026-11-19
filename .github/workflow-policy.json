@@ -1,0 +1,26 @@
+{
+  "default_workflow_permissions": "read",
+  "required_checks": [
+    "Validate action-refs",
+    "Validate codeql",
+    "Validate dependency-review",
+    "Validate linting",
+    "Validate tests",
+    "Workflow policy",
+    "Review passed",
+    "Review notifier policy",
+    "Analysis passed"
+  ],
+  "review_gate_requires_main": true,
+  "sha_pinning_required": true,
+  "validation_checks": [
+    "Validate action-refs",
+    "Validate codeql",
+    "Validate dependency-review",
+    "Validate linting",
+    "Validate tests",
+    "Workflow policy",
+    "Review notifier policy",
+    "Analysis passed"
+  ]
+}

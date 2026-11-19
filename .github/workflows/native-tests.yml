@@ -1,6 +1,4 @@
 name: Native tests and SonarQube
-on:
-  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -13,7 +11,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: "26.12.0"
+          node-version: 26.12.0
       - name: Test API bridge with coverage
         run: |
           mkdir -p reports
@@ -25,10 +23,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - run: python3 -m unittest discover -s scripts/ci/tests -p 'test_*.py' -v
-
   native:
     name: Native iOS tests
-    # Fork PRs never execute on the self-hosted macOS runner.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: [self-hosted, macOS, ARM64, xcode, xcode-27]
     env:
@@ -109,10 +105,11 @@ jobs:
             -scheme OpenCodeRemote \
             -destination 'generic/platform=iOS Simulator' \
             CODE_SIGNING_ALLOWED=NO
-
-  sonar:
-    name: Coverage and SonarQube quality gate
-    needs: [validate, native]
+  coverage:
+    name: Coverage reports
+    needs:
+      - validate
+      - native
     runs-on: [self-hosted, macOS, ARM64, xcode, xcode-27]
     env:
       DEVELOPER_DIR: /Applications/Xcode.app/Contents/Developer
@@ -120,7 +117,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          # PR builds use the same source/base merge tree tested natively.
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
@@ -143,6 +139,89 @@ jobs:
       - name: Convert and merge line coverage
         run: |
           python3 scripts/ci/coverage.py --cloud reports/cloud --llvm reports/package-coverage.json --output reports/coverage.xml
+      - name: Assemble revision-bound analysis inputs
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p analysis-inputs/coverage analysis-inputs/reports
+          cp reports/coverage.xml analysis-inputs/reports/coverage.xml
+          cp coverage/coverage-python.xml coverage/coverage.lcov coverage/coverage-classifier.lcov coverage/coverage-bridge.lcov analysis-inputs/coverage/
+          printf '%s\n' "$HEAD_SHA" > analysis-inputs/coverage-revision.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: analysis-inputs
+          path: analysis-inputs/
+          if-no-files-found: error
+          retention-days: 7
+      - name: Save coverage and analysis metadata
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: swift-coverage
+          path: |
+            reports/coverage.xml
+            reports/package-coverage.json
+            reports/cloud/build.json
+            .scannerwork/report-task.txt
+          if-no-files-found: ignore
+          retention-days: 14
+  sonar:
+    name: Trusted branch SonarQube quality gate
+    if: github.event_name != 'pull_request'
+    needs:
+      - coverage
+      - native
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: analysis-inputs
+          path: ${{ runner.temp }}/trusted-analysis-inputs
+      - name: Validate trusted branch coverage
+        env:
+          INPUTS: ${{ runner.temp }}/trusted-analysis-inputs
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          python3 -I - <<'PYTHON'
+          import os, re, shutil
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          inputs = Path(os.environ['INPUTS'])
+          required = {'reports/coverage.xml', 'coverage/coverage-python.xml', 'coverage/coverage.lcov', 'coverage/coverage-classifier.lcov', 'coverage/coverage-bridge.lcov', 'coverage-revision.txt'}
+          files = set()
+          size = 0
+          for source in inputs.rglob('*'):
+              if source.is_symlink():
+                  raise SystemExit('Symlinked coverage artifact')
+              if not source.is_file():
+                  continue
+              relative = source.relative_to(inputs).as_posix()
+              if relative not in required:
+                  raise SystemExit('Unexpected coverage artifact')
+              files.add(relative)
+              size += source.stat().st_size
+              if source.stat().st_size > 10000000 or size > 100000000:
+                  raise SystemExit('Coverage artifact exceeds size limit')
+              if source.suffix == '.xml':
+                  text = source.read_bytes().decode('utf-8-sig')
+                  if '\x00' in text or re.search(r'<!ENTITY', text, re.I):
+                      raise SystemExit('Unsafe coverage XML')
+                  ET.fromstring(text)
+          if files != required or (inputs / 'coverage-revision.txt').read_text().strip() != os.environ['HEAD_SHA']:
+              raise SystemExit('Missing coverage or wrong tested revision')
+          for relative in required - {'coverage-revision.txt'}:
+              destination = Path(relative)
+              if any(parent.is_symlink() for parent in [destination, *destination.parents]):
+                  raise SystemExit('Symlinked coverage destination')
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(inputs / relative, destination)
+          PYTHON
       - name: Configure SonarQube project and revision
         env:
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
@@ -159,23 +238,16 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ vars.SONAR_HOST_URL || 'https://sonarcloud.io' }}
-      - name: Save coverage and analysis metadata
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always()
         with:
-          name: swift-coverage
-          path: |
-            reports/coverage.xml
-            reports/package-coverage.json
-            reports/cloud/build.json
-            .scannerwork/report-task.txt
-          if-no-files-found: ignore
-          retention-days: 14
-
+          args: -Dsonar.sca.enabled=false
   required:
     name: Required CI
     if: always()
-    needs: [validate, native, sonar]
+    needs:
+      - validate
+      - native
+      - coverage
+      - sonar
     runs-on: ubuntu-latest
     steps:
       - name: Require every stage to succeed
@@ -183,8 +255,17 @@ jobs:
           VALIDATE_RESULT: ${{ needs.validate.result }}
           NATIVE_RESULT: ${{ needs.native.result }}
           SONAR_RESULT: ${{ needs.sonar.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
-          if [ "$VALIDATE_RESULT" != success ] || [ "$NATIVE_RESULT" != success ] || [ "$SONAR_RESULT" != success ]; then
-            echo 'CI incomplete: integration tests, native iOS tests and SonarQube must all succeed.'
+          if [ "$VALIDATE_RESULT" != success ] || [ "$NATIVE_RESULT" != success ] || [ "$COVERAGE_RESULT" != success ]; then
+            echo 'CI incomplete: integration tests, native iOS tests and coverage must all succeed.'
             exit 1
           fi
+          if [ "$EVENT_NAME" = pull_request ]; then
+            [ "$SONAR_RESULT" = skipped ] || { echo 'PR analysis must use the trusted receiver'; exit 1; }
+          else
+            [ "$SONAR_RESULT" = success ] || { echo 'Trusted branch SonarQube must succeed'; exit 1; }
+          fi
+"on":
+  workflow_call: null
